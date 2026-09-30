@@ -1095,6 +1095,37 @@
             padding: 1.5rem 1.5rem 1rem;
         }
 
+        /* Chart.js fills this box; desktop keeps the original proportions,
+           phones get a fixed height instead of shrinking with the width. */
+        .contam-chart-box {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 2;
+        }
+
+        @media (max-width: 600px) {
+            /* The page column is 80% wide; let charts use the full screen minus a small gutter. */
+            .contam-wrap {
+                position: relative;
+                left: 50%;
+                width: calc(100vw - 24px);
+                margin-left: calc(-50vw + 12px);
+            }
+
+            .contam-canvas-wrap {
+                padding: 0.75rem 0.5rem 0.5rem;
+            }
+
+            .contam-chart-box {
+                aspect-ratio: auto;
+                height: 340px;
+            }
+
+            .contam-legend {
+                gap: 1.25rem;
+            }
+        }
+
         .contam-legend {
             display: flex;
             flex-wrap: wrap;
@@ -1477,7 +1508,7 @@
             </p>
             <div class="contam-wrap">
                 <div class="contam-canvas-wrap">
-                    <canvas id="contamination-chart" height="150"></canvas>
+                    <div class="contam-chart-box"><canvas id="contamination-chart"></canvas></div>
                 </div>
                 <div class="contam-legend" id="contamination-legend"></div>
                 <p class="contam-caption">
@@ -1500,23 +1531,27 @@
             var legendEl = document.getElementById('contamination-legend');
             var chart = null;
             var MODELS = DATA.models, GAMES = DATA.games;
-            var DOT = 30, TIER = 0.17, NEAR = 9;   // y offset when two dots would collide
+            var TIER = 0.17, NEAR = 9;   // y offset when two dots would collide
+            // Phones get smaller markers and model logos; the chart rebuilds when this flips.
+            var NARROW = window.matchMedia('(max-width: 600px)');
+            function dot() { return NARROW.matches ? 20 : 30; }
+            function logo() { return NARROW.matches ? 26 : 38; }
 
             function img(src, size, onload) {
                 var im = new Image();
                 im.src = src;
                 im.addEventListener('load', function () {
-                    im.width = size; im.height = size;
+                    im.width = size(); im.height = size();
                     if (onload) onload();
                 });
                 return im;
             }
             var gameImgs = {}, modelImgs = {};
             GAMES.forEach(function (g) {
-                gameImgs[g.id] = img(g.badge, DOT, function () { if (chart) chart.update('none'); });
+                gameImgs[g.id] = img(g.badge, dot, function () { if (chart) chart.update('none'); });
             });
             MODELS.forEach(function (m) {
-                modelImgs[m.id] = img(m.badge, 38, function () { if (chart) chart.draw(); });
+                modelImgs[m.id] = img(m.badge, logo, function () { if (chart) chart.draw(); });
             });
 
             // Tier dots that sit too close on the same lane, as the paper figure does.
@@ -1546,72 +1581,92 @@
                         ctx.moveTo(x.getPixelForValue(0), py);
                         ctx.lineTo(x.getPixelForValue(100), py);
                         ctx.stroke();
-                        var im = modelImgs[m.id];
+                        var im = modelImgs[m.id], L = logo();
                         if (im && im.complete && im.naturalWidth) {
-                            ctx.drawImage(im, x.left - 52, py - 19, 38, 38);
+                            ctx.drawImage(im, x.left - L - 14, py - L / 2, L, L);
                         }
                     });
                     ctx.restore();
                 }
             };
 
-            chart = new Chart(canvas, {
-                type: 'scatter',
-                data: {
-                    datasets: GAMES.map(function (g) {
-                        return {
-                            label: g.name,
-                            gameId: g.id,
-                            data: MODELS.map(function (m, i) {
-                                return {
-                                    x: DATA.accuracy[m.id][g.id],
-                                    y: i + tiers[m.id + '|' + g.id] * TIER,
-                                    model: i
-                                };
-                            }),
-                            pointStyle: function () { return gameImgs[g.id]; },
-                            backgroundColor: g.color,
-                            borderColor: g.color,
-                            pointRadius: DOT / 2,
-                            pointHoverRadius: DOT / 2 + 2,
-                            showLine: false
-                        };
-                    })
-                },
-                plugins: [lanesPlugin],
-                options: {
-                    responsive: true,
-                    animation: { duration: 650, easing: 'easeOutQuart' },
-                    layout: { padding: { left: 56, top: 14, bottom: 6, right: 14 } },
-                    scales: {
-                        x: {
-                            min: -3, max: 106,
-                            title: { display: true, text: 'Accuracy (%)' },
-                            ticks: { stepSize: 20, callback: function (v) { return v < 0 || v > 100 ? '' : v; } },
-                            grid: { color: '#eee' }
-                        },
-                        y: {
-                            reverse: true,
-                            min: -0.55, max: MODELS.length - 0.2,
-                            ticks: { display: false },
-                            grid: { display: false },
-                            border: { display: false }
-                        }
+            var hidden = {};
+
+            function build() {
+                var narrow = NARROW.matches, DOT = dot();
+                GAMES.forEach(function (g) {
+                    var im = gameImgs[g.id];
+                    if (im.complete && im.naturalWidth) { im.width = DOT; im.height = DOT; }
+                });
+                if (chart) chart.destroy();
+                chart = new Chart(canvas, {
+                    type: 'scatter',
+                    data: {
+                        datasets: GAMES.map(function (g) {
+                            return {
+                                label: g.name,
+                                gameId: g.id,
+                                hidden: !!hidden[g.id],
+                                data: MODELS.map(function (m, i) {
+                                    return {
+                                        x: DATA.accuracy[m.id][g.id],
+                                        y: i + tiers[m.id + '|' + g.id] * TIER,
+                                        model: i
+                                    };
+                                }),
+                                pointStyle: function () { return gameImgs[g.id]; },
+                                backgroundColor: g.color,
+                                borderColor: g.color,
+                                pointRadius: DOT / 2,
+                                pointHoverRadius: DOT / 2 + 2,
+                                showLine: false
+                            };
+                        })
                     },
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            displayColors: false,
-                            callbacks: {
-                                title: function (items) { return MODELS[items[0].raw.model].name; },
-                                label: function (ctx) {
-                                    return ctx.dataset.label + ': ' + ctx.raw.x + '%';
+                    plugins: [lanesPlugin],
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: { duration: 650, easing: 'easeOutQuart' },
+                        layout: { padding: { left: logo() + 18, top: 14, bottom: 6, right: narrow ? 8 : 14 } },
+                        scales: {
+                            x: {
+                                min: -3, max: 106,
+                                title: { display: true, text: 'Accuracy (%)', font: { size: narrow ? 11 : 12 } },
+                                ticks: {
+                                    stepSize: 20,
+                                    font: { size: narrow ? 10 : 12 },
+                                    callback: function (v) { return v < 0 || v > 100 ? '' : v; }
+                                },
+                                grid: { color: '#eee' }
+                            },
+                            y: {
+                                reverse: true,
+                                min: -0.55, max: MODELS.length - 0.2,
+                                ticks: { display: false },
+                                grid: { display: false },
+                                border: { display: false }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                displayColors: false,
+                                callbacks: {
+                                    title: function (items) { return MODELS[items[0].raw.model].name; },
+                                    label: function (ctx) {
+                                        return ctx.dataset.label + ': ' + ctx.raw.x + '%';
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            });
+                });
+            }
+
+            build();
+            if (NARROW.addEventListener) NARROW.addEventListener('change', build);
+            else NARROW.addListener(build);
 
             // Grouped, clickable game legend (Classic vs GameBoyWorlds-Playthrough).
             legendEl.innerHTML = '';
@@ -1632,6 +1687,7 @@
                     item.addEventListener('click', function () {
                         var vis = chart.isDatasetVisible(gi);
                         chart.setDatasetVisibility(gi, !vis);
+                        hidden[g.id] = vis;
                         item.classList.toggle('is-off', vis);
                         chart.update();
                     });

@@ -748,6 +748,38 @@
             opacity: 1;
         }
 
+        /* Chart.js fills this box; desktop keeps the original proportions,
+           phones get a fixed height instead of shrinking with the width. */
+        .chart-box {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 2.5;
+        }
+
+        .chart-box.is-tall {
+            aspect-ratio: 2;
+        }
+
+        @media (max-width: 600px) {
+            /* The page column is 80% wide; let charts use the full screen minus a small gutter. */
+            .results-chart-wrap {
+                position: relative;
+                left: 50%;
+                width: calc(100vw - 24px);
+                margin-left: calc(-50vw + 12px);
+            }
+
+            .results-chart-canvas-wrap {
+                padding: 0.75rem 0.5rem 0.5rem;
+            }
+
+            .chart-box,
+            .chart-box.is-tall {
+                aspect-ratio: auto;
+                height: 400px;
+            }
+        }
+
         .results-series-tabs {
             margin-top: 1.5rem;
         }
@@ -1522,7 +1554,7 @@
             </p>
             <div class="results-chart-wrap">
                 <div class="results-chart-canvas-wrap">
-                    <canvas id="results-chart" height="120"></canvas>
+                    <div class="chart-box"><canvas id="results-chart"></canvas></div>
                 </div>
                 <div class="results-series-tabs">
                     <ul class="tabs is-centered is-toggle is-medium" id="results-series-tab-list"></ul>
@@ -1549,6 +1581,15 @@
             return li;
         }
         function seriesBadgePath(id) { return 'assets/logos/series_' + id + '.png'; }
+
+        /* Phone layout for the charts: they rebuild with smaller type and marks when this flips. */
+        var NARROW = window.matchMedia('(max-width: 600px)');
+        function onNarrowChange(fn) {
+            if (NARROW.addEventListener) NARROW.addEventListener('change', fn);
+            else NARROW.addListener(fn);
+        }
+        /* One word per line, so long axis labels stack instead of colliding on phones. */
+        function wrapLabel(s) { return NARROW.matches ? s.split(' ') : s; }
     </script>
     <script src="assets/results_data.js"></script>
     <script>
@@ -1592,11 +1633,11 @@
             var logoAxisPlugin = {
                 id: 'logoAxis',
                 afterDraw: function (c) {
-                    var x = c.scales.x, ctx = c.ctx, size = 26;
+                    var x = c.scales.x, ctx = c.ctx, size = NARROW.matches ? 18 : 26;
                     DATA.models.forEach(function (m, i) {
                         var img = LOGOS[m.id];
                         if (!img || !img.complete || !img.naturalWidth) return;
-                        ctx.drawImage(img, x.getPixelForTick(i) - size / 2, x.bottom + 6, size, size);
+                        ctx.drawImage(img, x.getPixelForValue(i) - size / 2, x.bottom + 6, size, size);
                     });
                 }
             };
@@ -1618,7 +1659,11 @@
                 return { labels: labels, datasets: datasets };
             }
 
+            var current = null;
+
             function renderSeries(series) {
+                current = series;
+                var narrow = NARROW.matches;
                 var chartData = buildChartData(series);
                 if (chart) chart.destroy();
                 canvasWrap.style.opacity = 0;
@@ -1628,22 +1673,36 @@
                     plugins: [logoAxisPlugin],
                     options: {
                         responsive: true,
+                        maintainAspectRatio: false,
                         animation: { duration: 650, easing: 'easeOutQuart' },
-                        layout: { padding: { bottom: 34 } },
+                        layout: { padding: { bottom: narrow ? 24 : 34 } },
                         scales: {
                             y: {
                                 beginAtZero: true,
                                 max: 100,
-                                title: { display: true, text: 'Task success rate (%)' }
+                                ticks: { font: { size: narrow ? 10 : 12 } },
+                                title: { display: true, text: 'Task success rate (%)', font: { size: narrow ? 11 : 12 } }
                             },
                             x: {
-                                grid: { display: false }
+                                grid: { display: false },
+                                ticks: {
+                                    autoSkip: false,
+                                    maxRotation: narrow ? 0 : 50,
+                                    font: { size: narrow ? 10 : 12 },
+                                    callback: function (v) { return wrapLabel(this.getLabelForValue(v)); }
+                                }
                             }
                         },
                         plugins: {
                             legend: {
                                 position: 'top',
-                                labels: { usePointStyle: true, pointStyle: 'rect' }
+                                labels: {
+                                    usePointStyle: true,
+                                    pointStyle: 'rect',
+                                    boxWidth: narrow ? 8 : 40,
+                                    padding: narrow ? 8 : 10,
+                                    font: { size: narrow ? 11 : 12 }
+                                }
                             },
                             tooltip: {
                                 callbacks: {
@@ -1679,6 +1738,8 @@
 
                 if (idx === 0) renderSeries(series);
             });
+
+            onNarrowChange(function () { if (current) renderSeries(current); });
         })();
     </script>
 
@@ -1792,7 +1853,7 @@
             </p>
             <div class="results-chart-wrap">
                 <div class="results-chart-canvas-wrap">
-                    <canvas id="improvement-chart" height="150"></canvas>
+                    <div class="chart-box is-tall"><canvas id="improvement-chart"></canvas></div>
                 </div>
                 <div class="results-series-tabs" style="margin-top:1.5rem;">
                     <ul class="tabs is-centered is-toggle is-medium" id="improvement-tab-list"></ul>
@@ -2003,7 +2064,8 @@
 
             // One lane per method inside each game's column, mirroring plots.py's
             // self_improvement_gain: dots are icon badges, x is the game, y is the gain in pp.
-            var LANE = 0.16, DOT = 26;
+            var LANE = 0.16;
+            function dot() { return NARROW.matches ? 18 : 26; }
             var METHODS = DATA.methods;
             var byId = {};
             DATA.games.forEach(function (g) { byId[g.id] = g; });
@@ -2015,7 +2077,7 @@
                 var img = new Image();
                 img.src = m.badge;
                 img.addEventListener('load', function () {
-                    img.width = DOT; img.height = DOT;
+                    img.width = dot(); img.height = dot();
                     if (chart) chart.update('none');
                 });
                 badges[m.id] = img;
@@ -2057,7 +2119,15 @@
                 }
             };
 
+            var current = null;
+
             function renderSeries(series) {
+                current = series;
+                var narrow = NARROW.matches, DOT = dot();
+                METHODS.forEach(function (m) {
+                    var b = badges[m.id];
+                    if (b.complete && b.naturalWidth) { b.width = DOT; b.height = DOT; }
+                });
                 var games = series.games.map(function (id) { return byId[id]; });
                 var datasets = METHODS.map(function (m, mi) {
                     return {
@@ -2084,11 +2154,13 @@
                     plugins: [backdropPlugin],
                     options: {
                         responsive: true,
+                        maintainAspectRatio: false,
                         animation: { duration: 650, easing: 'easeOutQuart' },
                         layout: { padding: { top: 10 } },
                         scales: {
                             y: {
-                                title: { display: true, text: 'Task completion gain (pp)' },
+                                title: { display: true, text: 'Task completion gain (pp)', font: { size: narrow ? 11 : 12 } },
+                                ticks: { font: { size: narrow ? 10 : 12 } },
                                 grid: { color: '#eee' },
                                 suggestedMin: -36,
                                 suggestedMax: 20
@@ -2098,13 +2170,18 @@
                                 max: games.length - 0.5,
                                 offset: false,
                                 grid: { display: false },
+                                // One tick per game column; left alone, ticks start at min (-0.5) and miss every game.
+                                afterBuildTicks: function (axis) {
+                                    axis.ticks = games.map(function (g, i) { return { value: i }; });
+                                },
                                 ticks: {
                                     stepSize: 1,
                                     autoSkip: false,
+                                    maxRotation: narrow ? 0 : 50,
                                     callback: function (v) {
-                                        return Number.isInteger(v) && games[v] ? games[v].name : '';
+                                        return Number.isInteger(v) && games[v] ? wrapLabel(games[v].name) : '';
                                     },
-                                    font: { size: 13 }
+                                    font: { size: narrow ? 11 : 13 }
                                 }
                             }
                         },
@@ -2113,6 +2190,8 @@
                                 position: 'top',
                                 labels: {
                                     usePointStyle: true,
+                                    padding: narrow ? 8 : 10,
+                                    font: { size: narrow ? 11 : 12 },
                                     generateLabels: function (c) {
                                         return METHODS.map(function (m, i) {
                                             var b = badges[m.id];
@@ -2163,6 +2242,8 @@
                 tabList.appendChild(li);
                 if (idx === 0) renderSeries(series);
             });
+
+            onNarrowChange(function () { if (current) renderSeries(current); });
 
             // Average-gain summary under the chart.
             legendEl.innerHTML = '';
