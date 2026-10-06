@@ -1418,6 +1418,29 @@
     </style>
     <script data-goatcounter="https://dhananjayashok.goatcounter.com/count"
             async src="//gc.zgo.at/count.js"></script>
+    <script>
+        /* GoatCounter video events: one "play" and one "watched 90%" per video per page view (autoplay teaser excluded) */
+        (function () {
+            var sent = {};
+            function send(v, kind) {
+                if (v.autoplay) return;
+                var src = (v.currentSrc || v.src || '').split('/').pop().split('?')[0];
+                if (!src) return;
+                var key = kind + ':' + src;
+                if (sent[key]) return;
+                sent[key] = true;
+                if (window.goatcounter && window.goatcounter.count)
+                    window.goatcounter.count({ path: 'video-' + kind + '/' + src, title: src, event: true });
+            }
+            document.addEventListener('play', function (e) {
+                if (e.target.tagName === 'VIDEO') send(e.target, 'play');
+            }, true);
+            document.addEventListener('timeupdate', function (e) {
+                var v = e.target;
+                if (v.tagName === 'VIDEO' && v.duration && v.currentTime / v.duration >= 0.9) send(v, 'watched');
+            }, true);
+        })();
+    </script>
 </head>
 
 <body>
