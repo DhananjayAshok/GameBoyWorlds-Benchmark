@@ -154,21 +154,6 @@ Name: <the place's name, or None if Unknown>
 Parent: <for Internal, the major location it is inside; otherwise None>
 [STOP]"""
 
-LOCATE_VERIFY_PROMPT = """You are playing [GAME] and are the strategist. You keep a map of the places the player has been, and you believe the player is at: [CURRENT]
-
-The image is the current game screen. Here is what has been recognised on it:
-[SCREEN_TILES]
-
-""" + PLACE_KINDS_BLOCK + """ Is the player still at [CURRENT]? Judge from the screen itself, not from where you expect the player to be. If the screen does not show a place at all (a battle, a menu, dialogue covering the view, a black screen), answer Unknown. If it shows a different place, answer No and say which place it is.
-
-Respond in exactly this format:
-Reasoning: <what the screen shows, and whether it is [CURRENT]>
-Same: <Yes, No or Unknown>
-Kind: <Major, Bridge or Internal if Same is No, otherwise None>
-Name: <the place's name if Same is No, otherwise None>
-Parent: <for Internal, the major location it is inside; otherwise None>
-[STOP]"""
-
 TRANSITION_CHECK_PROMPT = """You are playing [GAME] and are the strategist. While the player was playing, the screen went black for a moment. The first [N_BEFORE] images are the screen before it went black, oldest first, and the last [N_AFTER] images are the screen after, oldest first.
 
 Decide whether the player moved to a different place: through a door into or out of a building, up or down stairs, into or out of a cave or gatehouse, or to another town or route.
