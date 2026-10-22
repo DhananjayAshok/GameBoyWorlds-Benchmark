@@ -20,8 +20,20 @@ from utils.lm_inference import clean_value, parse_key_value, parse_yes_no
 Place = Tuple[str, ...]
 VLMCaller = Callable[[str], Callable[..., str]]
 
-BLACK_THRESHOLD = 10
+#: A pixel is black at or below this brightness, and a frame is black when at least BLACK_FRACTION of its
+#: pixels are. Not "every pixel": the frame a door warp leaves behind is black except for a few grey lines
+#: and sprites, which a strict test counts as a picture of a place.
+BLACK_PIXEL_LEVEL = 10
+BLACK_FRACTION = 0.95
 BLACK_MERGE_GAP = 10
+#: Positions in the frame list between the two context frames taken on each side of a black run. The
+#: list holds 2 captures per button press, so 6 is about 3 presses: far enough apart to show the place,
+#: close enough that the player is still in it.
+CONTEXT_GAP = 6
+#: Frames kept from one episode to the next, so a transition that straddles an episode boundary is whole.
+TAIL_MAX_FRAMES = 120
+#: Most no-button waits ``settle_screen`` makes while the screen is black.
+MAX_SETTLE_STEPS = 8
 LOCATION_ATTEMPTS = 3
 MAX_IDENTITY_IMAGES = 5
 PLACE_KINDS = ("major", "bridge", "internal", "unknown")
@@ -349,6 +361,27 @@ def _parse_transition(output: str) -> Tuple[Any, Optional[str]]:
     return verdict, None
 
 
+def _parse_verify(store: LocationStore) -> Parser:
+    place_parser = _parse_place(store)
+
+    def parse(output: str) -> Tuple[Any, Optional[str]]:
+        same = (parse_key_value(output, "Same") or "").replace("*", "").strip().lower().rstrip(".")
+        if same.startswith("yes"):
+            return "same", None
+        if same.startswith("unknown"):
+            return "unknown", None
+        if not same.startswith("no"):
+            return None, "The `Same:` line must be Yes, No or Unknown."
+        answer, problem = place_parser(output)
+        if problem is not None:
+            return None, problem
+        kind, place, _, _ = answer
+        if kind == "unknown":
+            return "unknown", None
+        return (kind, place), None
+    return parse
+
+
 def _enter(store: LocationStore, kind: str, place: Place, frame: np.ndarray, identified: Dict[Any, Any],
            episode_number: int) -> None:
     if kind == "major" and place[0] not in store.majors:
@@ -382,6 +415,44 @@ def locate(store: LocationStore, frame: np.ndarray, screen_tiles: str, identifie
     return place
 
 
+def verify_location(store: LocationStore, frame: np.ndarray, screen_tiles: str, identified: Dict[Any, Any],
+                    vlm_caller: VLMCaller, game: str, episode_number: int, candidate: Optional[Place],
+                    parameters: Optional[dict] = None) -> Optional[Place]:
+    """Ask whether the screen still shows the place the store believes the player is in.
+
+    Black-screen transitions cannot see a move that has no black screen (town to route), and a missed one
+    leaves ``current`` wrong until the next detected move. This is the second line: one question per
+    episode. To keep a naming slip from flipping the location, a different place is accepted at once only
+    when the store already knows it; a new one has to be named twice in a row. A move found this way adds
+    no edge to the map, since how the player got there is not known.
+
+    :param candidate: The different place named by the previous check and not yet accepted, if any.
+    :return: The candidate to carry to the next episode (``None`` once resolved).
+    """
+    current = store.current
+    prompt = (P.LOCATE_VERIFY_PROMPT.replace("[GAME]", game)
+              .replace("[CURRENT]", place_text(current))
+              .replace("[SCREEN_TILES]", screen_tiles or "(nothing was recognised)")
+              .replace("[KNOWN]", store.describe_known()))
+    answer = ask(vlm_caller("locate_verify"), prompt, _parse_verify(store), "Location check",
+                 LOCATION_ATTEMPTS, parameters, images=[frame])
+    if answer is None or answer == "unknown":
+        return candidate
+    if answer == "same":
+        return None
+    kind, place = answer
+    if place == current:
+        return None
+    if store.location(place) is not None or place == candidate:
+        _enter(store, kind, place, frame, identified, episode_number)
+        log_info(f"The location check moved the player from {place_text(current)} to {place_text(place)}.",
+                 parameters)
+        return None
+    log_info(f"The location check thinks the player is in {place_text(place)}, not {place_text(current)}; "
+             f"waiting for a second check.", parameters)
+    return place
+
+
 def episode_frames(report: SupervisorReport) -> List[np.ndarray]:
     frames: List[np.ndarray] = []
     for executor_report in report.executor_reports:
@@ -396,7 +467,7 @@ def episode_frames(report: SupervisorReport) -> List[np.ndarray]:
 
 
 def is_black(frame: np.ndarray) -> bool:
-    return int(np.max(frame)) <= BLACK_THRESHOLD
+    return float(np.mean(np.asarray(frame) <= BLACK_PIXEL_LEVEL)) >= BLACK_FRACTION
 
 
 def black_runs(frames: Sequence[np.ndarray]) -> List[Tuple[int, int]]:
@@ -411,17 +482,80 @@ def black_runs(frames: Sequence[np.ndarray]) -> List[Tuple[int, int]]:
     return runs
 
 
-def context_frames(frames: Sequence[np.ndarray], run: Tuple[int, int], k: int,
-                   stride: int) -> Tuple[List[np.ndarray], List[np.ndarray]]:
-    start, end = run
-    before = [start - i * stride for i in range(k, 0, -1) if start - i * stride >= 0]
-    after = [end + i * stride for i in range(1, k + 1) if end + i * stride < len(frames)]
-    if not before and start > 0:
-        before = [0]
-    if not after and end < len(frames) - 1:
-        after = [len(frames) - 1]
-    return ([frames[i] for i in before if not is_black(frames[i])],
-            [frames[i] for i in after if not is_black(frames[i])])
+@dataclass
+class TransitionCandidate:
+    """One black run with the frames to show the model: indices into the frame list, oldest first."""
+    run: Tuple[int, int]
+    before: List[int]
+    after: List[int]
+
+
+@dataclass
+class FrameTail:
+    """The end of the frame stream so far, carried from episode to episode.
+
+    ``frames[:resolved]`` have been examined. A black run with nothing yet after it is not resolved: it
+    stays in the tail, and is finished when the next episode's frames arrive."""
+    frames: List[np.ndarray] = field(default_factory=list)
+    resolved: int = 0
+
+
+def _first_not_black(frames: Sequence[np.ndarray], indices: Iterable[int]) -> Optional[int]:
+    return next((i for i in indices if not is_black(frames[i])), None)
+
+
+def find_transition_candidates(frames: Sequence[np.ndarray], resolved: int = 0, gap: int = CONTEXT_GAP
+                               ) -> Tuple[List[TransitionCandidate], Optional[int], List[Tuple[int, int]]]:
+    """Black runs in ``frames[resolved:]`` that can be put to the model.
+
+    The model is shown the nearest screen before the run and one ``gap`` positions earlier, and the nearest
+    screen after it and one ``gap`` positions later. A run with nothing after it yet is *pending* (its start
+    is returned so the caller can keep it); a run with nothing before it cannot be judged and is returned
+    in the third value, so it is reported rather than dropped silently.
+
+    :return: ``(candidates, pending_from, skipped_runs)``.
+    """
+    candidates: List[TransitionCandidate] = []
+    skipped: List[Tuple[int, int]] = []
+    pending_from: Optional[int] = None
+    for start, end in black_runs(frames):
+        if start < resolved:
+            continue
+        after_first = _first_not_black(frames, range(end + 1, len(frames)))
+        if after_first is None:
+            pending_from = start
+            break
+        before_first = _first_not_black(frames, range(start - 1, -1, -1))
+        if before_first is None:
+            skipped.append((start, end))
+            continue
+        before_second = _first_not_black(frames, range(before_first - gap, -1, -1))
+        after_second = _first_not_black(frames, range(after_first + gap, len(frames)))
+        candidates.append(TransitionCandidate(
+            (start, end),
+            [i for i in (before_second, before_first) if i is not None],
+            [i for i in (after_first, after_second) if i is not None]))
+    return candidates, pending_from, skipped
+
+
+def settle_screen(env, max_steps: int = MAX_SETTLE_STEPS) -> List[np.ndarray]:
+    """Let the game run on, pressing nothing, while the screen is black.
+
+    An episode can end on the middle of a door warp. Waiting here means the next task is dispatched from
+    the new place rather than from a black screen, and the warp's frames are captured in this episode.
+
+    :return: The frames captured while waiting.
+    """
+    emulator = env._emulator
+    frames: List[np.ndarray] = []
+    for _ in range(max_steps):
+        if not is_black(env.get_info()["core"]["current_frame"]):
+            break
+        captured, _ = emulator.step(None)
+        if captured is None:
+            break
+        frames.extend(captured)
+    return frames
 
 
 def _around(prompt: str, game: str, before: List[np.ndarray], after: List[np.ndarray]) -> str:
@@ -461,13 +595,27 @@ def record_transition(store: LocationStore, previous: Optional[Place], new: Plac
                            description=how, two_way=two_way), episode_number=episode_number)
 
 
-def follow_transitions(store: LocationStore, report: SupervisorReport, tiles, vlm_caller: VLMCaller, game: str,
-                       episode_number: int, k: int, stride: int, parameters: Optional[dict] = None) -> None:
-    frames = episode_frames(report)
-    for run in black_runs(frames):
-        before, after = context_frames(frames, run, k, stride)
-        if not before or not after:
-            continue
+def follow_transitions(store: LocationStore, new_frames: Sequence[np.ndarray], tail: FrameTail, tiles,
+                       vlm_caller: VLMCaller, game: str, episode_number: int,
+                       parameters: Optional[dict] = None) -> None:
+    """Find the black screens in this episode's frames (and the end of the last episode's) and ask whether
+    each was a move to a different place. ``tail`` is updated in place: a black run that has nothing after
+    it yet is kept for the next episode instead of being dropped."""
+    frames = tail.frames + list(new_frames)
+    candidates, pending_from, skipped = find_transition_candidates(frames, tail.resolved)
+    for start, end in skipped:
+        log_warn(f"A black screen (frames {start}-{end}) had no earlier screen to compare with; "
+                 f"no transition check was made.", parameters)
+    if pending_from is not None:
+        log_info(f"The episode ended on a black screen (frame {pending_from}); its transition check "
+                 f"waits for the next frames.", parameters)
+    resolved = pending_from if pending_from is not None else len(frames)
+    drop = max(0, min(len(frames) - TAIL_MAX_FRAMES, resolved))
+    tail.frames, tail.resolved = frames[drop:], resolved - drop
+
+    for candidate in candidates:
+        before = [frames[i] for i in candidate.before]
+        after = [frames[i] for i in candidate.after]
         images = before + after
         moved = ask(vlm_caller("transition_check"), _around(P.TRANSITION_CHECK_PROMPT, game, before, after),
                     _parse_transition, "Transition check", LOCATION_ATTEMPTS, parameters, images=images)
