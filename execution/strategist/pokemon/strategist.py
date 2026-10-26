@@ -29,6 +29,9 @@ from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree, remembe
 from execution.strategist.pokemon.location import (FrameTail, LocationStore, Place, episode_frames, follow_transitions,
                                                    locate, place_text, settle_screen)
 from execution.strategist.pokemon.notepad import ThoughtNotepad
+from execution.strategist.pokemon.global_map import (FAILURE_EPISODES, GlobalMap, MappingEnvironment,
+                                                     prompt_block)
+from execution.perception.pokemon.navigation import cell_kinds
 from execution.strategist.report import (REPORT_DETAILS, EpisodeArchive, EpisodeRecord, StrategistReport,
                                          StrategistVLMCallRecord, save_episode_report, trim_episode)
 from python_scripts.paths import strategist_dir, strategist_session_rel
@@ -91,6 +94,8 @@ class PokemonStrategist:
         resume_run: Optional[str] = None,
         resume_episode: Union[str, int] = "latest",
         on_episode_complete: Optional[Callable[["StrategistReport"], None]] = None,
+        global_map: bool = False,
+        global_map_shadow: bool = False,
         parameters: Optional[dict] = None,
         **supervisor_kwargs: Any,
     ) -> None:
@@ -150,6 +155,12 @@ class PokemonStrategist:
         self.locations = self._load_or_default(LocationStore, LocationStore, load_episode)
         self.knowledge = self._load_or_default(PokemonKnowledgeTree, PokemonKnowledgeTree, load_episode)
         self.notepad = self._load_or_default(ThoughtNotepad, ThoughtNotepad, load_episode)
+        #: The global grid map (--global_map). None leaves the strategist exactly as it was.
+        self.global_map = (self._load_or_default(GlobalMap, GlobalMap, load_episode)
+                           if global_map or global_map_shadow else None)
+        #: Shadow mode builds the same map for measurement but never shows it to the model, so a
+        #: run without the map can be scored exactly like a run with it.
+        self._show_global_map = global_map
 
         if not resume:
             self.start_episode = 0
@@ -337,9 +348,88 @@ class PokemonStrategist:
     # The strategist's own calls
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Global map (--global_map)
+    # ------------------------------------------------------------------
+
+    def _mapped_env(self):
+        """The environment handed to the supervisor: wrapped so every step updates the map."""
+        if self.global_map is None:
+            return self._env
+        return MappingEnvironment(self._env, self.global_map, self.tiles, self._parameters)
+
+    def _map_opening_screen(self, frame: np.ndarray) -> None:
+        if self.global_map is None:
+            return
+        from gameboy_worlds.emulation.pokemon import AgentState
+        free = self._env.get_info()["pokemon_core"]["agent_state"] == AgentState.FREE_ROAM
+        self.global_map.on_step(frame, self._identified if free else {}, free)
+
+    def _failure_streak(self) -> Tuple[int, List[str]]:
+        """Episodes in a row, newest first, that did not complete, and their tasks."""
+        streak, failed = 0, []
+        for e in reversed(self.report.episodes):
+            if e.status == "completed":
+                break
+            streak += 1
+            failed.append(e.task)
+        return streak, failed
+
+    def _abandon_failing_plan(self, n: int) -> None:
+        """
+        When exploration takes over because the plan kept failing, drop the plan as well.
+
+        Exploring alone gets the player somewhere new, but the goal tree still points at what was
+        failing, so the strategist plans its way straight back. Abandon the generated part of the
+        current goal path, down from the deepest goal the game started with (those are never touched),
+        record why in the knowledge tree, and let the goal planner re-plan from there this episode.
+        Only with the map shown, so a shadow run stays a pure control, and once per trigger.
+        """
+        if self.global_map is None or not self._show_global_map:
+            return
+        until = getattr(self.global_map, "exploring_until", None)
+        if until is not None and n <= until:
+            return
+        streak, failed = self._failure_streak()
+        if streak < FAILURE_EPISODES:
+            return
+        frontier = self.goals.frontier()
+        if frontier is None:
+            return
+        path = self.goals.path_to(frontier)
+        generated = next((path[:i] for i in range(1, len(path) + 1)
+                          if self.goals.tree.at(path[:i]).root.source not in ("initial", "default")), None)
+        if generated is None:
+            return
+        top, leaf = self.goals.tree.at(generated).root.description, frontier.root.description
+        tasks = "; ".join(f'"{t}"' for t in list(dict.fromkeys(t for t in failed if t))[:3])
+        self.goals.set_status(generated, "abandoned",
+                              f"abandoned after {streak} failed episodes in a row ({tasks}); this approach "
+                              f"does not work from here", episode_number=n)
+        self._remember_all([f"The plan '{top}' (which came down to '{leaf}') failed {streak} episodes in a row "
+                            f"and was abandoned: that approach does not work from here, so do not plan it again."], n)
+        self.global_map.stats["plans_abandoned"] += 1
+        log_info(f"Global map: the plan {top!r} kept failing; abandoned it and re-planning.", self._parameters)
+
+    def _global_map_block(self) -> str:
+        if self.global_map is None or not self._show_global_map or not self.global_map.current:
+            return ""
+        local = cell_kinds(self._identified) if self._identified else None
+        streak, failed = self._failure_streak()
+        block, override = prompt_block(self.global_map, list(self.global_map.new_cells_by_episode), local,
+                                       failure_streak=streak,
+                                       episode=self.start_episode + self._episodes_run,
+                                       failed_tasks=failed)
+        self.last_map_override = override
+        if override is not None:
+            log_info(f"Global map: nothing new for a while, so exploration overrides the task: head "
+                     f"to ({override['dx']}, {override['dy']}) {override['sector']}.", self._parameters)
+        return "\n\n" + block
+
     def _dispatch(self, frame: np.ndarray) -> Tuple[Optional[str], Optional[str]]:
         prompt = (self._fill(P.DISPATCH_PROMPT)
-                  .replace("[SCREEN_TILES]", self._screen_tiles or "(nothing was recognised)"))
+                  .replace("[SCREEN_TILES]", self._screen_tiles or "(nothing was recognised)")
+                  .replace("[GLOBAL_MAP]", self._global_map_block()))
         dispatched = ask(self._vlm_caller("dispatch"), prompt, _parse_dispatch, "Dispatch",
                          self.MAX_DISPATCH_ATTEMPTS, self._parameters, images=[frame])
         return dispatched if dispatched is not None else (None, None)
@@ -391,7 +481,10 @@ class PokemonStrategist:
     # ------------------------------------------------------------------
 
     def save_all(self, episode_number: int) -> None:
-        for artifact in (self.tiles, self.goals, self.locations, self.knowledge, self.notepad):
+        artifacts = [self.tiles, self.goals, self.locations, self.knowledge, self.notepad]
+        if self.global_map is not None:
+            artifacts.append(self.global_map)
+        for artifact in artifacts:
             artifact.save(self._dir, episode_number, parameters=self._parameters)
         self._env.save_custom_state(self._emulator_state_name(self._name, episode_number))
 
@@ -465,9 +558,11 @@ class PokemonStrategist:
         calls_from = len(self.report.event_log)
         frame = self._current_frame()
         self._perceive(frame, n)
+        self._map_opening_screen(frame)
         if self.current_location is None:
             locate(self.locations, frame, self._screen_tiles, self._identified, self._vlm_caller, self._game, n,
                    self._parameters)
+        self._abandon_failing_plan(n)
         self._plan_goals(n)
         task, guidance = self._dispatch(frame)
 
@@ -481,7 +576,7 @@ class PokemonStrategist:
             return record
 
         supervisor = PokemonPlayThroughSupervisor(
-            task=task, env=self._env, game=self._game, max_steps=self._supervisor_max_steps,
+            task=task, env=self._mapped_env(), game=self._game, max_steps=self._supervisor_max_steps,
             tile_recognizer=self.tiles, episode_number=n, guidance=guidance, parameters=self._parameters,
             max_new_tokens=self._supervisor_max_new_tokens,
             **self._supervisor_kwargs,
@@ -526,6 +621,11 @@ class PokemonStrategist:
         save_episode_report(self._dir, record.n, archive, self._parameters)
 
     def _finish_episode(self, record: EpisodeRecord, calls_from: int = 0) -> None:
+        if self.global_map is not None:
+            self.global_map.refresh(self.tiles._by_hash)
+            added = self.global_map.end_episode(record.n, episode_number=record.n)
+            log_info(f"Global map: {added} new squares this episode, {self.global_map.n_cells} in all, "
+                     f"{self.global_map.n_areas} area(s).", self._parameters)
         self.save_all(record.n)
         self._archive_episode(record, calls_from)
         if self._on_episode_complete is not None:
