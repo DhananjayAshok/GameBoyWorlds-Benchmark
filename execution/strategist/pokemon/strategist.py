@@ -26,7 +26,8 @@ from execution.strategist.pokemon.asking import ask, single_value
 from execution.strategist.pokemon.goals import (PokemonGoalTree, check_goals, create_subgoals, frontier_text,
                                                 goal_path_text)
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree, remember
-from execution.strategist.pokemon.location import LocationStore, Place, follow_transitions, locate, place_text
+from execution.strategist.pokemon.location import (FrameTail, LocationStore, Place, episode_frames, follow_transitions,
+                                                   locate, place_text, settle_screen)
 from execution.strategist.pokemon.notepad import ThoughtNotepad
 from execution.strategist.report import (REPORT_DETAILS, EpisodeArchive, EpisodeRecord, StrategistReport,
                                          StrategistVLMCallRecord, save_episode_report, trim_episode)
@@ -72,8 +73,6 @@ class PokemonStrategist:
     MAX_EXTRACT_ATTEMPTS = 2
     MAX_NOTEPAD_ATTEMPTS = 3
     MAX_FACTS = 15
-    TRANSITION_CONTEXT_FRAMES = 3
-    TRANSITION_FRAME_STRIDE = 30
 
     def __init__(
         self,
@@ -166,6 +165,8 @@ class PokemonStrategist:
             self._env.load_custom_state(
                 self._emulator_state_name(self._resume_run or name, self.start_episode - 1))
 
+        #: Recent frames carried between episodes, so a door warp split across two is still seen whole.
+        self._frame_tail = FrameTail()
         self._identified: Optional[Dict[Any, Any]] = None
         self._screen_tiles: Optional[str] = None
         #: Episodes run by *this* instance, which is what ``max_episodes`` bounds.
@@ -490,8 +491,10 @@ class PokemonStrategist:
         record.supervisor_report = report
         record.status = str(result.get("status", "unknown"))
         self.report.event_log.append(report)
-        follow_transitions(self.locations, report, self.tiles, self._vlm_caller, self._game, n,
-                           self.TRANSITION_CONTEXT_FRAMES, self.TRANSITION_FRAME_STRIDE, self._parameters)
+        # Let a mid-door-warp black screen clear, so the next task starts from the new place.
+        settled = settle_screen(self._env)
+        follow_transitions(self.locations, episode_frames(report) + settled, self._frame_tail, self.tiles,
+                           self._vlm_caller, self._game, n, self._parameters)
 
         before, frame = frame, self._current_frame()
         self._perceive(frame, n)
