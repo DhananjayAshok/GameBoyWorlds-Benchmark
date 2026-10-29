@@ -15,7 +15,7 @@ Your notepad:
 [NOTEPAD]
 
 The image is the current game screen. Here is what has been recognised on it:
-[SCREEN_TILES]
+[SCREEN_TILES][GLOBAL_MAP]
 
 Write one task for the player that moves them towards the goal. The player is competent but has no memory of anything before this moment, gets roughly [MAX_STEPS] actions, and can only walk, talk to people, use menus and fight battles. So the task must be something reachable from this screen in that budget: "walk into the Pokemon Center and heal your team", not "beat the next gym".
 
