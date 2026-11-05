@@ -75,7 +75,7 @@ def table(df: pd.DataFrame, floatfmt: str = "{:.2f}") -> str:
                 lambda v: "" if pd.isna(v) else floatfmt.format(v)
             )
         else:
-            formatted[col] = formatted[col].astype(str)
+            formatted[col] = formatted[col].map(lambda v: "" if v is None else str(v))
     header = "| " + " | ".join(str(c) for c in formatted.columns) + " |"
     sep = "| " + " | ".join("---" for _ in formatted.columns) + " |"
     rows = [

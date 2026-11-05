@@ -13,7 +13,7 @@ The player is at: [CURRENT]
 
 Your notepad:
 [NOTEPAD]
-
+[GUIDE]
 The image is the current game screen. Here is what has been recognised on it:
 [SCREEN_TILES][GLOBAL_MAP]
 
@@ -32,12 +32,19 @@ REVIEW_PROMPT = """You are playing [GAME] and are the strategist. One episode ha
 Here is the player's report of the episode:
 [DIGEST]
 
-Write one line summarising the episode for your own log.
+Write one line summarising the episode for your own log.[TOWN_QUESTION]
 
 Respond in exactly this format:
 Reasoning: <what actually happened and what it means>
-Summary: <one sentence>
+Summary: <one sentence>[TOWN_FORMAT]
 [STOP]"""
+
+REVIEW_TOWN_QUESTION = """
+
+New doors appeared on your map this episode. Say whether the player reached a town or city this episode that it had never been to before; a route, a cave or a building is not a town. Towns and cities the player has already reached: [TOWNS]."""
+
+REVIEW_TOWN_FORMAT = """
+Town: <the name of the town or city reached for the first time this episode, or None>"""
 
 KNOWLEDGE_EXTRACT_PROMPT = """You are playing [GAME] and are the strategist. One episode has just finished, and you keep a database of what you know about the game.
 
@@ -128,59 +135,6 @@ Choose up to [MAX_BRANCHES] entries that are most likely to hold something relev
 Respond in exactly this format:
 Reasoning: <which entries could be relevant and why>
 Choice: <the numbers of at most [MAX_BRANCHES] relevant entries, separated by commas, or NOT FOUND>
-[STOP]"""
-
-PLACE_KINDS_BLOCK = """Places come in three kinds:
-Major: a town, city or route, the places the game's own town map names.
-Bridge: a place whose purpose is to connect major locations, such as a gatehouse between a route and a town, a cave or a tunnel.
-Internal: a room inside a major location, such as a Pokemon Center, a shop, a gym or a house. Each floor of a building is its own room. Give the major location it is inside as its parent.
-
-The places you already know:
-[KNOWN]
-
-If the place is one of these, use its name and kind exactly as written. Otherwise give it the name the game uses for it, or a short descriptive name if the game does not show one."""
-
-LOCATE_PROMPT = """You are playing [GAME] and are the strategist. You keep a map of the places the player has been, and you do not currently know where the player is.
-
-The image is the current game screen. Here is what has been recognised on it:
-[SCREEN_TILES]
-
-""" + PLACE_KINDS_BLOCK + """ If the screen does not show a place at all (a battle, a menu, dialogue covering the view, a black screen), write Unknown.
-
-Respond in exactly this format:
-Reasoning: <what the screen shows and which place it is>
-Kind: <Major, Bridge, Internal or Unknown>
-Name: <the place's name, or None if Unknown>
-Parent: <for Internal, the major location it is inside; otherwise None>
-[STOP]"""
-
-TRANSITION_CHECK_PROMPT = """You are playing [GAME] and are the strategist. While the player was playing, the screen went black for a moment. The first [N_BEFORE] images are the screen before it went black, oldest first, and the last [N_AFTER] images are the screen after, oldest first.
-
-Decide whether the player moved to a different place: through a door into or out of a building, up or down stairs, into or out of a cave or gatehouse, or to another town or route.
-
-Only a move to a different place counts. These do not: a battle starting or ending, a menu, the Pokemon or item screens opening or closing, dialogue, a screen flash, or a cutscene that ends back where it started. If the screen after the black shows the same place as before it, answer No.
-
-Respond in exactly this format:
-Reasoning: <what the screens before and after show>
-Transition: <Yes or No>
-[STOP]"""
-
-TRANSITION_NAME_PROMPT = """You are playing [GAME] and are the strategist. You keep a map of the places the player has been. The player has just moved from one place to another, and the screen went black in between. The first [N_BEFORE] images are the screen before, oldest first, and the last [N_AFTER] images are the screen after, oldest first.
-
-The player was in: [PREVIOUS]
-Places already known to connect to it: [CONNECTED]
-
-""" + PLACE_KINDS_BLOCK + """ If the screen after does not show enough to tell where the player is, write Unknown.
-
-Then say how the player got from the previous place to this one, and whether the same way leads back.
-
-Respond in exactly this format:
-Reasoning: <what the screens show and which place the player is in now>
-Kind: <Major, Bridge, Internal or Unknown>
-Name: <the place's name, or None if Unknown>
-Parent: <for Internal, the major location it is inside; otherwise None>
-How: <how the player got here from the previous place, e.g. "through the door at the top of the building", or None>
-Two-way: <Yes if the same way leads back, No if it does not or you cannot tell>
 [STOP]"""
 
 RETRY_BLOCK = """
@@ -342,6 +296,128 @@ Reasoning: <what this episode changes about your notes>
 Action: <APPEND or REWRITE>
 Notes:
 <the notes to append, or the whole new notepad>
+[STOP]"""
+
+SEGMENT_NAME_PROMPT = """You are playing [GAME] and are the strategist. You keep a map of everything the player has seen, made of separate areas: an area is ground the player walked around in, and the player leaves it through a door, stairs, a cave entrance or anything else that makes the screen go black. [SITUATION]
+
+The image is the whole of that area as seen so far, stitched together from the screens: the blue line is the path the player walked, [MARK_IMAGE]numbered boxes are doors and stairs. Here it is as text too, north up, one character per step[MARK_TEXT]:
+[MAP]
+Legend: [LEGEND]
+
+The tasks you gave the player recently, oldest first:
+[TASKS]
+
+[STEPS_TITLE], oldest first:
+[STEPS]
+
+Other areas you have already named:
+[NAMED]
+
+[ASK] Use the name the game gives it if a sign, the town map or dialogue said so; otherwise a short descriptive name, such as "Pewter City Pokemon Center" or "the cave north of Route 3". Name the whole area, not one building in it. If this area is part of a place you have already named, such as another floor of the same building or another part of the same town, make that clear in its name. The description is for finding your way back later: what kind of place it is, how it is laid out, its notable buildings, people and objects, and its exits.
+
+Also say what kind of area it is: outdoors (a town, city or route under the open sky), building (any floor inside a building, such as a house, a Pokemon Center, a shop, a gym, a lab or a gatehouse), or cave (a cave, forest, tunnel or other enclosed place that is not a building).
+
+Respond in exactly this format:
+Reasoning: <what the map and the player's steps show about this area>
+Name: [NAME_FORMAT]
+Description: [DESCRIPTION_FORMAT]
+Kind: <outdoors, building or cave>
+[STOP]"""
+
+MERGE_JUDGE_PROMPT = """You are playing [GAME] and are the strategist. You keep a map of everything the player has seen, made of separate areas: an area is ground the player walked around in, and the player leaves it through a door, stairs, a cave entrance or anything else that makes the screen go black. Sometimes the player comes back to a place and the map does not recognise it, so the same place ends up as two areas. Other times two different places simply look alike: the floors of one house, or the same kind of building in two towns.
+
+Two areas on your map look alike:
+Area A, "[NAME_A]": [DESCRIPTION_A]
+Its doors and stairs: [DOORS_A]
+Area B, "[NAME_B]": [DESCRIPTION_B]
+Its doors and stairs: [DOORS_B]
+
+The names and descriptions were written when each area was first seen and can be wrong, so trust the images over them.
+
+The first image is area A and the second is area B, each as seen so far; numbered boxes are doors and stairs. The third image lays B over A where they line up best: squares outlined green look the same in both and squares outlined red look different. Squares tinted blue were seen only in B, and squares with neither an outline nor a tint were seen only in A: what one area shows where the other has never looked is not a difference, since that part of the other area is simply unexplored. Lined up this way they share [SHARED] squares and [MATCHES] of them look the same. People move around, so a person standing in a different place is not a difference; furniture, walls, buildings and the shape of the ground are.
+
+Are A and B the same place seen twice, or two different places that look alike? If they are the same place they will be joined into one area named "[NAME_A]".
+
+Respond in exactly this format:
+Reasoning: <what in the images and descriptions shows whether they are one place or two>
+Decision: <SAME or DIFFERENT>
+[STOP]"""
+
+STUCK_PROMPT = """You are playing [GAME] and are the strategist: each episode you set the player one task. Lately [SIGNS].
+
+That can mean you are stuck: going round in circles, trying the same thing that keeps failing, or looking for the way on in the wrong place. But it can also be normal progress that is simply slow: a long conversation, a cutscene, choosing from a menu, a battle, or a task that needs several episodes in one place. Only being stuck calls for a change of approach.
+
+You are in [AREA]. Your map has [AREAS] separate area(s) so far. The image is the screen now.
+
+Your recent episodes, oldest first, with their tasks, how they ended and what happened:
+[EPISODES]
+
+Are you stuck? If you answer YES, your next few tasks will be to explore the parts of this area you have not seen yet, instead of what you have been trying.
+
+Respond in exactly this format:
+Reasoning: <what the recent episodes show: steady progress, or the same failure again and again>
+Stuck: <YES or NO>
+[STOP]"""
+
+DEFEAT_REFLECTION_PROMPT = """You are playing [GAME] and are the strategist. The player has just LOST a battle: all of their Pokemon fainted and they blacked out, which sends them back to the last Pokemon Center they used with their Pokemon healed and some of their money gone. The episode ended there.
+
+The task you had set for the episode: [TASK]
+Your current goal: [GOAL]
+Where the battle happened: [WHERE]
+
+The player's report of the episode:
+[DIGEST]
+
+The battle, as the player fought it:
+[BATTLE]
+
+The first image is the battle screen when the player started fighting it, the second is the last battle screen before the defeat.
+
+You keep battle tips: short rules shown to the player at the start of every battle and on every turn of it. Your battle tips now:
+[TIPS]
+
+Think about why this battle was lost: the opponent was too strong for the player's team, the player's Pokemon were already hurt when it started, the wrong moves were chosen, a Pokemon should have been switched or healed, or something else. Then decide:
+1. What went wrong, in one or two sentences.
+2. Whether to change your battle tips, so the next battle goes better. A good tip is short and worth following in every battle, not just against this opponent. You may keep at most [MAX_TIPS] tips.
+3. Whether the current goal can simply be tried again as it is (CONTINUE), or the player must first do something else to get ready for it (PREPARE), such as training their Pokemon in nearby grass, buying Potions, healing before setting out, or catching another Pokemon. A PREPARE step is added to your goals before the current one.
+4. Whether the player should go back to where the battle happened (YES), for example because a trainer or gym leader there still blocks the way, or not (NO), for example because it was a wild Pokemon on a route.
+
+Respond in exactly this format:
+Reasoning: <why the battle was lost, and what that means for what to do next>
+Wrong: <what went wrong, in one or two sentences>
+Change: <ADD | <tip>, or EDIT | <number> | <new tip>, or REMOVE | <number>>
+(at most [MAX_CHANGES] `Change:` lines, or instead the single line `Change: NONE`; only tips marked yours can be edited or removed)
+Plan: <CONTINUE, or PREPARE | <the step to add before the current goal>>
+Return: <YES or NO>
+[STOP]"""
+
+DEFEAT_RETURN_LINE = "You lost a battle in episode [EPISODE] at [WHERE] You decided the player should go back there once ready."
+
+SEGMENT_NAME_NEW = "Name the area and describe it."
+SEGMENT_NAME_REVIEW = """You named this area "[NAME]" and described it as: [DESCRIPTION]
+Its map has grown from about [BEFORE] to [AFTER] squares since then, so look again. Keep the name and description if they still fit, by answering UNCHANGED. Change them only if the larger map shows the area better: for example if the name was for one building or corner and the area turns out to be a whole town, or the name is wrong."""
+
+GUIDE_UPDATE_PROMPT = """You are playing [GAME] and are the strategist. You keep a strategy guide: short rules you follow every time something particular happens in the game. Each rule is shown to you again whenever its trigger happens, so a good rule is one that will be worth following every time, in any town, not just this once.
+
+The triggers are: [TRIGGERS].
+
+Your strategy guide now:
+[RULES]
+
+In the episode that just finished:
+[EVENTS]
+
+Here is the player's report of the episode:
+[DIGEST]
+
+Decide whether this episode taught you something that belongs in the guide: a habit worth having every time the player enters or leaves a building, or one of your own rules that turned out wrong or could be said better. Most episodes teach nothing new, and then the answer is NONE. Never add a rule that repeats one already there.
+
+Respond in exactly this format:
+Reasoning: <what this episode shows about entering or leaving buildings>
+Change: ADD | <trigger> | <the rule, one sentence>
+Change: EDIT | <number of one of your rules> | <the rewritten rule>
+Change: REMOVE | <number of one of your rules>
+(at most [MAX_CHANGES] `Change:` lines, or instead the single line `Change: NONE`)
 [STOP]"""
 
 NOTEPAD_EXTRACT_PROMPT = """You are playing [GAME] and are the strategist. You have just finished with these goals:

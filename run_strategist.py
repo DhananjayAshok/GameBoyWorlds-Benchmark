@@ -73,12 +73,8 @@ DEFAULT_ENV_MAX_STEPS = 1_000_000
               help="The Pokemon executors act through state-wise actions, not low-level "
                    "button presses.")
 @click.option("--save_video", default=True, show_default=True, type=bool)
-@click.option("--global_map/--no_global_map", default=False, show_default=True,
-              help="Build a global grid map from every screen seen and show the strategist where it "
-                   "has not been yet. Off reproduces the strategist exactly as before.")
-@click.option("--global_map_shadow", is_flag=True, default=False,
-              help="Build the global map for measurement only; the strategist never sees it. "
-                   "The control arm of a with/without comparison.")
+@click.option("--override_goal", default=None, type=str,
+              help="On a fresh run, replace the default goal tree with this single goal; subgoals are planned under it.")
 @click.option("--resume_run", default=None, type=str,
               help="Fork another run's latest state (artifacts and emulator save) into --name and "
                    "continue from it, e.g. to recreate a failure from a past playthrough.")
@@ -90,7 +86,7 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
          supervisor_vlm_model, supervisor_vlm_kind, executor_vlm_model, executor_vlm_kind,
          max_episodes, supervisor_max_steps, env_max_steps, strategist_max_new_tokens,
          supervisor_max_new_tokens, subgoal_every, report_detail, controller_variant, save_video,
-         global_map, global_map_shadow, resume_run, resume):
+         override_goal, resume_run, resume):
     """Play one long-horizon playthrough with the strategist."""
     parameters = load_parameters()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -133,8 +129,7 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
             report_detail=report_detail,
             resume=resume,
             resume_run=resume_run,
-            global_map=global_map,
-            global_map_shadow=global_map_shadow,
+            override_goal=override_goal,
             parameters=parameters,
             # Forwarded to each episode's PokemonPlayThroughSupervisor, which forwards the
             # vlm_* pair on to every executor it spawns.

@@ -1,0 +1,6 @@
+- trigger: entered building
+  rule: Talk to every person in this building you have not spoken to yet, and read every sign or notice you have not read yet, before leaving.
+- trigger: entered new town
+  rule: Visit the Pokemon Center.
+- trigger: entered building
+  rule: If this is a Pokemon Center and your Pokemon have taken any damage, heal them at the counter before doing anything else.

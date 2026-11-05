@@ -1,5 +1,5 @@
 """
-Shared persistence for the strategist's state: goals, locations, knowledge and tiles are
+Shared persistence for the strategist's state: goals, knowledge, tiles, the global map and the guide are
 each one artifact, checkpointed per episode under the same strategist directory.
 """
 

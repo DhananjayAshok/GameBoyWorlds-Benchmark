@@ -14,7 +14,7 @@ from execution.pokemon.executors import (CombatExecutor, DialogueExecutor, FreeE
                                          OffScreenMoveExecutor, OnScreenMoveExecutor)
 from execution.pokemon.prompts import (PLAYTHROUGH_ACHIEVABLE_PROMPT, PLAYTHROUGH_AFTER_BLOCK,
                                        PLAYTHROUGH_ATTEMPTS_BLOCK,
-                                       PLAYTHROUGH_BATTLE_INSTRUCTIONS_PROMPT,
+                                       PLAYTHROUGH_BATTLE_INSTRUCTIONS_PROMPT, PLAYTHROUGH_BATTLE_TIPS_BLOCK,
                                        PLAYTHROUGH_CLARIFY_TARGET_PROMPT, PLAYTHROUGH_GUIDANCE_BLOCK,
                                        PLAYTHROUGH_JUDGE_PROMPT, PLAYTHROUGH_LOG_BLOCK,
                                        PLAYTHROUGH_MENU_OBJECTIVE_PROMPT, PLAYTHROUGH_PLAN_PROMPT,
@@ -91,9 +91,11 @@ class PokemonPlayThroughSupervisor(Supervisor):
 
     def __init__(self, task: str, env, game: str, max_steps: int,
                  tile_recognizer: TileRecognizer, episode_number: int, guidance: Optional[str] = None,
-                 **kwargs: Any) -> None:
+                 battle_tips: Optional[List[str]] = None, **kwargs: Any) -> None:
         self._current_tag: Optional[str] = None
         self._guidance = guidance
+        self._battle_tips = list(battle_tips or [])
+        self._losses_at_start = env.get_info()["pokemon_core"].get("n_battles_lost", 0)
         self._tile_recognizer = tile_recognizer
         self._episode_number = episode_number
         self._screen_tiles: Optional[str] = None
@@ -108,6 +110,7 @@ class PokemonPlayThroughSupervisor(Supervisor):
     def _run_config(self) -> dict:
         config = super()._run_config()
         config["guidance"] = self._guidance
+        config["battle_tips"] = list(self._battle_tips)
         config["tile_recognizer"] = self._tile_recognizer.name
         config["episode_number"] = self._episode_number
         config["max_executor_calls"] = self._max_steps
@@ -329,14 +332,26 @@ class PokemonPlayThroughSupervisor(Supervisor):
             objective = instruction
         return objective.strip().strip("\"'"), bool(parse_yes_no(output, "Start menu"))
 
+    def _tips_text(self) -> str:
+        return "\n".join(f"- {tip}" for tip in self._battle_tips)
+
     def _battle_instructions(self, frame) -> str:
+        tips = PLAYTHROUGH_BATTLE_TIPS_BLOCK.replace("[TIPS]", self._tips_text()) if self._battle_tips else ""
         output = self._vlm_call("battle_instructions",
-                                texts=self._fill_prompt(PLAYTHROUGH_BATTLE_INSTRUCTIONS_PROMPT),
+                                texts=self._fill_prompt(PLAYTHROUGH_BATTLE_INSTRUCTIONS_PROMPT)
+                                .replace("[BATTLE_TIPS_BLOCK]", tips),
                                 images=[frame])
         instructions = (parse_key_value(output, "Instructions") or "").strip().strip("\"'")
         if not instructions or instructions.lower() == "none":
             return "win the current battle"
         return instructions
+
+    def _combat(self, instructions: str) -> Any:
+        task = instructions + (f"\nYour battle tips:\n{self._tips_text()}" if self._battle_tips else "")
+        return self.call_executor("combat", task)
+
+    def _battles_lost(self) -> int:
+        return self._env.get_info()["pokemon_core"].get("n_battles_lost", 0) - self._losses_at_start
 
     # ------------------------------------------------------------------
     # Running one action
@@ -361,9 +376,9 @@ class PokemonPlayThroughSupervisor(Supervisor):
         elif tag == "menu":
             task, is_start_menu = self._menu_objective(task, frame)
             result = self.call_executor(tag, task, is_start_menu=is_start_menu)
-        elif tag == "combat" and argument is None:
-            task = self._battle_instructions(frame)
-            result = self.call_executor(tag, task)
+        elif tag == "combat":
+            task = argument or self._battle_instructions(frame)
+            result = self._combat(task)
         elif tag == "free":
             task, termination = split_free_argument(task)
             result = self.call_executor(tag, task, termination=termination)
@@ -381,7 +396,7 @@ class PokemonPlayThroughSupervisor(Supervisor):
         if state == AgentState.IN_DIALOGUE:
             handled = self.call_executor("dialogue", "clear the dialogue that interrupted what the player was doing")
         elif state == AgentState.IN_BATTLE:
-            handled = self.call_executor("combat", self._battle_instructions(frame))
+            handled = self._combat(self._battle_instructions(frame))
         elif state == AgentState.IN_MENU:
             objective, is_start_menu = self._menu_objective(
                 "deal with the menu that opened while the player was doing something else", frame)
@@ -420,6 +435,11 @@ class PokemonPlayThroughSupervisor(Supervisor):
             action, argument = decision
             result, task = self._run_action(action, argument, frame)
             request = f"{action}({task})"
+            if self._battles_lost():
+                note = f"{request}: the player lost a battle and blacked out"
+                self._note(note)
+                attempts.append(note)
+                return "lost_battle", attempts
 
             if self._env_done():
                 note = f"{request} used up the last of the environment's steps"
@@ -433,6 +453,9 @@ class PokemonPlayThroughSupervisor(Supervisor):
                         f"dealt with it ({handled['reason']})")
                 self._note(note)
                 attempts.append(note)
+                if self._battles_lost():
+                    self._note("the player lost a battle and blacked out")
+                    return "lost_battle", attempts
                 continue
 
             if not result["succeeded"]:
@@ -526,6 +549,9 @@ class PokemonPlayThroughSupervisor(Supervisor):
 
             if outcome == "out_of_calls":
                 return self._finish("out_of_calls", f"Used all {self._max_steps} executor calls.")
+
+            if outcome == "lost_battle":
+                return self._finish("lost_battle", "The player lost a battle and blacked out.")
 
             if replans >= self.MAX_REPLANS:
                 return self._finish("stuck", f"Could not achieve: {subgoal}")

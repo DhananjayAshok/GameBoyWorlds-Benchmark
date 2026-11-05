@@ -12,7 +12,6 @@ from execution.artifact import StrategistArtifact, update
 from execution.strategist.pokemon import prompts as P
 from execution.strategist.pokemon.asking import Parser, ask, field_values, single_value
 from execution.strategist.pokemon.knowledge import KnowledgeTree, recall
-from execution.strategist.pokemon.location import LocationStore, explore, majors_on, navigate, place_text
 from utils import log_error, log_warn
 from utils.lm_inference import clean_value
 
@@ -300,18 +299,6 @@ def _routes_text(routes: List[Tuple[str, Optional[str]]]) -> str:
                        for request, found in routes)
 
 
-def _explore_text(locations: LocationStore) -> str:
-    lines = []
-    for candidate in explore(locations):
-        hops = candidate["route"]
-        if hops is None:
-            way = "no known route from here"
-        else:
-            way = "route: " + (" -> ".join(majors_on(hops)) or "you are here")
-        lines.append(f"- {place_text(candidate['place'])}: {candidate['reason']}; {way}")
-    return "\n".join(lines) or "(none)"
-
-
 def _goal_prompt(template: str, game: str, path: GoalPath, subtree: GoalSubtree, notepad: str) -> str:
     return (template.replace("[GAME]", game)
             .replace("[GOAL]", _goal_text(path, subtree))
@@ -431,10 +418,9 @@ def _parse_decision(choices: Tuple[str, ...], siblings: List[str]) -> Parser:
 # ----------------------------------------------------------------------------
 
 
-def create_subgoals(goals: GoalTree, knowledge: KnowledgeTree, locations: LocationStore, notepad: str,
-                    vlm_caller: VLMCaller, game: str, episode_number: int, unsuccessful_for: int = 0,
-                    parameters: Optional[dict] = None) -> None:
-    current = place_text(locations.current)
+def create_subgoals(goals: GoalTree, knowledge: KnowledgeTree, current: str, explore: str, notepad: str,
+                    navigator: Callable[[str], Optional[str]], vlm_caller: VLMCaller, game: str,
+                    episode_number: int, unsuccessful_for: int = 0, parameters: Optional[dict] = None) -> None:
     routes: List[Tuple[str, Optional[str]]] = []
     for step in range(MAX_SUBGOAL_STEPS):
         subtree = goals.frontier()
@@ -442,7 +428,7 @@ def create_subgoals(goals: GoalTree, knowledge: KnowledgeTree, locations: Locati
             return
         path = goals.path_to(subtree)
         extras = (_children_block(subtree) + _unsuccessful_block(unsuccessful_for if step == 0 else 0))
-        allow_routes = step == 0 and locations.current is not None
+        allow_routes = step == 0
 
         prompt = (_goal_prompt(P.SUBGOAL_QUERY_PROMPT, game, path, subtree, notepad)
                   .replace("[EXTRAS]", extras)
@@ -462,15 +448,14 @@ def create_subgoals(goals: GoalTree, knowledge: KnowledgeTree, locations: Locati
         for query in queries:
             for entry in recall(knowledge, query, vlm_caller("subgoal_recall"), game, parameters):
                 found.setdefault(entry["path"], entry)
-        for request in requests:
-            routes.append((request, navigate(locations, request, vlm_caller, game, parameters)))
+        routes += [(request, navigator(request)) for request in requests]
 
         prompt = (_goal_prompt(P.SUBGOAL_CREATE_PROMPT, game, path, subtree, notepad)
                   .replace("[EXTRAS]", extras)
                   .replace("[KNOWLEDGE]", _knowledge_text(queries, found))
                   .replace("[CURRENT]", current)
                   .replace("[ROUTES]", _routes_text(routes))
-                  .replace("[EXPLORE]", _explore_text(locations)))
+                  .replace("[EXPLORE]", explore))
         taken = [path[-1]] + [child.root.description for child in subtree.subtrees]
         subgoals = ask(vlm_caller("subgoal_create"), prompt, _parse_subgoals(taken), "Subgoal creation",
                        GOAL_ATTEMPTS, parameters)
@@ -506,8 +491,8 @@ def check_goals(goals: GoalTree, digest: str, notepad: str, vlm_caller: VLMCalle
             log_warn(f"No usable completion check for {path[-1]!r}; treating it as not achieved.", parameters)
             achieved = False
         if not achieved:
-            if not checked_active and _decide(goals, path, subtree, digest, notepad, vlm_caller, game,
-                                              episode_number, parameters):
+            if not checked_active and subtree.root.source != "override" and _decide(
+                    goals, path, subtree, digest, notepad, vlm_caller, game, episode_number, parameters):
                 closed.append((path, "abandoned"))
             return closed
         goals.set_status(path, "complete", episode_number=episode_number)

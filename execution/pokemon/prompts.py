@@ -179,10 +179,15 @@ Objective: <one sentence, specific>
 Start menu: <yes or no>
 [STOP]"""
 
+PLAYTHROUGH_BATTLE_TIPS_BLOCK = """
+Your battle tips, learned from earlier battles; follow them where they apply:
+[TIPS]
+"""
+
 PLAYTHROUGH_BATTLE_INSTRUCTIONS_PROMPT = """You are playing [GAME] and a battle has just started.
 
 Your task: "[TASK]"
-[GUIDANCE_BLOCK]
+[GUIDANCE_BLOCK][BATTLE_TIPS_BLOCK]
 The image is the current battle screen.
 
 Say how this battle should be fought, for whoever gives the orders in it. Keep it short: which Pokemon to use, which kind of move to favour, whether to try to run, or whether to just win normally. Answer None if there is nothing special to say and the battle should simply be won.

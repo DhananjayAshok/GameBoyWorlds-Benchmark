@@ -1,13 +1,11 @@
+import functools
 import math
 import os
+import re
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import click
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import networkx as nx
+import cv2
 import numpy as np
 import pandas as pd
 from PIL import Image, ImageDraw
@@ -16,36 +14,38 @@ from debug_scripts import markdown as md
 from debug_scripts.benchmark import _storage_link
 from debug_scripts.frames import _FONT, to_pil
 from execution.perception.pokemon.tiles import TileRecognizer
+from execution.strategist.pokemon.global_map import GlobalMap, render_segment, segment_bounds
 from execution.strategist.pokemon.goals import PokemonGoalTree
+from execution.strategist.pokemon.guide import StrategyGuide
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree
-from execution.strategist.pokemon.location import (MAX_IDENTITY_IMAGES, LocationStore, explore,
-                                                   majors_on, place_text)
 from execution.strategist.pokemon.notepad import ThoughtNotepad
+from execution.strategist.report import episode_report_path, load_episode_report
 from python_scripts.paths import debug_dir, debug_frames_dir, strategist_dir
 from utils import log_error, log_info
 from utils.fundamental import depathify
 
 ARTIFACTS = {
     "goals": PokemonGoalTree,
-    "locations": LocationStore,
     "knowledge": PokemonKnowledgeTree,
     "tiles": TileRecognizer,
     "notepad": ThoughtNotepad,
+    "globalmap": GlobalMap,
+    "guide": StrategyGuide,
 }
-TITLES = {"goals": "Goals", "locations": "Locations", "knowledge": "Knowledge", "tiles": "Tiles",
-          "notepad": "Thought notepad"}
+TITLES = {"goals": "Goals", "knowledge": "Knowledge", "tiles": "Tiles",
+          "notepad": "Thought notepad", "globalmap": "Global map", "guide": "Strategy guide"}
+OPTIONAL = {"globalmap", "guide"}
 
 TILE_SCALE = 6
 IMAGE_SCALE = 2
-NODE_COLOURS = {"major": "#8cb6d9", "bridge": "#b5d99c", "room": "#f2d492", "unknown": "#cccccc"}
-HIGHLIGHT = "#e4572e"
 
 
 class Report:
-    def __init__(self, report_dir: str, images_dir: str, overwrite: bool) -> None:
+    def __init__(self, report_dir: str, images_dir: str, overwrite: bool, run_dir: str) -> None:
         self.report_dir = report_dir
         self.images_dir = images_dir
         self.overwrite = overwrite
+        self.run_dir = run_dir
 
     def image_path(self, *parts: str) -> str:
         path = os.path.join(self.images_dir, *parts)
@@ -62,13 +62,6 @@ class Report:
 # ----------------------------------------------------------------------------
 # Drawing
 # ----------------------------------------------------------------------------
-
-
-def save_image(report: Report, array: np.ndarray, path: str, scale: int = IMAGE_SCALE) -> str:
-    if report.fresh(path):
-        image = to_pil(array)
-        image.resize((image.width * scale, image.height * scale), Image.NEAREST).save(path)
-    return path
 
 
 def contact_sheet(report: Report, items: Sequence[Tuple[str, np.ndarray]], path: str,
@@ -94,38 +87,6 @@ def contact_sheet(report: Report, items: Sequence[Tuple[str, np.ndarray]], path:
     return path
 
 
-def draw_graph(report: Report, kinds: Dict[str, str], edges: List[Tuple[str, str, bool]], path: str,
-               title: str, highlight_nodes=(), highlight_edges=()) -> Optional[str]:
-    if not kinds:
-        return None
-    if not report.fresh(path):
-        return path
-    graph = nx.DiGraph()
-    graph.add_nodes_from(kinds)
-    for source, destination, two_way in edges:
-        graph.add_edge(source, destination)
-        if two_way:
-            graph.add_edge(destination, source)
-    highlight_nodes, highlight_edges = set(highlight_nodes), set(highlight_edges)
-    size = len(graph)
-    fig, ax = plt.subplots(figsize=(min(16, max(6, size * 1.2)), min(12, max(4, size * 0.8))))
-    pos = nx.spring_layout(graph, seed=0, k=2 / math.sqrt(size)) if size > 1 else {n: (0, 0) for n in graph}
-    nx.draw_networkx(
-        graph, pos, ax=ax, font_size=8, node_size=1800, arrows=True, arrowsize=14,
-        connectionstyle="arc3,rad=0.1",
-        node_color=[HIGHLIGHT if n in highlight_nodes else NODE_COLOURS.get(kinds[n], NODE_COLOURS["unknown"])
-                    for n in graph.nodes],
-        edge_color=[HIGHLIGHT if e in highlight_edges else "#555555" for e in graph.edges],
-        width=[2.5 if e in highlight_edges else 1.0 for e in graph.edges],
-    )
-    ax.set_title(title)
-    ax.set_axis_off()
-    fig.tight_layout()
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-    return path
-
-
 # ----------------------------------------------------------------------------
 # Formatting helpers
 # ----------------------------------------------------------------------------
@@ -139,63 +100,6 @@ def path_text(path: Tuple[str, ...]) -> str:
 def count_phrase(counts: List[Tuple[int, str]]) -> str:
     parts = [f"{n} {label}" for n, label in counts if n]
     return ", ".join(parts) if parts else "no change"
-
-
-def edge_text(source: str, destination: str, two_way: bool, description: Optional[str],
-              notes: Optional[str]) -> str:
-    text = f"{source} {'↔' if two_way else '→'} {destination}"
-    if description:
-        text += f" — {description}"
-    if notes:
-        text += f" _(notes: {notes})_"
-    return text
-
-
-def location_endpoints(t) -> Tuple[str, str]:
-    source = t.node_source_major + (f" ({t.node_source_internal})" if t.node_source_internal else "")
-    destination = t.node_destination_major + (f" ({t.node_destination_internal})" if t.node_destination_internal else "")
-    return source, destination
-
-
-def major_graph(store: LocationStore) -> Tuple[Dict[str, str], List[Tuple[str, str, bool]]]:
-    kinds = {name: "major" for name in store.majors}
-    kinds.update({name: "bridge" for name in store.bridges})
-    edges = []
-    for t in store.graph.transitions:
-        kinds.setdefault(t.node_source_major, "unknown")
-        kinds.setdefault(t.node_destination_major, "unknown")
-        edges.append((t.node_source_major, t.node_destination_major, t.two_way))
-    return kinds, edges
-
-
-def internal_graph(store: LocationStore, major: str) -> Tuple[Dict[str, str], List[Tuple[str, str, bool]]]:
-    kinds = {name: "room" for name in store.internals.get(major, {})}
-    edges = []
-    graph = store.internal_graphs.get(major)
-    for t in (graph.transitions if graph else []):
-        kinds.setdefault(t.node_source, "room")
-        kinds.setdefault(t.node_destination, "room")
-        edges.append((t.node_source, t.node_destination, t.two_way))
-    return kinds, edges
-
-
-def edge_keys(edges: List[Tuple[str, str, bool]]) -> set:
-    keys = set()
-    for source, destination, two_way in edges:
-        keys.add((source, destination))
-        if two_way:
-            keys.add((destination, source))
-    return keys
-
-
-def identity_images(report: Report, identity, name: str, episode: int, extra=None) -> str:
-    arrays = ([extra] if extra is not None else []) + list(identity.images[:MAX_IDENTITY_IMAGES])
-    embeds = [
-        report.img(name, save_image(report, array, report.image_path("locations", f"ep{episode}_{depathify(name)}_{i}.png")))
-        .strip()
-        for i, array in enumerate(arrays)
-    ]
-    return " ".join(embeds) + "\n" if embeds else ""
 
 
 # ----------------------------------------------------------------------------
@@ -293,83 +197,182 @@ def view_tiles(recognizer: TileRecognizer, report: Report, episode: int) -> Tupl
     return blocks, f"{len(recognizer.tiles)} tiles across {len(counts)} tags"
 
 
-def view_locations(store: LocationStore, report: Report, episode: int) -> Tuple[List[str], str]:
-    n_rooms = sum(len(rooms) for rooms in store.internals.values())
-    kinds, edges = major_graph(store)
-    graph_png = draw_graph(report, kinds, edges, report.image_path("locations", f"ep{episode}_world.png"),
-                           f"World graph, episode {episode}")
-    blocks = [
-        md.para(f"{len(store.majors)} major locations, {len(store.bridges)} bridges, {n_rooms} internal "
-                f"rooms, {len(store.graph.transitions)} transitions."),
-        md.para(f"Current location: **{place_text(store.current)}**"),
-        md.h2("World graph"),
-        report.img("world graph", graph_png) if edges or kinds else md.note("No locations recorded yet."),
-        md.para("Blue: major location. Green: bridge. Grey: named only by a transition."),
-        md.h2("Major locations"),
-        md.table(pd.DataFrame([
-            {"name": name, "internal rooms": len(store.internals.get(name, {})),
-             "tile signature": len(major.visual_identity.common_tiles),
-             "images": len(major.visual_identity.images), "map image": major.image_on_map is not None}
-            for name, major in store.majors.items()
-        ])),
-    ]
-    for name, major in store.majors.items():
-        embeds = identity_images(report, major.visual_identity, name, episode, extra=major.image_on_map)
-        if embeds:
-            blocks += [md.h3(name), embeds]
-    blocks += [
-        md.h2("Bridges"),
-        md.table(pd.DataFrame([
-            {"name": name, "accessible through": ", ".join(bridge.accessible_through),
-             "images": len(bridge.visual_identity.images)}
-            for name, bridge in store.bridges.items()
-        ])),
-        md.h2("Transitions"),
-        md.table(pd.DataFrame([
-            {"from": location_endpoints(t)[0], "to": location_endpoints(t)[1], "two-way": t.two_way,
-             "description": t.description or "", "notes": t.other_notes or ""}
-            for t in store.graph.transitions
-        ])),
-    ]
-    candidates = explore(store)
-    blocks.append(md.h2("Exploration candidates"))
-    if candidates:
-        blocks.append(md.bullets(
-            f"**{place_text(c['place'])}**: {c['reason']}; route: "
-            + (" → ".join(majors_on(c["route"])) or "you are here" if c["route"] is not None else "none known")
-            for c in candidates))
-    else:
-        blocks.append(md.note("No exploration candidates."))
-    majors_with_insides = sorted(set(store.internals) | set(store.internal_graphs))
-    if majors_with_insides:
-        blocks.append(md.h2("Inside each major location"))
-    for major in majors_with_insides:
-        room_kinds, room_edges = internal_graph(store, major)
-        blocks += [md.h3(major), md.bullets(store.internals.get(major, {}))]
-        if room_edges:
-            png = draw_graph(report, room_kinds, room_edges,
-                             report.image_path("locations", f"ep{episode}_inside_{depathify(major)}.png"),
-                             f"Inside {major}, episode {episode}")
-            blocks += [report.img(f"inside {major}", png),
-                       md.bullets(edge_text(s, d, two, t.description, t.other_notes)
-                                  for (s, d, two), t in zip(room_edges, store.internal_graphs[major].transitions))]
-        for name, room in store.internals.get(major, {}).items():
-            embeds = identity_images(report, room.visual_identity, f"{major} {name}", episode)
-            if embeds:
-                blocks += [md.para(f"**{name}**"), embeds]
-    return blocks, (f"{len(store.majors)} majors, {len(store.bridges)} bridges, {n_rooms} rooms, "
-                    f"{len(store.graph.transitions)} transitions")
-
-
 def view_notepad(notepad: ThoughtNotepad, report: Report, episode: int) -> Tuple[List[str], str]:
     n_lines = len(notepad.text.splitlines())
     blocks = [md.code(notepad.text) if notepad.text else md.note("The notepad is empty.")]
     return blocks, f"{notepad.length} words over {n_lines} lines"
 
 
+MAP_DIRECTION = re.compile(r"MUST be to walk to the unexplored edge at \((-?\d+), (-?\d+)\), (\d+) steps ([a-z-]+)")
+MAP_LEGEND = "Green: unexplored edge. Blue: trail. Red: the player."
+DOOR_LEGEND = "Numbered boxes are doors and stairs: cyan once the area behind is known, orange if not entered yet."
+
+
+def doors_table(gmap, doors) -> str:
+    return md.table(pd.DataFrame([
+        {"door": i, "squares": ", ".join(map(str, door["cells"])),
+         "leads to": (f"segment {door['leads_to']}: {gmap.area_label(door['leads_to'])}"
+                      if door["leads_to"] is not None else "not entered yet")}
+        for i, door in enumerate(doors)]))
+
+
+@functools.lru_cache(maxsize=None)
+def episode_brief(run_dir: str, episode: int) -> Tuple[str, str]:
+    if not os.path.exists(episode_report_path(run_dir, episode)):
+        return "", "no archived report"
+    archive = load_episode_report(run_dir, episode)
+    dispatch = [call for call in archive.strategist_calls if call.stage == "dispatch"]
+    match = MAP_DIRECTION.search(str(dispatch[-1].prompt)) if dispatch else None
+    direction = (f"map override: {match.group(3)} steps {match.group(4)} to the unexplored edge at "
+                 f"({match.group(1)}, {match.group(2)})" if match else "no map override")
+    return archive.episode.task or "", direction
+
+
+def map_image(report: Report, gmap: GlobalMap, segment: int, path: str, **kwargs) -> Optional[str]:
+    if report.fresh(path):
+        canvas = render_segment(gmap, segment, **kwargs)
+        if canvas is None:
+            return None
+        cv2.imwrite(path, canvas)
+    return path
+
+
+def map_replay(report: Report, gmap: GlobalMap, episode: int, n_frames: int = 120) -> Optional[str]:
+    si = gmap.segment
+    path = report.image_path("globalmap", f"ep{episode}_seg{si}_build.gif")
+    if not report.fresh(path):
+        return path
+    steps = [t for t, s, _ in gmap.trail if s == si]
+    bounds = segment_bounds(gmap, si)
+    if not steps or bounds is None:
+        return None
+    ends = sorted((GlobalMap.load(report.run_dir, n).step, n)
+                  for n in GlobalMap.saved_episodes(report.run_dir) if n <= episode)
+    seg = gmap.segments[si]
+    frames = []
+    for t in sorted(set(range(steps[0], steps[-1] + 1, max(1, (steps[-1] - steps[0]) // n_frames))) | {steps[-1]}):
+        canvas = render_segment(gmap, si, upto_step=t, bounds=bounds)
+        if canvas is None:
+            continue
+        ep = next((n for end, n in ends if t <= end), episode)
+        task, direction = episode_brief(report.run_dir, ep)
+        width = canvas.shape[1]
+        band = np.zeros((70, width, 3), np.uint8)
+        seen = sum(1 for c in seg.values() if c.first_seen <= t)
+        cv2.putText(band, f"episode {ep}   step {t}   squares mapped {seen}", (6, 18),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(band, direction[:width // 7], (6, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                    (0, 255, 255) if direction.startswith("map override") else (180, 180, 180), 1)
+        cv2.putText(band, ("task: " + task)[:width // 7], (6, 61), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                    (200, 200, 200), 1)
+        frames.append(Image.fromarray(cv2.cvtColor(np.vstack([band, canvas]), cv2.COLOR_BGR2RGB)))
+    if not frames:
+        return None
+    frames += [frames[-1]] * 15
+    frames[0].save(path, save_all=True, append_images=frames[1:], duration=120, loop=0, optimize=True)
+    return path
+
+
+def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[str], str]:
+    exploring = gmap.exploring_until
+    replay = map_replay(report, gmap, episode)
+    blocks = [
+        md.para(f"{gmap.n_cells} squares mapped in {gmap.n_areas} area(s) ({len(gmap.segments)} segments opened, "
+                f"{len(gmap.merged_into)} merged into an older one), over {gmap.step} steps."),
+        md.para(f"Player at {gmap.pos} in segment {gmap.segment}. "
+                + (f"Forced exploration until episode {exploring}." if exploring is not None and exploring >= episode
+                   else "Not in forced exploration.")),
+        md.h2("Build replay of the current segment"),
+        report.img("build replay", replay) if replay else md.note("The current segment is empty."),
+        md.para(MAP_LEGEND),
+        md.h2("Episodes"),
+        md.table(pd.DataFrame([
+            {"episode": n, "new squares": added, "task": episode_brief(report.run_dir, n)[0],
+             "map": episode_brief(report.run_dir, n)[1]}
+            for n, added in sorted(gmap.new_cells_by_episode.items())
+        ])),
+        md.h2("Segments"),
+    ]
+    live = [si for si, seg in enumerate(gmap.segments) if seg]
+    blocks.append(md.table(pd.DataFrame([
+        {"segment": si, "squares": len(gmap.segments[si]), "pixels": gmap.filled_pixels(si),
+         "pixels at last naming": gmap.info(si).named_pixels, "name": gmap.info(si).name or "(unnamed)",
+         "named in episode": gmap.info(si).episode, "fully explored since": gmap.info(si).explored,
+         "description": gmap.info(si).description or ""}
+        for si in live])))
+    blocks.append(md.para(MAP_LEGEND + " " + DOOR_LEGEND))
+    for si in live:
+        seg, info = gmap.segments[si], gmap.info(si)
+        png = map_image(report, gmap, si, report.image_path("globalmap", f"ep{episode}_seg{si}.png"), doors=True)
+        blocks += [md.h3(f"Segment {si}{' (current)' if si == gmap.segment else ''}: {gmap.place_label(si)}, "
+                         f"{info.kind or 'kind not known'}, {len(seg)} squares")]
+        if info.description:
+            blocks.append(md.para(info.description))
+        if info.aliases:
+            blocks.append(md.para("Also named, before merges: " + "; ".join(name for name, _ in info.aliases)))
+        blocks.append(report.img(f"segment {si}", png))
+        doors = gmap.door_list(si)
+        if doors:
+            blocks.append(doors_table(gmap, doors))
+    verdicts = gmap.merge_verdicts
+    if verdicts:
+        blocks += [md.h2("Merges judged"), verdicts_table(verdicts)]
+    blocks.append(md.h2("Counters"))
+    blocks.append(md.table(pd.Series(dict(gmap.stats), dtype=int).sort_index().rename_axis("counter")
+                           .reset_index(name="count")) if gmap.stats else md.note("No counters yet."))
+    return blocks, f"{gmap.n_cells} squares in {gmap.n_areas} area(s); at {gmap.pos} in segment {gmap.segment}"
+
+
+def verdicts_table(verdicts) -> str:
+    return md.table(pd.DataFrame([
+        {"segments": f"{a} and {b}", "names": " / ".join(v["names"]), "same place": v["same"],
+         "matching squares": v["matches"], "at step": v["step"]} for (a, b), v in sorted(verdicts.items())]))
+
+
+def rules_table(rules, guide: StrategyGuide) -> str:
+    return md.table(pd.DataFrame([
+        {"id": r.id, "trigger": r.trigger, "rule": r.text, "source": r.source, "created": r.created,
+         "updated": r.updated, "fired": guide.times_fired(r.id)} for r in rules]))
+
+
+def events_table(events) -> str:
+    return md.table(pd.DataFrame([
+        {"episode": e.episode, "trigger": e.trigger, "from": e.previous, "to": e.place,
+         "rules shown": ", ".join(map(str, e.rules)) or "none"} for e in events]))
+
+
+def stage_replies(run_dir: str, episodes, stage: str, label: str) -> List[str]:
+    blocks = []
+    for n in sorted(set(episodes)):
+        if not os.path.exists(episode_report_path(run_dir, n)):
+            continue
+        for call in load_episode_report(run_dir, n).strategist_calls:
+            if call.stage == stage:
+                blocks.append(md.details(f"Episode {n}: {label}", md.code(str(call.response))))
+    return blocks
+
+
+def guide_updates(run_dir: str, episodes) -> List[str]:
+    return stage_replies(run_dir, episodes, "guide_update", "guide update reply")
+
+
+def view_guide(guide: StrategyGuide, report: Report, episode: int) -> Tuple[List[str], str]:
+    blocks = [md.h2("Rules"), rules_table(guide.rules, guide) if guide.rules else md.note("No rules.")]
+    if guide.removed:
+        blocks += [md.h2("Removed rules"), rules_table(guide.removed, guide)]
+    blocks.append(md.h2("Triggers"))
+    blocks.append(events_table(guide.events) if guide.events else md.note("No trigger has fired yet."))
+    blocks += [md.h2("Towns reached"), md.para(", ".join(guide.towns) if guide.towns else "None yet.")]
+    updates = guide_updates(report.run_dir, (e.episode for e in guide.events))
+    if updates:
+        blocks += [md.h2("The strategist's guide updates"), *updates]
+    own = sum(r.source == "strategist" for r in guide.rules)
+    return blocks, f"{len(guide.rules)} rules ({own} the strategist's own), {len(guide.events)} triggers fired"
+
+
 VIEWS: Dict[str, Callable[..., Tuple[List[str], str]]] = {
-    "goals": view_goals, "locations": view_locations, "knowledge": view_knowledge, "tiles": view_tiles,
-    "notepad": view_notepad,
+    "goals": view_goals, "knowledge": view_knowledge, "tiles": view_tiles,
+    "notepad": view_notepad, "globalmap": view_globalmap, "guide": view_guide,
 }
 
 
@@ -420,71 +423,6 @@ def diff_tiles(new, old, d, report: Report, a: int, b: int) -> Tuple[List[str], 
     return blocks, count_phrase([(len(d["new_tiles"]), "new tiles")])
 
 
-def diff_locations(new, old, d, report: Report, a: int, b: int) -> Tuple[List[str], str]:
-    blocks = []
-    if d["current_changed"]:
-        before, after = d["current_changed"]
-        blocks += [md.h3("Current location"), md.para(f"{place_text(before)} → **{place_text(after)}**")]
-    if d["added_majors"]:
-        blocks += [md.h3("New major locations"), md.bullets(f"+ {name}" for name in d["added_majors"])]
-    if d["added_bridges"]:
-        blocks += [md.h3("New bridges"), md.bullets(
-            f"+ {name}" + (f" (through {', '.join(new.bridges[name].accessible_through)})"
-                           if new.bridges[name].accessible_through else "")
-            for name in d["added_bridges"])]
-    if d["added_internals"]:
-        blocks += [md.h3("New internal rooms"), md.bullets(
-            f"+ {major} › **{room}**" for major, rooms in d["added_internals"].items() for room in rooms)]
-    if d["added_transitions"]:
-        blocks += [md.h3("New transitions"), md.bullets(
-            "+ " + edge_text(*location_endpoints(t), t.two_way, t.description, t.other_notes)
-            for t in d["added_transitions"])]
-    if d["added_majors"] or d["added_bridges"] or d["added_transitions"]:
-        kinds, edges = major_graph(new)
-        new_edges = [(t.node_source_major, t.node_destination_major, t.two_way) for t in d["added_transitions"]]
-        png = draw_graph(report, kinds, edges, report.image_path("locations", f"ep{a}_to_ep{b}_world.png"),
-                         f"World graph at episode {b} (red: new since episode {a})",
-                         highlight_nodes=set(d["added_majors"]) | set(d["added_bridges"]),
-                         highlight_edges=edge_keys(new_edges))
-        blocks.append(report.img("world graph", png))
-    for major, transitions in d["added_internal_transitions"].items():
-        kinds, edges = internal_graph(new, major)
-        new_edges = [(t.node_source, t.node_destination, t.two_way) for t in transitions]
-        png = draw_graph(report, kinds, edges,
-                         report.image_path("locations", f"ep{a}_to_ep{b}_inside_{depathify(major)}.png"),
-                         f"Inside {major} at episode {b} (red: new since episode {a})",
-                         highlight_nodes=set(d["added_internals"].get(major, [])),
-                         highlight_edges=edge_keys(new_edges))
-        blocks += [md.h3(f"New transitions inside {major}"),
-                   md.bullets("+ " + edge_text(t.node_source, t.node_destination, t.two_way, t.description,
-                                               t.other_notes) for t in transitions),
-                   report.img(f"inside {major}", png)]
-    if d["added_bridge_access"]:
-        blocks += [md.h3("New bridge access"), md.bullets(
-            f"+ {bridge} reachable through {', '.join(majors)}" for bridge, majors in d["added_bridge_access"].items())]
-    if d["map_images_set"]:
-        blocks.append(md.h3("Map images set"))
-        for name in d["map_images_set"]:
-            path = save_image(report, new.majors[name].image_on_map,
-                              report.image_path("locations", f"ep{b}_{depathify(name)}_map.png"))
-            blocks += [md.para(f"**{name}**"), report.img(name, path)]
-    if d["visual_changed"]:
-        blocks += [md.h3("Visual identity changes"), md.table(pd.DataFrame([
-            {"location": " › ".join(key), "images added": change["images_added"],
-             "tiles counted": change["tiles_counted"]}
-            for key, change in d["visual_changed"].items()
-        ]))]
-    n_rooms = sum(len(rooms) for rooms in d["added_internals"].values())
-    n_inside = sum(len(ts) for ts in d["added_internal_transitions"].values())
-    n_access = sum(len(majors) for majors in d["added_bridge_access"].values())
-    return blocks, count_phrase([(1 if d["current_changed"] else 0, "location change"),
-                                 (len(d["added_majors"]), "new majors"), (len(d["added_bridges"]), "new bridges"),
-                                 (n_rooms, "new rooms"), (len(d["added_transitions"]), "new transitions"),
-                                 (n_inside, "new internal transitions"), (n_access, "new bridge access"),
-                                 (len(d["map_images_set"]), "map images set"),
-                                 (len(d["visual_changed"]), "locations re-seen")])
-
-
 def diff_notepad(new, old, d, report: Report, a: int, b: int) -> Tuple[List[str], str]:
     change = f"{d['length_change']:+d} words"
     if d["kind"] == "unchanged":
@@ -500,9 +438,81 @@ def diff_notepad(new, old, d, report: Report, a: int, b: int) -> Tuple[List[str]
                     f"({change})")
 
 
+def diff_globalmap(new, old, d, report: Report, a: int, b: int) -> Tuple[List[str], str]:
+    task, direction = episode_brief(report.run_dir, b)
+    (s0, p0), (s1, p1) = d["position"]
+    blocks = [
+        md.para(f"Task in episode {b}: {task.rstrip('.') or '(none)'}. {direction[0].upper() + direction[1:]}."),
+        md.para(f"{d['steps']} steps; the player went from {p0} in segment {s0} to {p1} in segment {s1}."),
+    ]
+    if d["opened"]:
+        blocks += [md.h3("Segments opened"), md.bullets(f"+ segment {si}" for si in d["opened"])]
+    if d["merged"]:
+        blocks += [md.h3("Segments merged"), md.bullets(
+            f"segment {s} folded into segment {target}, shifted by {offset}" for s, (target, offset) in d["merged"].items())]
+    before, after = d["exploring"]
+    if before != after:
+        blocks.append(md.para(f"Forced exploration: until episode {before} → until episode {after}."))
+    for si in sorted(set(d["new_cells"]) | set(d["reclassified"])):
+        if not new.segments[si]:
+            continue
+        added, relabelled = d["new_cells"].get(si, []), d["reclassified"].get(si, [])
+        png = map_image(report, new, si, report.image_path("globalmap", f"ep{a}_to_ep{b}_seg{si}.png"),
+                        highlight=added, trail_from=old.step, doors=True)
+        blocks += [md.h3(f"Segment {si}: {len(added)} new squares, {len(relabelled)} recognised since"),
+                   report.img(f"segment {si}", png)]
+    if d["new_cells"] or d["reclassified"]:
+        blocks.append(md.para(f"Magenta: squares new since episode {a}. Blue: this episode's trail. "
+                              "Green: unexplored edge. Red: the player."))
+    before = old.segment_info
+    named = {si: info for si, info in new.segment_info.items()
+             if info.name is not None and si not in new.merged_into
+             and (si not in before or before[si].name != info.name)}
+    if named:
+        blocks += [md.h3("Segments named"), md.bullets(f"segment {si}: **{info.name}**: {info.description}"
+                                                       for si, info in sorted(named.items()))]
+        blocks += stage_replies(report.run_dir, range(a + 1, b + 1), "segment_name", "segment naming reply")
+    judged = {pair: v for pair, v in new.merge_verdicts.items() if old.merge_verdicts.get(pair) != v}
+    if judged:
+        blocks += [md.h3("Merges judged"), verdicts_table(judged)]
+        blocks += stage_replies(report.run_dir, range(a + 1, b + 1), "merge_judge", "merge judgement reply")
+    doors = d.get("doors", {})
+    if doors:
+        blocks += [md.h3("Doors labelled"), md.bullets(f"segment {si}, square {p}: leads to segment {dest}, "
+                                                       f"{new.area_label(dest)}"
+                                                       for (si, p), dest in sorted(doors.items()))]
+    if d["stats"]:
+        blocks += [md.h3("Counter changes"), md.table(pd.Series(d["stats"], dtype=int).sort_index()
+                                                     .rename_axis("counter").reset_index(name="change"))]
+    return blocks, count_phrase([(sum(len(v) for v in d["new_cells"].values()), "new squares"),
+                                 (len(named), "segments named"), (len(doors), "doors labelled"),
+                                 (sum(len(v) for v in d["reclassified"].values()), "squares recognised"),
+                                 (len(d["opened"]), "segments opened"), (len(d["merged"]), "merged"),
+                                 (d["steps"], "steps")])
+
+
+def diff_guide(new, old, d, report: Report, a: int, b: int) -> Tuple[List[str], str]:
+    blocks = []
+    if d["events"]:
+        blocks += [md.h3("Triggers fired"), events_table(d["events"])]
+    if d["towns"]:
+        blocks += [md.h3("New towns"), md.bullets(d["towns"])]
+    if d["added"]:
+        blocks += [md.h3("Added"), md.bullets(f"+ [{r.id}] when the player {r.trigger}: {r.text} _({r.source})_"
+                                              for r in d["added"])]
+    if d["edited"]:
+        blocks += [md.h3("Rewritten"), md.bullets(f"[{after.id}]: ~~{before.text}~~ → {after.text}"
+                                                  for before, after in d["edited"])]
+    if d["removed"]:
+        blocks += [md.h3("Removed"), md.bullets(f"- [{r.id}] {r.text}" for r in d["removed"])]
+    blocks += guide_updates(report.run_dir, range(a + 1, b + 1))
+    return blocks, count_phrase([(len(d["events"]), "triggers fired"), (len(d["added"]), "added"),
+                                 (len(d["edited"]), "rewritten"), (len(d["removed"]), "removed")])
+
+
 DIFFS: Dict[str, Callable[..., Tuple[List[str], str]]] = {
-    "goals": diff_goals, "locations": diff_locations, "knowledge": diff_knowledge, "tiles": diff_tiles,
-    "notepad": diff_notepad,
+    "goals": diff_goals, "knowledge": diff_knowledge, "tiles": diff_tiles,
+    "notepad": diff_notepad, "globalmap": diff_globalmap, "guide": diff_guide,
 }
 
 
@@ -523,17 +533,20 @@ def setup(obj: dict, name: str, mode: str) -> Tuple[str, Report]:
     images_dir = _storage_link(report_dir, "images",
                                debug_frames_dir(parameters, game=game, stage="strategist", sub=(segment, mode)),
                                parameters)
-    report = Report(report_dir=report_dir, images_dir=images_dir, overwrite=obj["overwrite"])
+    report = Report(report_dir=report_dir, images_dir=images_dir, overwrite=obj["overwrite"], run_dir=run_dir)
     return run_dir, report
 
 
-def selected(artifact: Optional[str]) -> List[str]:
-    return [artifact] if artifact else list(ARTIFACTS)
+def selected(artifact: Optional[str], run_dir: str) -> List[str]:
+    if artifact:
+        return [artifact]
+    return [key for key, cls in ARTIFACTS.items() if key not in OPTIONAL or cls.exists(run_dir)]
 
 
 @click.group(name="strategist")
 def debug_strategist():
-    """Inspect a strategist run's saved artifacts (goals, locations, knowledge, tiles, notepad)."""
+    """Inspect a strategist run's saved artifacts (goals, knowledge, tiles, notepad, global map,
+    strategy guide)."""
 
 
 ARTIFACT_OPTION = click.option("--artifact", type=click.Choice(list(ARTIFACTS)), default=None,
@@ -553,7 +566,7 @@ def debug_strategist_view(obj, name, artifact, episode):
     parameters = obj["parameters"]
     run_dir, report = setup(obj, name, "view")
     rows = []
-    for key in selected(artifact):
+    for key in selected(artifact, run_dir):
         cls = ARTIFACTS[key]
         eligible = [n for n in cls.saved_episodes(run_dir) if episode is None or n <= episode]
         if not eligible:
@@ -588,7 +601,7 @@ def debug_strategist_diff(obj, name, artifact):
     parameters = obj["parameters"]
     run_dir, report = setup(obj, name, "diff")
     rows = []
-    for key in selected(artifact):
+    for key in selected(artifact, run_dir):
         cls = ARTIFACTS[key]
         episodes = cls.saved_episodes(run_dir)
         if not episodes:
