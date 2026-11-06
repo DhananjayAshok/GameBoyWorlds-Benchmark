@@ -400,6 +400,10 @@ class GlobalMap(StrategistArtifact):
         self.seen_entrances: Optional[set] = set()
         self.defeats: List[Dict[str, Any]] = []
         self.defeat_return: Optional[Dict[str, Any]] = None
+        #: Cells (their four quarter hashes) the player was seen hopping down over. The tile labels
+        #: can call a ledge an obstacle -- on Crystal they always do -- which would draw every ledge
+        #: as a wall and hide that it is one-way. Read off the screen, never from RAM.
+        self.ledge_patterns: set = set()
 
     def __setstate__(self, state: dict) -> None:
         super().__setstate__(state)
@@ -415,6 +419,42 @@ class GlobalMap(StrategistArtifact):
         self.__dict__.setdefault("segment_info", {})
         self.__dict__.setdefault("naming_queue", [])
         self.__dict__.setdefault("merge_verdicts", {})
+        self.__dict__.setdefault("ledge_patterns", set())
+
+    def _classify(self, tags: Iterable[str], hashes: Tuple[Optional[str], ...]) -> str:
+        kind = classify(tags)
+        if kind == BLOCKED and hashes in self.ledge_patterns:
+            return LEDGE
+        return kind
+
+    def _learn_ledges(self, start: Cell, end: Cell, direction: Optional[str]) -> int:
+        """
+        A move down that carried the player across a cell mapped as blocked went over a ledge: the
+        only blocked-looking thing a player passes. Learn that cell's picture as a ledge and relabel
+        every copy of it already mapped, so one hop reveals the whole ledge line. Only a move that crossed
+        exactly one blocked cell counts, so a frame misplaced into a wall is unlikely to teach a ledge.
+        """
+        if direction != "down" or start[0] != end[0] or start[1] - end[1] < 2:
+            return 0
+        seg = self.segments[self.segment]
+        path = [seg.get((start[0], y)) for y in range(start[1] - 1, end[1] - 1, -1)]
+        blocked = [i for i, c in enumerate(path) if c is not None and c.kind == BLOCKED]
+        # the hop lands on the cell after the ledge, so the ledge is never the last cell of the move
+        if len(blocked) != 1 or blocked[0] == len(path) - 1:
+            return 0
+        pattern = path[blocked[0]].hashes
+        if any(h is None for h in pattern) or pattern in self.ledge_patterns:
+            return 0
+        self.ledge_patterns.add(pattern)
+        relabelled = 0
+        for other in self.segments:
+            for c in other.values():
+                if c.kind == BLOCKED and c.hashes == pattern:
+                    c.kind = LEDGE
+                    relabelled += 1
+        self.stats["ledges_learned"] += 1
+        self.stats["ledge_cells_relabelled"] += relabelled
+        return relabelled
 
     def names_differ(self, a: int, b: int) -> bool:
         def norm(name: Optional[str]) -> Optional[str]:
@@ -513,7 +553,7 @@ class GlobalMap(StrategistArtifact):
                 tags, kind = ("unknown",), UNKNOWN
             else:
                 tags = tuple(sorted({identified[(x, y, q)].tag for q in QUARTERS if (x, y, q) in identified}))
-                kind = classify(tags)
+                kind = self._classify(tags, hashes)
             g = (px + x, py + y)
             old = seg.get(g)
             if old is None:
@@ -580,6 +620,8 @@ class GlobalMap(StrategistArtifact):
                     self.pending = (direction, max_steps, reported)
                 self.stats["blackout_frames"] += 1
                 return "blank"
+            if not structural:
+                self._learn_ledges(self.pos, pos, direction)
             self.pos, self.residual = pos, residual
             self.pending, self.lost, self.anchor = None, 0, _screen(frame)
             self.stats["placed_by_edges" if structural else "placed"] += 1
@@ -915,7 +957,7 @@ class GlobalMap(StrategistArtifact):
                 if any(t is None for t in tiles):
                     continue
                 c.tags = tuple(sorted({t.tag for t in tiles}))
-                c.kind = classify(c.tags)
+                c.kind = self._classify(c.tags, c.hashes)
                 changed += 1
         return changed
 
@@ -1135,6 +1177,10 @@ class MappingEnvironment:
             from utils import log_warn
             log_warn(f"Global map update failed and was skipped: {type(e).__name__}: {e}", self._parameters)
         return result
+
+    @property
+    def ledge_patterns(self) -> set:
+        return self._map.ledge_patterns
 
     def step_str(self, input_str: str):
         action, kwargs = self._env.string_to_high_level_action(input_str)

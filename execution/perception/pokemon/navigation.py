@@ -1,6 +1,6 @@
 import re
 from collections import deque
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Collection, Dict, Iterable, List, Optional, Tuple
 
 from gameboy_worlds.interface.pokemon.actions import HARD_MAX_STEPS
 
@@ -17,6 +17,7 @@ WALKABLE_TAGS = {
     "special ground tile", "player",
 }
 LEDGE_TAGS = {"ledge"}
+QUARTERS = ("top_left", "top_right", "bottom_left", "bottom_right")
 
 X_RANGE = range(LEFT_COL, LEFT_COL + 10)
 Y_RANGE = range(TOP_ROW - 8, TOP_ROW + 1)
@@ -29,15 +30,24 @@ def in_bounds(cell: Cell) -> bool:
     return cell[0] in X_RANGE and cell[1] in Y_RANGE
 
 
-def cell_kinds(identified) -> Dict[Cell, str]:
+def cell_kinds(identified, ledge_patterns: Optional[Collection[Tuple[Optional[str], ...]]] = None) -> Dict[Cell, str]:
+    """
+    Walkable, ledge or blocked for every on-screen cell. ``ledge_patterns`` are cells (their four
+    quarter hashes, in QUARTERS order) the player has been seen hopping down over: the tile labels
+    can call a ledge an obstacle, and a cell once crossed is a ledge whatever its labels say.
+    """
     tags: Dict[Cell, set] = {}
-    for (x, y, _), tile in identified.items():
+    hashes: Dict[Cell, Dict[str, Optional[str]]] = {}
+    for (x, y, quarter), tile in identified.items():
         tags.setdefault((x, y), set()).add(tile.tag)
+        hashes.setdefault((x, y), {})[quarter] = tile.hash
     kinds = {}
     for cell, cell_tags in tags.items():
         if cell_tags <= WALKABLE_TAGS:
             kinds[cell] = WALKABLE
         elif cell_tags <= WALKABLE_TAGS | LEDGE_TAGS:
+            kinds[cell] = LEDGE
+        elif ledge_patterns and tuple(hashes[cell].get(q) for q in QUARTERS) in ledge_patterns:
             kinds[cell] = LEDGE
         else:
             kinds[cell] = BLOCKED
