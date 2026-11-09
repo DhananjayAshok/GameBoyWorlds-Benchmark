@@ -133,14 +133,17 @@ class PokemonPlayThroughSupervisor(Supervisor):
     def _perceive(self, frame) -> str:
         self._tile_recognizer.record_tiles(frame, self._episode_number)
         self._identified = self._tile_recognizer.identify_tiles(frame)
-        people = None
-        if self._screen_people is not None:
-            try:
-                people = self._screen_people()
-            except Exception as e:                       # naming people is a help, never a reason to stop
-                log_warn(f"People on screen could not be named: {type(e).__name__}: {e}", self._parameters)
-        self._screen_tiles = verbalize_tiles(self._identified, people)
+        self._screen_tiles = verbalize_tiles(self._identified, self._people_now())
         return self._screen_tiles
+
+    def _people_now(self) -> Optional[Dict[Tuple[int, int], str]]:
+        if self._screen_people is None:
+            return None
+        try:
+            return self._screen_people()
+        except Exception as e:                           # naming people is a help, never a reason to stop
+            log_warn(f"People on screen could not be named: {type(e).__name__}: {e}", self._parameters)
+            return None
 
     def _log_block(self) -> str:
         if not self.report.narrative:
@@ -280,7 +283,7 @@ class PokemonPlayThroughSupervisor(Supervisor):
         after_block = ""
         if report.final_state["pokemon_core"]["agent_state"] == AgentState.FREE_ROAM:
             self._tile_recognizer.record_tiles(after, self._episode_number)
-            after_tiles = verbalize_tiles(self._tile_recognizer.identify_tiles(after))
+            after_tiles = verbalize_tiles(self._tile_recognizer.identify_tiles(after), self._people_now())
             after_block = PLAYTHROUGH_AFTER_BLOCK.replace("[AFTER_TILES]", after_tiles)
         text = result.get("dialogue") or ""
         text_block = PLAYTHROUGH_TEXT_BLOCK.replace("[TEXT]", text) if text.strip() else ""

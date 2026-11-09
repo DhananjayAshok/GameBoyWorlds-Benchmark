@@ -32,7 +32,7 @@ from execution.strategist.pokemon.guide import (StrategyGuide, battle_tips, guid
                                                 record_new_town, reflect_on_defeat, town_question, update_guide)
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree, remember
 from execution.strategist.pokemon.notepad import ThoughtNotepad
-from execution.strategist.pokemon.npcs import NPCRegistry
+from execution.strategist.pokemon.npcs import PLACED_STATUS, STALE_EPISODES, NPCRegistry
 from execution.strategist.pokemon.global_map import (FAILURE_EPISODES, GlobalMap, MappingEnvironment, explore_text,
                                                      exploring, judge_merge, judge_stuck, name_segment, navigate_map,
                                                      prompt_block, stuck_signs)
@@ -183,6 +183,7 @@ class PokemonStrategist:
         self._npc_registry = npc_registry
         self.npcs = (self._load_or_default(NPCRegistry, lambda: NPCRegistry(game, name), load_episode)
                      if npc_registry else None)
+        self._map_placed = True                          # the map placed this episode's opening screen
 
         if not resume:
             self.start_episode = 0
@@ -384,12 +385,24 @@ class PokemonStrategist:
 
     def _map_opening_screen(self, frame: np.ndarray) -> None:
         free = self._env.get_info()["pokemon_core"]["agent_state"] == AgentState.FREE_ROAM
-        self.global_map.on_step(frame, self._identified if free else {}, free)
+        status = self.global_map.on_step(frame, self._identified if free else {}, free)
+        # people are told only where the map placed the screen: else they could belong to the area the map last knew
+        self._map_placed = status in PLACED_STATUS
         if self.npcs is not None:
             try:
-                self.npcs.on_opening_screen(frame, self._identified if free else {}, free)
+                self.npcs.on_opening_screen(frame, self._identified if free else {}, free and self._map_placed)
             except Exception as e:                               # the registry must never break a run
                 log_warn(f"NPC registry skipped the opening screen: {type(e).__name__}: {e}", self._parameters)
+
+    def _people_on_map(self, segment: int) -> list:
+        """The registry's people marks for one area (none without a registry)."""
+        if self.npcs is None:
+            return []
+        try:
+            return self.npcs.map_people(self.global_map, segment)
+        except Exception as e:                                   # the registry must never break a run
+            log_warn(f"NPC registry: the people on the map were skipped: {type(e).__name__}: {e}", self._parameters)
+            return []
 
     def _screen_people(self) -> Optional[Dict[Tuple[int, int], str]]:
         """The registry's words for the people on screen (None when there is no registry or no map yet)."""
@@ -472,7 +485,7 @@ class PokemonStrategist:
         gmap = self.global_map
         names = (gmap.info(source).name, gmap.info(target).name)
         same = judge_merge(gmap, source, target, overlap, self._vlm_caller("merge_judge"), self._game,
-                           self._parameters)
+                           self._parameters, people=self._people_on_map)
         verdict = "unanswered" if same is None else "the same place" if same else "different places"
         log_info(f"Global map: judged segments {source} '{names[0]}' and {target} '{names[1]}' {verdict}.",
                  self._parameters)
@@ -504,7 +517,8 @@ class PokemonStrategist:
             marker = entry["marker"] if left else (len(report.narrative), len(report.event_log))
             before = gmap.info(segment).name
             answer = name_segment(gmap, segment, mark, left, tasks, self._supervisor_steps(report, marker, left),
-                                  self._vlm_caller("segment_name"), self._game, n, self._parameters)
+                                  self._vlm_caller("segment_name"), self._game, n, self._parameters,
+                                  people=self._people_on_map(segment))
             if answer is None:
                 continue
             changed, name, description = answer
@@ -522,11 +536,11 @@ class PokemonStrategist:
         local = cell_kinds(self._identified) if self._identified else None
         self.global_map.prune_routes()
         _, failed = self._failure_streak()
-        try:
-            marks = self.npcs.ascii_people(self.global_map) if self.npcs is not None else None
-        except Exception as e:
-            log_warn(f"NPC registry: map marks skipped: {type(e).__name__}: {e}", self._parameters)
-            marks = None
+        gmap = self.global_map
+        marks = None
+        if self.npcs is not None:                        # people not seen for very long are left out, as in [PEOPLE]
+            marks = [m for m in self._people_on_map(gmap.resolve(gmap.segment, gmap.pos)[0])
+                     if self._map_placed and self.npcs._episode - m.last_seen[0] <= STALE_EPISODES]
         block, override = prompt_block(self.global_map, list(self.global_map.new_cells_by_episode), local,
                                        explore=self._explore_now,
                                        episode=self.start_episode + self._episodes_run,
@@ -563,7 +577,7 @@ class PokemonStrategist:
         return bool(stuck)
 
     def _people_block(self) -> str:
-        if self.npcs is None or not self.global_map.current:
+        if self.npcs is None or not self.global_map.current or not self._map_placed:
             return ""
         try:
             return self.npcs.people_block(self.global_map)

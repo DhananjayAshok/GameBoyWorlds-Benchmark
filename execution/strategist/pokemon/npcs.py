@@ -60,6 +60,8 @@ STALE_EPISODES = 20
 WEAK_QUARTERS = 2
 WEAK_BLACK = 60
 WEAK_FRAMES = 2
+#: On the map, a person not seen for more than this many episodes may have moved: drawn grey, listed as such.
+STALE_MARK_EPISODES = 3
 
 
 @dataclass
@@ -162,6 +164,27 @@ class Track:
     ambiguous: bool = False
     last_sight_step: int = -10_000
     last_sight_square: Optional[Cell] = None
+
+
+@dataclass
+class PersonMark:
+    """One person on the map, for one area, as of one map step: derived from the registry on every read (like the
+    global map's doors), never stored."""
+    npc_id: str
+    number: int                        # the number in the id: stable, so "P3" means the same person in every picture
+    name: str                          # the display name (a real name once the person gave one)
+    kind: str
+    square: Cell                       # the (resolved) square last seen on
+    facing: Optional[str]              # which way the person faced at that sighting, once a model said so
+    last_seen: Tuple[int, int]         # (episode, map step)
+    on_screen: bool
+    talked: str                        # "yes" | "probably" (a guess at who spoke) | "no", in this area
+    times_talked: int
+    same_words: bool                   # talked to more than once here, the same words every time
+    earlier: List[Cell]                # up to 3 earlier squares in this area, newest first
+    spread: Optional[Tuple[int, int, int, int]]   # (min x, min y, max x, max y) of every square, for a walker
+    stale: bool                        # may have moved: not seen for a while, or the square is on screen without them
+    when: str                          # the freshness in words, for prompts
 
 
 def _manhattan(a: Cell, b: Cell) -> int:
@@ -294,6 +317,7 @@ class NPCRegistry(StrategistArtifact):
         self._facing, self._open = None, None
 
     def on_opening_screen(self, frame: np.ndarray, identified: Dict[Any, Any], free: bool) -> None:
+        """``free``: the screen is free roam and the map placed it (else it is not read for people)."""
         if free and self._gmap is not None:
             self._process(frame, identified, "start", 0)
             self._free_frame = frame
@@ -975,9 +999,19 @@ class NPCRegistry(StrategistArtifact):
     def screen_labels(self, gmap: GlobalMap) -> Dict[Cell, str]:
         """What to say about each person on screen right now, keyed by the square relative to the player, for the
         screen text the strategist and the supervisor read: the quoted name, the kind, and whether the player has
-        talked to them here."""
+        talked to them here. Someone who never moves, remembered on a square that is on screen but not recognised
+        on this frame (a seated person the detector half misses), is added as remembered."""
         out: Dict[Cell, str] = {}
-        for cell, npc_id in self.on_screen(gmap).items():
+        people = dict(self.on_screen(gmap))
+        remembered = set()
+        segment = gmap.resolve(gmap.segment, gmap.pos)[0]
+        for mark in self.map_people(gmap, segment):
+            cell = (mark.square[0] - gmap.pos[0], mark.square[1] - gmap.pos[1])
+            if (not mark.on_screen and self.in_view(gmap, mark.square) and not mark.earlier and cell not in people
+                    and self._episode - mark.last_seen[0] <= STALE_MARK_EPISODES):
+                people[cell] = mark.npc_id
+                remembered.add(cell)
+        for cell, npc_id in people.items():
             npc = self.get(npc_id)
             if self.look_of(npc).kind_hint == "object":
                 continue
@@ -990,19 +1024,49 @@ class NPCRegistry(StrategistArtifact):
                 elsewhere = [seg for seg in self.talked_in(gmap, npc) if seg != gmap.segment]
                 if elsewhere:
                     status += "; met before in another area"
-            out[cell] = f'"{display_name(npc)}" ({npc.kind if npc.kind != "unknown" else "person"}; {status})'[:120]
+            if cell in remembered:
+                status = "remembered here, not recognised on this frame: may have moved; " + status
+            out[cell] = f'"{display_name(npc)}" ({npc.kind if npc.kind != "unknown" else "person"}; {status})'[:160]
         return out
 
-    def ascii_people(self, gmap: GlobalMap) -> Dict[Cell, str]:
-        """``N`` (talked to here) or ``n`` for every person last seen in the player's area, for the text map."""
-        out: Dict[Cell, str] = {}
-        for npc, square in self.people_here(gmap):
-            if self.look_of(npc).kind_hint == "object":
+    def map_people(self, gmap: GlobalMap, segment: int, upto_step: Optional[int] = None) -> List[PersonMark]:
+        """The people layer of one area, the counterpart of ``GlobalMap.door_list``: everyone last seen in
+        ``segment`` (as of map step ``upto_step``, or now), by number."""
+        upto = float("inf") if upto_step is None else upto_step
+        live = [n for n in self.live_npcs() if self.look_of(n).kind_hint != "object"]
+        now = self._episode if upto_step is None else max(
+            (s.episode for n in live for s in n.sightings if s.map_step <= upto), default=0)
+        on_screen = set(self.on_screen(gmap).values()) if upto_step is None else set()
+        marks = []
+        for npc in sorted(live, key=lambda n: n.id):
+            seen = sorted((s for s in npc.sightings if s.map_step <= upto), key=lambda s: -s.map_step)
+            if not seen or self.place(gmap, seen[0])[0] != segment:
                 continue
-            if self._episode - self.last_seen(gmap, npc)[2].episode > STALE_EPISODES:
-                continue
-            out[square] = "N" if gmap.segment in self.talked_in(gmap, npc) else "n"
-        return out
+            squares: List[Cell] = []
+            for sighting in seen:
+                where = self.place(gmap, sighting)
+                if where[0] == segment and where[1] not in squares:
+                    squares.append(where[1])
+            square, newest = squares[0], seen[0]
+            views = self.look_of(npc).views
+            talks = [c for c in self._talks_in(gmap, npc, segment) if c.map_step_start <= upto]
+            sure = [c for c in talks if c.how in ("seen", "remembered") and getattr(c, "confidence", "high") == "high"]
+            words = {npc_model._same_text(c.text) for c in talks}
+            stale = now - newest.episode > STALE_MARK_EPISODES
+            if upto_step is None:
+                when = self.when_seen(gmap, npc, square)
+                stale = stale or (npc.id not in on_screen and self.in_view(gmap, square))
+            else:
+                when = f"last seen in episode {newest.episode}"
+            xs, ys = [q[0] for q in squares], [q[1] for q in squares]
+            marks.append(PersonMark(
+                npc_id=npc.id, number=int(npc.id.split("_")[1]), name=display_name(npc), kind=npc.kind,
+                square=square, facing=views[newest.view].facing if newest.view < len(views) else None,
+                last_seen=(newest.episode, newest.map_step), on_screen=npc.id in on_screen,
+                talked="yes" if sure else "probably" if talks else "no", times_talked=len(talks),
+                same_words=len(talks) > 1 and len(words) == 1 and "" not in words, earlier=squares[1:4],
+                spread=(min(xs), min(ys), max(xs), max(ys)) if len(squares) >= 3 else None, stale=stale, when=when))
+        return marks
 
     def unconfirmed(self, gmap: GlobalMap, segment: int) -> List[Cell]:
         """Squares the map holds as a person (an ``occupied`` square the tile table tagged as a person) where no
@@ -1036,16 +1100,8 @@ class NPCRegistry(StrategistArtifact):
         return "\n\nConversations this episode (name the person by the quoted name):\n" + "\n".join(lines)
 
     def markers(self, gmap: GlobalMap, segment: int) -> List[Tuple[Cell, str, bool]]:
-        """``(square, label, talked_to_here)`` for every person last seen in ``segment``; the label is the number
-        in the person's id, so it matches the debug table."""
-        out = []
-        for npc in sorted(self.live_npcs(), key=lambda n: n.id):
-            if self.look_of(npc).kind_hint == "object":
-                continue
-            seen = self.last_seen(gmap, npc)
-            if seen is not None and seen[0] == segment:
-                out.append((seen[1], str(int(npc.id.split("_")[1])), segment in self.talked_in(gmap, npc)))
-        return out
+        """``(square, number, talked_to_here)`` for every person last seen in ``segment`` (see ``map_people``)."""
+        return [(m.square, str(m.number), m.talked != "no") for m in self.map_people(gmap, segment)]
 
     def diff(self, old: "NPCRegistry") -> Dict[str, Any]:
         new_npcs = [i for i in self.npcs if i not in old.npcs]

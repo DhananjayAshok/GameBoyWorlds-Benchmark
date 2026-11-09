@@ -74,6 +74,10 @@ def verbalize_tiles(identified: Dict[TileKey, Tile], people: Optional[Dict[Tuple
             entry["descriptions"].append(tile.description)
     for cell, label in (people or {}).items():
         by_cell.setdefault(cell, {})["npc"] = {"quarters": set(QUARTER_OFFSETS), "descriptions": [label]}
+        above = by_cell.get((cell[0], cell[1] + 1), {})
+        if ((cell[0], cell[1] + 1) not in people and "npc" in above
+                and above["npc"]["quarters"] <= {"bottom_left", "bottom_right"}):
+            del above["npc"]                         # the top of that person's sprite, drawn 4 px above the square
     lines = ["You are at (0, 0). x increases to the right, y increases upward. Each (x, y) is one grid cell; "
              "ground and obstacles are not listed."]
     if not by_cell:

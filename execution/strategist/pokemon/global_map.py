@@ -1206,18 +1206,86 @@ def segment_bounds(gmap: GlobalMap, segment: int) -> Optional[Tuple[int, int, in
     return min(xs) - 1, max(xs) + 1, min(ys) - 1, max(ys) + 1
 
 
-#: People are drawn in yellow (BGR): not used by the green, blue, red, cyan, orange or magenta marks.
+#: People are drawn in yellow (BGR): not used by the green, blue, red, cyan, orange or magenta marks; Pokemon in light
+#: blue, people who may have moved in grey; squares that may hold someone not seen whole yet get a magenta ring.
 NPC_COLOUR = (0, 255, 255)
+POKEMON_COLOUR = (255, 200, 120)
+STALE_COLOUR = (160, 160, 160)
+MAYBE_COLOUR = (255, 0, 255)
+#: Map pictures for the report and the people legend: text this size per unit of ``scale``.
+LABEL_FONT = 0.33
+
+
+def _label(canvas: np.ndarray, text: str, x: int, y: int, colour, scale: int) -> None:
+    """``text`` in ``colour`` on a black box whose bottom-left corner is at (x, y), kept inside the picture."""
+    import cv2
+
+    font = LABEL_FONT * scale
+    (w, h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font, 1)
+    x = max(0, min(x, canvas.shape[1] - w - 2))
+    y = max(h + 2, min(y, canvas.shape[0] - 1))
+    cv2.rectangle(canvas, (x, y - h - 2), (x + w + 1, y + 1), (0, 0, 0), -1)
+    cv2.putText(canvas, text, (x + 1, y - 1), cv2.FONT_HERSHEY_SIMPLEX, font, colour, 1, cv2.LINE_AA)
+
+
+def _dashed_box(canvas: np.ndarray, a: Cell, b: Cell, colour, dash: int, width: int = 1) -> None:
+    import cv2
+
+    (x0, y0), (x1, y1) = a, b
+    for x in range(x0, x1 + 1, 2 * dash):
+        cv2.line(canvas, (x, y0), (min(x + dash - 1, x1), y0), colour, width)
+        cv2.line(canvas, (x, y1), (min(x + dash - 1, x1), y1), colour, width)
+    for y in range(y0, y1 + 1, 2 * dash):
+        cv2.line(canvas, (x0, y), (x0, min(y + dash - 1, y1)), colour, width)
+        cv2.line(canvas, (x1, y), (x1, min(y + dash - 1, y1)), colour, width)
+
+
+def _wrap(text: str, width: int, font: float) -> List[str]:
+    """``text`` cut into lines that fit ``width`` pixels."""
+    import cv2
+
+    lines, line = [], ""
+    for word in text.split(" "):
+        trial = f"{line} {word}" if line else word
+        if line and cv2.getTextSize(trial, cv2.FONT_HERSHEY_SIMPLEX, font, 1)[0][0] > width:
+            lines.append(line)
+            line = "    " + word
+        else:
+            line = trial
+    return lines + [line]
+
+
+def person_tag(mark: Any) -> str:
+    """The label of a person on the map pictures: P (person) or K (a Pokemon) and the stable number; ? if they may
+    have moved."""
+    return f"{'K' if mark.kind == 'pokemon' else 'P'}{mark.number}{'?' if mark.stale else ''}"
+
+
+def people_legend(marks: Iterable[Any]) -> List[str]:
+    """One line per person drawn on a map picture."""
+    out = []
+    for m in marks:
+        talked = {"yes": f"talked to x{m.times_talked}" + (" (same words)" if m.same_words else ""),
+                  "probably": f"probably talked to x{m.times_talked}", "no": "not talked to"}[m.talked]
+        bits = [talked, f"faces {m.facing}" if m.facing else "", f"last seen ep {m.last_seen[0]}",
+                "may have moved" if m.stale else "", f"seen on {len(m.earlier) + 1}+ squares" if m.earlier else ""]
+        out.append(f"{person_tag(m)} {m.name}: " + ", ".join(b for b in bits if b))
+    return out
 
 
 def render_segment(gmap: GlobalMap, segment: Optional[int] = None, trail: bool = True,
                    upto_step: Optional[int] = None, bounds: Optional[Tuple[int, int, int, int]] = None,
                    highlight: Iterable[Cell] = (), trail_from: Optional[int] = None,
-                   doors: bool = False, people: Iterable[Tuple[Cell, str, bool]] = ()) -> Optional[np.ndarray]:
+                   doors: bool = False, people: Iterable[Any] = (), maybe: Iterable[Cell] = (),
+                   scale: int = 1, legend: bool = False) -> Optional[np.ndarray]:
     """
     The segment as a picture assembled from the cells actually seen (BGR), unseen space hatched,
     frontier cells outlined green, the trail drawn in blue and the player boxed in red.
-    ``people`` are ``(square, label, talked_to)``: a yellow circle (filled once talked to) with the label beside it.
+    ``people`` are the registry's people marks (``NPCRegistry.map_people``), drawn after the trail: a yellow box
+    labelled P and the person's number (solid once talked to here, dashed if not, thin if only probably), a tick on
+    the side the person faces, faded dots on earlier squares, grey with a ? if they may have moved. ``maybe`` are
+    squares that may hold someone not seen whole yet (a magenta ring). ``scale`` enlarges the picture so labels can
+    be read; ``legend`` adds a strip naming each person.
     """
     import cv2
 
@@ -1230,16 +1298,22 @@ def render_segment(gmap: GlobalMap, segment: Optional[int] = None, trail: bool =
     w, h = (x1 - x0 + 1) * GRID_SKIP, (y1 - y0 + 1) * GRID_SKIP
     canvas = np.full((h, w, 3), 60, np.uint8)
     canvas[::4, :, :] = 90                                       # hatch = never seen
-    def box(g):
-        return (g[0] - x0) * GRID_SKIP, (y1 - g[1]) * GRID_SKIP
-    def outline(g, colour, width):
-        px, py = box(g)
-        cv2.rectangle(canvas, (px, py), (px + GRID_SKIP - 1, py + GRID_SKIP - 1), colour, width)
     for g, c in seg.items():
         if c.pixels is None or not (x0 <= g[0] <= x1 and y0 <= g[1] <= y1):
             continue
-        px, py = box(g)
+        px, py = (g[0] - x0) * GRID_SKIP, (y1 - g[1]) * GRID_SKIP
         canvas[py:py + GRID_SKIP, px:px + GRID_SKIP] = cv2.cvtColor(c.pixels.astype(np.uint8), cv2.COLOR_GRAY2BGR)
+    if scale != 1:
+        canvas = cv2.resize(canvas, (w * scale, h * scale), interpolation=cv2.INTER_NEAREST)
+    size = GRID_SKIP * scale
+
+    def inside(g):
+        return x0 <= g[0] <= x1 and y0 <= g[1] <= y1
+    def box(g):
+        return (g[0] - x0) * size, (y1 - g[1]) * size
+    def outline(g, colour, width, inset=0):
+        px, py = box(g)
+        cv2.rectangle(canvas, (px + inset, py + inset), (px + size - 1 - inset, py + size - 1 - inset), colour, width)
     if si == gmap.segment or upto_step is not None:
         for g, c in seg.items():
             if c.kind == WALKABLE and any((g[0] + dx, g[1] + dy) not in seg for dx, dy in DIRECTIONS.values()):
@@ -1250,32 +1324,75 @@ def render_segment(gmap: GlobalMap, segment: Optional[int] = None, trail: bool =
         for i, door in enumerate(gmap.door_list(si)):
             colour = (255, 255, 0) if door["leads_to"] is not None else (0, 200, 255)
             for g in door["cells"]:
-                if x0 <= g[0] <= x1 and y0 <= g[1] <= y1:
+                if inside(g):
                     outline(g, colour, 2)
             gx, gy = box(door["cells"][0])
-            cv2.putText(canvas, str(i), (gx + 1, gy + 11), cv2.FONT_HERSHEY_SIMPLEX, 0.35, colour, 1)
-    for g, label, talked in people:
-        if x0 <= g[0] <= x1 and y0 <= g[1] <= y1:
-            gx, gy = box(g)
-            centre = (gx + GRID_SKIP // 2, gy + GRID_SKIP // 2)
-            radius = 8 if label == "?" else 6                 # a person only partly seen gets a larger ring
-            cv2.circle(canvas, centre, radius + 1, (0, 0, 0), 4 if not talked else 2)      # a dark edge to read on any ground
-            cv2.circle(canvas, centre, radius, NPC_COLOUR, -1 if talked else 2)
-            at = (gx + GRID_SKIP - 5, gy + 6)
-            cv2.putText(canvas, label, at, cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 3)
-            cv2.putText(canvas, label, at, cv2.FONT_HERSHEY_SIMPLEX, 0.4, NPC_COLOUR, 1)
+            _label(canvas, f"D{i}", gx, gy + size - 2, colour, scale)
     steps = [(t, p) for t, s, p in gmap.trail
              if s == si and (upto_step is None or t <= upto_step) and (trail_from is None or t > trail_from)]
     if trail:
         pts = [p for _, p in steps]
         for a, b in zip(pts, pts[1:]):
             (ax, ay), (bx, by) = box(a), box(b)
-            cv2.line(canvas, (ax + 8, ay + 8), (bx + 8, by + 8), (255, 120, 0), 1)
+            half = size // 2
+            cv2.line(canvas, (ax + half, ay + half), (bx + half, by + half), (255, 120, 0), 1)
     if upto_step is not None:
         if steps:
             outline(steps[-1][1], (0, 0, 255), 2)
     elif si == gmap.segment:
         outline(gmap.pos, (0, 0, 255), 2)
+    for g in maybe:
+        if inside(g):
+            gx, gy = box(g)
+            cv2.circle(canvas, (gx + size // 2, gy + size // 2), size // 2, MAYBE_COLOUR, 1)
+            _label(canvas, "?", gx + size // 2, gy + 2 * scale + 6, MAYBE_COLOUR, scale)
+    people = list(people)
+    for m in people:
+        colour = STALE_COLOUR if m.stale else POKEMON_COLOUR if m.kind == "pokemon" else NPC_COLOUR
+        centre = lambda g: (box(g)[0] + size // 2, box(g)[1] + size // 2)
+        for k, g in enumerate(m.earlier):                       # where the person stood before, fading out
+            if inside(g):
+                faded = canvas.copy()
+                cv2.circle(faded, centre(g), max(2, size // 6), colour, -1)
+                cv2.addWeighted(faded, (0.5, 0.3, 0.15)[min(k, 2)], canvas, 1 - (0.5, 0.3, 0.15)[min(k, 2)], 0, canvas)
+        if m.earlier and inside(m.earlier[0]) and inside(m.square):
+            cv2.line(canvas, centre(m.earlier[0]), centre(m.square), colour, 1, cv2.LINE_4)
+        if m.spread is not None:
+            (ax, ay), (bx, by) = box((m.spread[0], m.spread[3])), box((m.spread[2], m.spread[1]))
+            _dashed_box(canvas, (ax, ay), (bx + size - 1, by + size - 1), colour, 2 * scale)
+        if not inside(m.square):
+            continue
+        px, py = box(m.square)
+        inset = scale
+        if m.talked == "yes":
+            outline(m.square, colour, 2, inset)
+        elif m.talked == "probably":
+            outline(m.square, colour, 1, inset)
+        else:
+            _dashed_box(canvas, (px + inset, py + inset), (px + size - 1 - inset, py + size - 1 - inset), colour,
+                        2 * scale, scale)
+        if m.facing in DIRECTIONS:                                # a tick on the side the person faces
+            fx, fy = SCREEN_UNIT[m.facing]
+            cx, cy, r = px + size // 2, py + size // 2, size // 2
+            tip = (cx + fx * (r + 2 * scale), cy + fy * (r + 2 * scale))
+            side = (fy * 3 * scale, fx * 3 * scale)
+            base = (cx + fx * (r - 2 * scale), cy + fy * (r - 2 * scale))
+            pts = np.array([tip, (base[0] + side[0], base[1] + side[1]), (base[0] - side[0], base[1] - side[1])],
+                           np.int32)
+            cv2.fillPoly(canvas, [pts], colour)
+        above = py - 1 if py >= size // 2 else py + size + size // 2
+        _label(canvas, person_tag(m), px, above, colour, scale)
+    if legend and people:
+        rows = []
+        for m, text in zip(people, people_legend(people)):
+            colour = STALE_COLOUR if m.stale else POKEMON_COLOUR if m.kind == "pokemon" else NPC_COLOUR
+            rows += [(line, colour) for line in _wrap(text, canvas.shape[1] - 8, LABEL_FONT * scale)]
+        line_h = 14 * scale
+        strip = np.zeros((line_h * len(rows) + 6, canvas.shape[1], 3), np.uint8)
+        for i, (text, colour) in enumerate(rows):
+            cv2.putText(strip, text, (4, line_h * (i + 1)), cv2.FONT_HERSHEY_SIMPLEX, LABEL_FONT * scale, colour, 1,
+                        cv2.LINE_AA)
+        canvas = np.vstack([canvas, strip])
     return canvas
 
 
@@ -1284,8 +1401,9 @@ def render_segment(gmap: GlobalMap, segment: Optional[int] = None, trail: bool =
 # ----------------------------------------------------------------------------
 
 LEGEND = ('@ you   . walkable   # blocked   = ledge (jump down only)   D door/stairs   " tall grass   '
-          '~ water   n person   N person you have talked to   o maybe a person, not confirmed   '
-          '% not yet recognised   ? never seen')
+          '~ water   o maybe a person, not confirmed   % not yet recognised   ? never seen')
+#: Added to the legend when the people the registry knows are on the map.
+PEOPLE_LEGEND = "   1-9 a person (listed under the map)   + a person who may have moved"
 SECTORS = ("east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east")
 #: Episodes without a single new cell before the strategist is asked whether it is stuck.
 STALE_EPISODES = 3
@@ -1313,7 +1431,7 @@ def glyph(c: Optional[MapCell]) -> str:
 
 
 def ascii_window(gmap: GlobalMap, rx: int = 12, ry: int = 7, people: Optional[Dict[Cell, str]] = None) -> str:
-    """The map around the player. ``people`` maps a square to ``n`` or ``N`` (a person the player has talked to)."""
+    """The map around the player. ``people`` maps a square to the character to print for the person there."""
     seg, (px, py) = gmap.current, gmap.pos
     people = people or {}
     rows = []
@@ -1393,7 +1511,8 @@ def _parse_segment_name(review: bool):
 
 
 def name_segment(gmap: GlobalMap, segment: int, mark: Optional[Cell], left: bool, tasks: str, steps: str, vlm_call,
-                 game: str, episode: int, parameters: Optional[dict] = None) -> Optional[Tuple[bool, str, str]]:
+                 game: str, episode: int, parameters: Optional[dict] = None,
+                 people: Iterable[Any] = ()) -> Optional[Tuple[bool, str, str]]:
     import cv2
     from PIL import Image
 
@@ -1427,7 +1546,8 @@ def name_segment(gmap: GlobalMap, segment: int, mark: Optional[Cell], left: bool
                        else "<a short name>")
               .replace("[DESCRIPTION_FORMAT]", f"<one to three sentences, or {UNCHANGED} to keep the current one>"
                        if review else "<one to three sentences>"))
-    canvas = render_segment(gmap, segment, highlight=[mark] if mark is not None else [], doors=True)
+    canvas = render_segment(gmap, segment, highlight=[mark] if mark is not None else [], doors=True, people=people,
+                            legend=True)
     images = [Image.fromarray(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))] if canvas is not None else []
     answer = ask(vlm_call, prompt, _parse_segment_name(review), "Segment naming", NAME_ATTEMPTS, parameters,
                  images=images)
@@ -1486,7 +1606,8 @@ def _parse_merge_decision(output: str) -> Tuple[Any, Optional[str]]:
 
 
 def judge_merge(gmap: GlobalMap, source: int, target: int, overlap: Dict[str, Any], vlm_call, game: str,
-                parameters: Optional[dict] = None) -> Optional[bool]:
+                parameters: Optional[dict] = None,
+                people: Optional[Callable[[int], List[Any]]] = None) -> Optional[bool]:
     import cv2
     from PIL import Image
 
@@ -1497,8 +1618,9 @@ def judge_merge(gmap: GlobalMap, source: int, target: int, overlap: Dict[str, An
               .replace("[NAME_B]", b.name or "").replace("[DESCRIPTION_B]", b.description or "")
               .replace("[DOORS_B]", _door_text(gmap, source))
               .replace("[SHARED]", str(overlap["shared"])).replace("[MATCHES]", str(overlap["matches"])))
-    canvases = [render_segment(gmap, target, trail=False, doors=True),
-                render_segment(gmap, source, trail=False, doors=True),
+    marks = people or (lambda si: [])
+    canvases = [render_segment(gmap, target, trail=False, doors=True, people=marks(target), legend=True),
+                render_segment(gmap, source, trail=False, doors=True, people=marks(source), legend=True),
                 render_overlay(gmap, source, target, overlap["offset"])]
     images = [Image.fromarray(cv2.cvtColor(c, cv2.COLOR_BGR2RGB)) for c in canvases if c is not None]
     return ask(vlm_call, prompt, _parse_merge_decision, "Merge judgement", MERGE_JUDGE_ATTEMPTS, parameters,
@@ -1726,6 +1848,7 @@ def route_lines(gmap: GlobalMap) -> List[str]:
 
 
 MAX_DOOR_LINES = 8
+MAX_PEOPLE_LINES = 8
 
 
 def door_lines(gmap: GlobalMap) -> List[str]:
@@ -1742,6 +1865,42 @@ def door_lines(gmap: GlobalMap) -> List[str]:
                   + (", fully explored" if gmap.info(leads_to).explored is not None else "")
                   if leads_to is not None else "NOT entered yet")
         lines.append(f"- ({dx}, {dy}), {steps} steps {sector(dx, dy) if steps else 'here'}: {behind}")
+    return lines
+
+
+def people_marks(gmap: GlobalMap, people: Iterable[Any]) -> Tuple[List[Any], Dict[Cell, str]]:
+    """The people of this area nearest first, and what the text map prints on their squares: their number in the
+    list (1-9, * beyond), or + for someone who may have moved."""
+    px, py = gmap.pos
+    ordered = sorted(people, key=lambda m: (abs(m.square[0] - px) + abs(m.square[1] - py), m.number))
+    grid = {}
+    for i, m in enumerate(ordered):
+        grid.setdefault(m.square, "+" if m.stale else str(i + 1) if i < 9 else "*")
+    return ordered, grid
+
+
+def people_lines(gmap: GlobalMap, ordered: List[Any]) -> List[str]:
+    """The people list under the text map, in the words of ``door_lines``; ``ordered`` from ``people_marks``."""
+    if not ordered:
+        return []
+    px, py = gmap.pos
+    lines = ["People in this area (x = steps to the right, y = steps up, measured from you; the quoted names are "
+             "labels the player does not know):"]
+    for i, m in enumerate(ordered[:MAX_PEOPLE_LINES]):
+        dx, dy = m.square[0] - px, m.square[1] - py
+        steps = abs(dx) + abs(dy)
+        what = ", ".join(x for x in (m.kind if m.kind != "unknown" else "", f"faces {m.facing}" if m.facing else "")
+                         if x)
+        if m.talked == "no":
+            talked = "NOT talked to yet"
+        else:
+            talked = (f"{'probably ' if m.talked == 'probably' else ''}talked to here {m.times_talked} time(s)"
+                      + (", the same words each time: nothing new to hear" if m.same_words else ""))
+        lines.append(f'- {i + 1} "{m.name}"{f" ({what})" if what else ""} at ({dx}, {dy}), {steps} steps '
+                     f'{sector(dx, dy) if steps else "here"}, {m.when}: {talked}.')
+    if len(ordered) > MAX_PEOPLE_LINES:
+        lines.append(f"...and {len(ordered) - MAX_PEOPLE_LINES} more.")
+    lines.append(f"Not yet talked to here: {sum(m.talked == 'no' for m in ordered)} of {len(ordered)}.")
     return lines
 
 
@@ -1841,11 +2000,13 @@ def prompt_block(gmap: GlobalMap, recent_episodes: Iterable[int],
                  local_kinds: Optional[Dict[Cell, str]] = None,
                  explore: bool = False, episode: Optional[int] = None,
                  failed_tasks: Iterable[str] = (),
-                 people: Optional[Dict[Cell, str]] = None) -> Tuple[str, Optional[Dict[str, Any]]]:
+                 people: Optional[Iterable[Any]] = None) -> Tuple[str, Optional[Dict[str, Any]]]:
     """
     The map section of the strategist's prompt, and — when the strategist judged itself stuck
-    (``explore``) — the frontier target that exploration should override the task with.
+    (``explore``) — the frontier target that exploration should override the task with. ``people`` are the people
+    marks of this area (``NPCRegistry.map_people``): numbered on the text map and listed after the doors.
     """
+    ordered, grid = people_marks(gmap, people or [])
     recent = list(recent_episodes)
     stale = gmap.episodes_without_new_cells(recent)
     targets, mass = frontier_targets(gmap, local_kinds)
@@ -1855,14 +2016,15 @@ def prompt_block(gmap: GlobalMap, recent_episodes: Iterable[int],
         lines.append("You have fully explored this area: no edge of its map is left unexplored.")
     lines += [
         "MAP OF EVERYTHING YOU HAVE SEEN IN THIS AREA (north is up, one character per step):",
-        ascii_window(gmap, people=people),
-        "Legend: " + LEGEND,
+        ascii_window(gmap, people=grid),
+        "Legend: " + LEGEND + (PEOPLE_LEGEND if people is not None else ""),
         f"Squares mapped here: {len(gmap.current)} (in {gmap.n_areas} separate area(s) overall). "
         f"New squares found in the last episode: "
         f"{gmap.new_cells_by_episode.get(max(recent), 0) if recent else 0}; "
         f"episodes in a row with nothing new: {stale}.",
     ]
     lines += door_lines(gmap)
+    lines += people_lines(gmap, ordered)
     lines += route_lines(gmap)
     if targets:
         lines.append("The nearest edge of the map you have NOT explored yet in each direction "

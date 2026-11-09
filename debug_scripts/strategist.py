@@ -14,7 +14,7 @@ from debug_scripts import markdown as md
 from debug_scripts.benchmark import _storage_link
 from debug_scripts.frames import _FONT, to_pil
 from execution.perception.pokemon.tiles import TileRecognizer
-from execution.strategist.pokemon.global_map import GlobalMap, render_segment, segment_bounds
+from execution.strategist.pokemon.global_map import GlobalMap, person_tag, render_segment, segment_bounds
 from execution.strategist.pokemon.goals import PokemonGoalTree
 from execution.strategist.pokemon.guide import StrategyGuide
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree
@@ -209,7 +209,8 @@ def view_notepad(notepad: ThoughtNotepad, report: Report, episode: int) -> Tuple
 
 MAP_DIRECTION = re.compile(r"MUST be to walk to the unexplored edge at \((-?\d+), (-?\d+)\), (\d+) steps ([a-z-]+)")
 MAP_LEGEND = "Green: unexplored edge. Blue: trail. Red: the player."
-DOOR_LEGEND = "Numbered boxes are doors and stairs: cyan once the area behind is known, orange if not entered yet."
+DOOR_LEGEND = ("Boxes labelled D0, D1... are doors and stairs: cyan once the area behind is known, orange if not "
+               "entered yet.")
 
 
 def doors_table(gmap, doors) -> str:
@@ -249,7 +250,8 @@ def map_image(report: Report, gmap: GlobalMap, segment: int, path: str, **kwargs
     return path
 
 
-def map_replay(report: Report, gmap: GlobalMap, episode: int, n_frames: int = 120) -> Optional[str]:
+def map_replay(report: Report, gmap: GlobalMap, episode: int, n_frames: int = 120,
+               people: Optional[NPCRegistry] = None) -> Optional[str]:
     si = gmap.segment
     path = report.image_path("globalmap", f"ep{episode}_seg{si}_build.gif")
     if not report.fresh(path):
@@ -263,7 +265,8 @@ def map_replay(report: Report, gmap: GlobalMap, episode: int, n_frames: int = 12
     seg = gmap.segments[si]
     frames = []
     for t in sorted(set(range(steps[0], steps[-1] + 1, max(1, (steps[-1] - steps[0]) // n_frames))) | {steps[-1]}):
-        canvas = render_segment(gmap, si, upto_step=t, bounds=bounds)
+        canvas = render_segment(gmap, si, upto_step=t, bounds=bounds, doors=True,
+                                people=people.map_people(gmap, si, upto_step=t) if people is not None else ())
         if canvas is None:
             continue
         ep = next((n for end, n in ends if t <= end), episode)
@@ -287,7 +290,8 @@ def map_replay(report: Report, gmap: GlobalMap, episode: int, n_frames: int = 12
 
 def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[str], str]:
     exploring = gmap.exploring_until
-    replay = map_replay(report, gmap, episode)
+    people = registry_at(report.run_dir, episode)
+    replay = map_replay(report, gmap, episode, people=people)
     blocks = [
         md.para(f"{gmap.n_cells} squares mapped in {gmap.n_areas} area(s) ({len(gmap.segments)} segments opened, "
                 f"{len(gmap.merged_into)} merged into an older one), over {gmap.step} steps."),
@@ -313,16 +317,14 @@ def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[
          "description": gmap.info(si).description or ""}
         for si in live])))
     blocks.append(md.para(MAP_LEGEND + " " + DOOR_LEGEND))
-    people = registry_at(report.run_dir, episode)
     if people is not None:
         blocks.append(md.para(PEOPLE_LEGEND))
     for si in live:
         seg, info = gmap.segments[si], gmap.info(si)
-        markers = people.markers(gmap, si) if people is not None else []
-        if people is not None:                                   # people the map saw only partly: a ring marked ?
-            markers += [(square, "?", False) for square in people.unconfirmed(gmap, si)]
+        marks = people.map_people(gmap, si) if people is not None else []
+        maybe = people.unconfirmed(gmap, si) if people is not None else []
         png = map_image(report, gmap, si, report.image_path("globalmap", f"ep{episode}_seg{si}.png"), doors=True,
-                        people=markers)
+                        people=marks, maybe=maybe, scale=2, legend=True)
         blocks += [md.h3(f"Segment {si}{' (current)' if si == gmap.segment else ''}: {gmap.place_label(si)}, "
                          f"{info.kind or 'kind not known'}, {len(seg)} squares")]
         if info.description:
@@ -330,13 +332,13 @@ def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[
         if info.aliases:
             blocks.append(md.para("Also named, before merges: " + "; ".join(name for name, _ in info.aliases)))
         blocks.append(report.img(f"segment {si}", png))
-        if markers:
-            blocks.append(md.table(pd.DataFrame([
-                {"marker": label,
-                 "person": (display_name(people.npcs[f"npc_{int(label):03d}"]) if label != "?"
-                            else "the screen reader tagged a person here; no sprite confirmed"),
-                 "talked to here": "yes" if talked else "no", "square": square}
-                for square, label, talked in markers])))
+        if marks or maybe:
+            blocks.append(md.table(pd.DataFrame(
+                [{"marker": person_tag(m), "person": m.name, "talked to here": m.talked, "times": m.times_talked,
+                  "faces": m.facing or "", "square": m.square, "earlier squares": m.earlier,
+                  "last seen (episode, step)": m.last_seen, "may have moved": m.stale} for m in marks]
+                + [{"marker": "?", "person": "the screen reader tagged a person here; no sprite confirmed",
+                    "square": square} for square in maybe])))
         doors = gmap.door_list(si)
         if doors:
             blocks.append(doors_table(gmap, doors))
@@ -396,8 +398,12 @@ def view_guide(guide: StrategyGuide, report: Report, episode: int) -> Tuple[List
     return blocks, f"{len(guide.rules)} rules ({own} the strategist's own), {len(guide.events)} triggers fired"
 
 
-PEOPLE_LEGEND = ("Yellow circles are people at the square they were last seen: filled = talked to in this area, "
-                 "hollow = not yet. The number is the person's id in the People page. A ring marked ? is a square the screen "
+PEOPLE_LEGEND = ("Yellow boxes labelled P3 (K3 for a Pokemon) are people at the square they were last seen; the number "
+                 "is the person's id in the People page. Solid = talked to in this area, thin = probably (a guess at "
+                 "who spoke), dashed = not yet. The triangle shows the way they faced; faded dots are squares they "
+                 "stood on before (a dotted frame: everywhere a walker was seen). Grey with a ? (P3?) = may have "
+                 "moved: not seen for over 3 episodes, or their square was on screen without them. The strip under "
+                 "the picture names each person. A magenta ring marked ? is a square the screen "
                  "reader tagged as a person, drawn like a sprite, where nobody has been seen whole yet (cut off by the "
                  "screen edge, or hidden); squares drawn like background (a statue, a bush) get no ring.")
 
@@ -563,8 +569,10 @@ def diff_globalmap(new, old, d, report: Report, a: int, b: int) -> Tuple[List[st
         if not new.segments[si]:
             continue
         added, relabelled = d["new_cells"].get(si, []), d["reclassified"].get(si, [])
+        people = registry_at(report.run_dir, b)
         png = map_image(report, new, si, report.image_path("globalmap", f"ep{a}_to_ep{b}_seg{si}.png"),
-                        highlight=added, trail_from=old.step, doors=True)
+                        highlight=added, trail_from=old.step, doors=True, scale=2, legend=True,
+                        people=people.map_people(new, si) if people is not None else ())
         blocks += [md.h3(f"Segment {si}: {len(added)} new squares, {len(relabelled)} recognised since"),
                    report.img(f"segment {si}", png)]
     if d["new_cells"] or d["reclassified"]:
