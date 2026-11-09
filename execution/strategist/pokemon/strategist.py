@@ -541,10 +541,20 @@ class PokemonStrategist:
         log_info(f"Global map: {signs}; the strategist judged itself {verdict}.", self._parameters)
         return bool(stuck)
 
+    def _people_block(self) -> str:
+        if self.npcs is None or not self.global_map.current:
+            return ""
+        try:
+            return self.npcs.people_block(self.global_map)
+        except Exception as e:
+            log_warn(f"NPC registry: the people block was skipped: {type(e).__name__}: {e}", self._parameters)
+            return ""
+
     def _dispatch(self, frame: np.ndarray) -> Tuple[Optional[str], Optional[str]]:
         prompt = (self._fill(P.DISPATCH_PROMPT)
                   .replace("[SCREEN_TILES]", self._screen_tiles or "(nothing was recognised)")
-                  .replace("[GLOBAL_MAP]", self._global_map_block()))
+                  .replace("[GLOBAL_MAP]", self._global_map_block())
+                  .replace("[PEOPLE]", self._people_block()))
         dispatched = ask(self._vlm_caller("dispatch"), prompt, _parse_dispatch, "Dispatch",
                          self.MAX_DISPATCH_ATTEMPTS, self._parameters, images=[frame])
         return dispatched if dispatched is not None else (None, None)
@@ -817,6 +827,12 @@ class PokemonStrategist:
         log_info(f"Global map: {added} new squares this episode, {self.global_map.n_cells} in all, "
                  f"{self.global_map.n_areas} area(s).", self._parameters)
         if self.npcs is not None:
+            try:
+                self.npcs.finish_conversations()
+                self.npcs.read_conversations(self._vlm_caller("npc_ocr"))
+            except Exception as e:
+                log_warn(f"NPC registry: reading the conversations failed and was skipped: "
+                         f"{type(e).__name__}: {e}", self._parameters)
             try:
                 self.npcs.end_episode(self.global_map, episode_number=record.n)
             except Exception as e:

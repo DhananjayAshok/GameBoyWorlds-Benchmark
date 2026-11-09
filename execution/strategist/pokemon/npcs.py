@@ -27,7 +27,7 @@ import numpy as np
 from execution.artifact import StrategistArtifact, update
 from execution.perception.pokemon import sprites as S
 from execution.perception.pokemon.grid import cell_box
-from execution.strategist.pokemon.global_map import GlobalMap, StepEvent
+from execution.strategist.pokemon.global_map import DIRECTIONS, GlobalMap, StepEvent
 from execution.strategist.pokemon.npc_names import draw_name
 from utils import log_info, log_warn
 
@@ -45,6 +45,11 @@ MAX_CANDIDATES = 8
 SIGHTING_EVERY = 10
 #: A sprite caught mid-step or half hidden needs at least this many dark pixels to count as a person.
 MIN_TAGGED_BLACK = 12
+#: What a conversation can be with besides a person: a map square carrying one of these tags.
+SIGN_TAGS = {"sign", "interactable object", "item"}
+#: At most this many dialogue pictures of one conversation are read by the model.
+MAX_OCR_CROPS = 12
+OCR_PROMPT = "If there is no text in the image, just say NONE. Otherwise, perform OCR and state the text in this image:"
 #: A person the tile table only half recognises (someone seated on a bench, partly behind a counter) is accepted when
 #: at least ``WEAK_QUARTERS`` of the square's quarters read as a person, the outline is this heavy, and the same
 #: square shows it in ``WEAK_FRAMES`` map steps.
@@ -101,6 +106,7 @@ class Conversation:
     outcome: Optional[str] = None
     led_to: Optional[str] = None
     complete: bool = False
+    read: bool = False                 # the model has been asked to read the crops
 
 
 @dataclass
@@ -151,7 +157,8 @@ def _manhattan(a: Cell, b: Cell) -> int:
 class NPCRegistry(StrategistArtifact):
     """Every person the player has seen in one run. See the module docstring."""
 
-    _TRANSIENT = ("_gmap", "_episode", "_tracks", "_last_people", "_stack", "_stack_ref", "_look_merges", "_weak")
+    _TRANSIENT = ("_gmap", "_episode", "_tracks", "_last_people", "_stack", "_stack_ref", "_look_merges", "_weak",
+                 "_facing", "_open")
 
     def __init__(self, game: str, run_name: str) -> None:
         self.game = game
@@ -176,6 +183,8 @@ class NPCRegistry(StrategistArtifact):
         self._stack: Optional[np.ndarray] = None
         self._stack_ref: List[Tuple[str, int]] = []
         self._look_merges: Set[Tuple[str, str]] = set()
+        self._facing: Optional[str] = None                      # the way the player faces, once known
+        self._open: Optional[str] = None                        # the conversation in progress
         self._weak: Dict[Tuple[int, Cell], Set[int]] = {}       # (segment, square) -> map steps it looked like a person
 
     def __setstate__(self, state: dict) -> None:
@@ -234,6 +243,7 @@ class NPCRegistry(StrategistArtifact):
         """Called by the strategist before the episode's first step: tracks never run across episodes."""
         self._gmap, self._episode = gmap, episode
         self._tracks, self._last_people = {}, {}
+        self._facing, self._open = None, None
 
     def on_opening_screen(self, frame: np.ndarray, identified: Dict[Any, Any], free: bool) -> None:
         if free and self._gmap is not None:
@@ -241,7 +251,13 @@ class NPCRegistry(StrategistArtifact):
 
     def on_env_step(self, ev: StepEvent) -> None:
         """A :class:`~execution.strategist.pokemon.global_map.MappingEnvironment` listener."""
-        if self._gmap is None or not ev.free or ev.status not in PLACED_STATUS:
+        if self._gmap is None:
+            return
+        try:                                                     # conversations first: dialogue steps are not free
+            self._conversation_step(ev)
+        except Exception as e:
+            log_warn(f"NPC registry: conversation step skipped: {type(e).__name__}: {e}")
+        if not ev.free or ev.status not in PLACED_STATUS:
             return
         self._process(ev.frame, ev.identified, ev.status, ev.max_steps)
 
@@ -493,6 +509,146 @@ class NPCRegistry(StrategistArtifact):
         track.last_sight_step, track.last_sight_square = step, det["square"]
         self.stats["sightings"] += 1
 
+    # -- conversations ----------------------------------------------------------------------------
+
+    @staticmethod
+    def _is_a_press(action: Any, kwargs: Dict[str, Any]) -> bool:
+        from gameboy_worlds.emulation.emulator import LowLevelActions
+        from gameboy_worlds.interface.action import LowLevelAction
+        from gameboy_worlds.interface.pokemon.actions import InteractAction
+
+        if isinstance(action, type) and issubclass(action, InteractAction):
+            return True
+        return (isinstance(action, type) and issubclass(action, LowLevelAction)
+                and kwargs.get("low_level_action") == LowLevelActions.PRESS_BUTTON_A)
+
+    def _conversation_step(self, ev: StepEvent) -> None:
+        """Track which way the player faces, and open, fill and close conversations from the step stream."""
+        from gameboy_worlds.emulation.pokemon import AgentState
+
+        state = ev.info.get("pokemon_core", {}).get("agent_state") if ev.info else None
+        if ev.was_free and ev.free:
+            if ev.direction is not None:
+                self._facing = ev.direction
+            elif ev.status in ("moved", "relocalised", "new_segment"):
+                self._facing = None                              # moved some way we cannot read a direction from
+        elif ev.status in ("relocalised", "new_segment"):
+            self._facing = None
+        if self._open is None and ev.was_free and state in (AgentState.IN_DIALOGUE, AgentState.IN_MENU,
+                                                            AgentState.IN_BATTLE):
+            self._open_conversation(ev)
+        if self._open is not None:
+            self._collect_crops(ev)
+            if state == AgentState.FREE_ROAM:
+                self._close_conversation("free_roam", True)
+            elif state == AgentState.IN_BATTLE:
+                self._close_conversation("battle", True)
+
+    def _sign_at(self, target: Cell) -> Optional[Cell]:
+        g = self._gmap
+        square = (g.pos[0] + target[0], g.pos[1] + target[1])
+        cell = g.segments[g.segment].get(square)
+        return square if cell is not None and set(cell.tags) & SIGN_TAGS else None
+
+    def _open_conversation(self, ev: StepEvent) -> None:
+        g = self._gmap
+        a_press = self._is_a_press(ev.action, ev.kwargs)
+        speaker: Optional[str] = None
+        sign_square: Optional[Cell] = None
+        neighbours = [n for c, n in self._last_people.items() if abs(c[0]) + abs(c[1]) == 1]
+        if a_press and self._facing is not None:
+            target = DIRECTIONS[self._facing]
+            speaker = self._last_people.get(target)
+            if speaker is None:
+                sign_square = self._sign_at(target)
+        elif len(set(neighbours)) == 1:                          # facing not known, or the person came to us
+            speaker = neighbours[0]
+        conv = Conversation(
+            id=self._next("conv"), npc=speaker, sign=None, episode=self._episode, map_step_start=g.step,
+            map_step_end=None, segment=g.segment, square=g.pos, target=sign_square,
+            trigger="a_press" if a_press else "npc_started")
+        if speaker is not None:
+            npc = self.get(speaker)
+            conv.npc = npc.id
+            npc.conversations.append(conv.id)
+            seen = self.last_seen(g, npc)
+            conv.target = seen[1] if seen else None
+        elif sign_square is not None:
+            sign = self._sign_for(g.segment, sign_square)
+            conv.sign = sign.id
+            sign.conversations.append(conv.id)
+        else:
+            self.unattributed.append(conv.id)
+        self.conversations[conv.id] = conv
+        self._open = conv.id
+        self.stats["conversations"] += 1
+
+    def _sign_for(self, segment: int, square: Cell) -> Sign:
+        g = self._gmap
+        here = g.resolve(segment, square)
+        for sign in self.signs.values():
+            if g.resolve(sign.segment, sign.square) == here:
+                return sign
+        sign = Sign(id=self._next("sign"), segment=segment, square=square)
+        self.signs[sign.id] = sign
+        return sign
+
+    def _collect_crops(self, ev: StepEvent) -> None:
+        from execution.pokemon.executors import drop_prefix_crops
+
+        conv = self.conversations[self._open]
+        new = []
+        for region in (ev.info.get("ocr") or {}).get("transition_ocr_regions") or []:
+            stack = region.get("dialogue") if isinstance(region, dict) else None
+            if stack is not None and len(stack):
+                new.extend(np.asarray(c) for c in stack)
+        if new:
+            drop_prefix_crops(new, conv.crops)
+
+    def _close_conversation(self, led_to: str, complete: bool) -> None:
+        conv = self.conversations[self._open]
+        conv.led_to, conv.complete, conv.map_step_end = led_to, complete, self._gmap.step
+        if led_to == "battle" and conv.npc in self.npcs and self.get(conv.npc).kind == "unknown":
+            self.get(conv.npc).kind = "trainer"
+        if led_to == "battle" and conv.npc is None and conv.trigger == "npc_started":
+            # nobody next to the player spoke: a wild encounter or a trainer calling from afar, not a conversation
+            conv.trigger = "battle_start"
+            if conv.id in self.unattributed:
+                self.unattributed.remove(conv.id)
+            self.stats["battle_starts"] += 1
+        self._open = None
+
+    def finish_conversations(self) -> None:
+        """An episode ends: a conversation still open is closed as interrupted (its text still counts)."""
+        if self._open is not None and self._gmap is not None:
+            self._close_conversation("episode_end", False)
+
+    def read_conversations(self, vlm_call: Any) -> None:
+        """Ask the model to read the dialogue pictures of every conversation not read yet (one batched call)."""
+        from utils.vlm import merge_ocr_strings
+
+        todo = [c for c in self.conversations.values() if c.crops and not c.text and not c.read]
+        if not todo:
+            return
+        images = [[crop] for c in todo for crop in c.crops[:MAX_OCR_CROPS]]
+        out = vlm_call(texts=[OCR_PROMPT] * len(images), images=images, max_new_tokens=4000)
+        out = out if isinstance(out, list) else [out]
+        at = 0
+        for c in todo:
+            n = len(c.crops[:MAX_OCR_CROPS])
+            pieces = []
+            for text in out[at:at + n]:
+                text = text.rsplit("Response:", 1)[1] if "Response:" in text else text
+                text = text.strip()
+                for lead in ("The text in the image is:", "The text in this image is:"):
+                    if text.startswith(lead):
+                        text = text[len(lead):].strip()
+                if text and text.lower() != "none":
+                    pieces.append(text)
+            at += n
+            c.text, c.read = "\n".join(merge_ocr_strings(pieces)), True
+            self.stats["conversations_read"] += 1
+
     # -- end of episode ---------------------------------------------------------------------------
 
     def merge_npcs(self, keep: NPC, drop: NPC) -> None:
@@ -555,6 +711,7 @@ class NPCRegistry(StrategistArtifact):
     def end_episode(self, gmap: GlobalMap) -> None:
         """Close the episode's bookkeeping; decorated so the registry is saved every episode."""
         self._gmap = gmap
+        self.finish_conversations()
         self.consolidate()
         self._tracks, self._last_people = {}, {}
 
@@ -568,6 +725,43 @@ class NPCRegistry(StrategistArtifact):
             if seen is not None and seen[0] == gmap.segment:
                 found.append((npc, seen[1]))
         return found
+
+    def people_block(self, gmap: GlobalMap, max_people: int = 8, max_chars: int = 1800) -> str:
+        """The block the strategist reads before writing a task: who has been seen in the area it is in, where they
+        are from the player, and whether it has already talked to them (with what they said). Empty if nobody."""
+        here = self.people_here(gmap)
+        if not here:
+            return ""
+        px, py = gmap.pos
+        here.sort(key=lambda r: abs(r[1][0] - px) + abs(r[1][1] - py))
+        on_screen = set(self._last_people.values())
+        lines = []
+        for npc, square in here[:max_people]:
+            dx, dy = square[0] - px, square[1] - py
+            seen = self.last_seen(gmap, npc)
+            if npc.id in on_screen:
+                when = "on screen now"
+            elif seen and seen[2].episode == self._episode:
+                when = "seen earlier this episode"
+            else:
+                when = f"last seen {self._episode - (seen[2].episode if seen else 0)} episode(s) ago"
+            talks = [self.conversations[c] for c in npc.conversations
+                     if c in self.conversations and (self.conversations[c].text or self.conversations[c].crops)
+                     and gmap.resolve(self.conversations[c].segment, self.conversations[c].square)[0] == gmap.segment]
+            if talks:
+                last = talks[-1]
+                said = f": \"{last.text[:160].strip()}\"" if last.text else ""
+                status = f"talked to here (episode {last.episode}){said}"
+            else:
+                status = "not talked to yet"
+            lines.append(f'- "{npc.name}" at ({dx}, {dy}), {when}: {status}.')
+        if len(here) > max_people:
+            lines.append(f"...and {len(here) - max_people} more.")
+        block = ("PEOPLE YOU HAVE SEEN IN THIS AREA (positions are steps from you: x right, y up). The names are "
+                 "only labels for this list; the player does not know them, so describe a person by where they "
+                 "stand, not by name. Talking to someone you have not talked to yet can give information or items.\n"
+                 + "\n".join(lines))
+        return "\n\n" + block[:max_chars]
 
     def talked_in(self, gmap: GlobalMap, npc: NPC) -> Set[int]:
         """The (resolved) segments where the player heard this person say something."""
