@@ -32,6 +32,7 @@ from execution.strategist.pokemon.guide import (StrategyGuide, battle_tips, guid
                                                 record_new_town, reflect_on_defeat, town_question, update_guide)
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree, remember
 from execution.strategist.pokemon.notepad import ThoughtNotepad
+from execution.strategist.pokemon.npcs import NPCRegistry
 from execution.strategist.pokemon.global_map import (FAILURE_EPISODES, GlobalMap, MappingEnvironment, explore_text,
                                                      exploring, judge_merge, judge_stuck, name_segment, navigate_map,
                                                      prompt_block, stuck_signs)
@@ -118,6 +119,7 @@ class PokemonStrategist:
         resume_episode: Union[str, int] = "latest",
         on_episode_complete: Optional[Callable[["StrategistReport"], None]] = None,
         override_goal: Optional[str] = None,
+        npc_registry: bool = True,
         parameters: Optional[dict] = None,
         **supervisor_kwargs: Any,
     ) -> None:
@@ -178,6 +180,9 @@ class PokemonStrategist:
         self.notepad = self._load_or_default(ThoughtNotepad, ThoughtNotepad, load_episode)
         self.global_map = self._load_or_default(GlobalMap, GlobalMap, load_episode)
         self.guide = self._load_or_default(StrategyGuide, StrategyGuide, load_episode)
+        self._npc_registry = npc_registry
+        self.npcs = (self._load_or_default(NPCRegistry, lambda: NPCRegistry(game, name), load_episode)
+                     if npc_registry else None)
 
         if not resume:
             self.start_episode = 0
@@ -237,6 +242,7 @@ class PokemonStrategist:
             "resume_dir": self._resume_dir,
             "supervisor_kwargs": dict(self._supervisor_kwargs),
             "override_goal": self._override_goal,
+            "npc_registry": self._npc_registry,
         }
 
     def _resolve_session_dir(self) -> Optional[str]:
@@ -379,6 +385,11 @@ class PokemonStrategist:
     def _map_opening_screen(self, frame: np.ndarray) -> None:
         free = self._env.get_info()["pokemon_core"]["agent_state"] == AgentState.FREE_ROAM
         self.global_map.on_step(frame, self._identified if free else {}, free)
+        if self.npcs is not None:
+            try:
+                self.npcs.on_opening_screen(frame, self._identified if free else {}, free)
+            except Exception as e:                               # the registry must never break a run
+                log_warn(f"NPC registry skipped the opening screen: {type(e).__name__}: {e}", self._parameters)
 
     def _failure_streak(self) -> Tuple[int, List[str]]:
         """Episodes in a row, newest first, that did not complete, and their tasks."""
@@ -646,6 +657,8 @@ class PokemonStrategist:
 
     def save_all(self, episode_number: int) -> None:
         artifacts = [self.tiles, self.goals, self.knowledge, self.notepad, self.guide, self.global_map]
+        if self.npcs is not None:
+            artifacts.append(self.npcs)
         for artifact in artifacts:
             artifact.save(self._dir, episode_number, parameters=self._parameters)
         self._env.save_custom_state(self._emulator_state_name(self._name, episode_number))
@@ -724,6 +737,8 @@ class PokemonStrategist:
         calls_from = len(self.report.event_log)
         frame = self._current_frame()
         self._perceive(frame, n)
+        if self.npcs is not None:
+            self.npcs.begin_episode(n, self.global_map)
         self._map_opening_screen(frame)
         self._explore_now = self._check_stuck(frame, n)
         self._abandon_failing_plan(n)
@@ -739,7 +754,8 @@ class PokemonStrategist:
             self._finish_episode(record, calls_from)
             return record
 
-        env = MappingEnvironment(self._env, self.global_map, self.tiles, self._parameters)
+        env = MappingEnvironment(self._env, self.global_map, self.tiles, self._parameters,
+                                 listeners=[self.npcs.on_env_step] if self.npcs is not None else [])
         warps_from = len(self.global_map.warps)
         supervisor = PokemonPlayThroughSupervisor(
             task=task, env=env, game=self._game, max_steps=self._supervisor_max_steps,
@@ -800,6 +816,12 @@ class PokemonStrategist:
         added = self.global_map.end_episode(record.n, judge=self._judge_merge, episode_number=record.n)
         log_info(f"Global map: {added} new squares this episode, {self.global_map.n_cells} in all, "
                  f"{self.global_map.n_areas} area(s).", self._parameters)
+        if self.npcs is not None:
+            try:
+                self.npcs.end_episode(self.global_map, episode_number=record.n)
+            except Exception as e:
+                log_warn(f"NPC registry end-of-episode failed and was skipped: {type(e).__name__}: {e}",
+                         self._parameters)
         self.save_all(record.n)
         self._archive_episode(record, calls_from)
         if self._on_episode_complete is not None:
