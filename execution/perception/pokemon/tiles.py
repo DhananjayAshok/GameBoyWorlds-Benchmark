@@ -61,7 +61,9 @@ def cell_part(quarters) -> str:
     return f" ({', '.join(names)} quarter{'s' if len(names) > 1 else ''})"
 
 
-def verbalize_tiles(identified: Dict[TileKey, Tile]) -> str:
+def verbalize_tiles(identified: Dict[TileKey, Tile], people: Optional[Dict[Tuple[int, int], str]] = None) -> str:
+    """The screen as text. ``people`` maps a square to the registry's own words for the person standing there, which
+    replace the tile table's guess (and add the person if the table missed them)."""
     by_cell: Dict[Tuple[int, int], Dict[str, Dict[str, Any]]] = {}
     for (x, y, quarter), tile in identified.items():
         if tile.tag in NON_OBJECT_TAGS:
@@ -70,6 +72,8 @@ def verbalize_tiles(identified: Dict[TileKey, Tile]) -> str:
         entry["quarters"].add(quarter)
         if tile.description and tile.description not in entry["descriptions"]:
             entry["descriptions"].append(tile.description)
+    for cell, label in (people or {}).items():
+        by_cell.setdefault(cell, {})["npc"] = {"quarters": set(QUARTER_OFFSETS), "descriptions": [label]}
     lines = ["You are at (0, 0). x increases to the right, y increases upward. Each (x, y) is one grid cell; "
              "ground and obstacles are not listed."]
     if not by_cell:

@@ -1241,10 +1241,12 @@ def render_segment(gmap: GlobalMap, segment: Optional[int] = None, trail: bool =
         if x0 <= g[0] <= x1 and y0 <= g[1] <= y1:
             gx, gy = box(g)
             centre = (gx + GRID_SKIP // 2, gy + GRID_SKIP // 2)
-            if talked:
-                cv2.circle(canvas, centre, 7, (0, 0, 0), 1)
-            cv2.circle(canvas, centre, 6, NPC_COLOUR, -1 if talked else 1)
-            cv2.putText(canvas, label, (gx + GRID_SKIP - 5, gy + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.35, NPC_COLOUR, 1)
+            radius = 8 if label == "?" else 6                 # a person only partly seen gets a larger ring
+            cv2.circle(canvas, centre, radius + 1, (0, 0, 0), 4 if not talked else 2)      # a dark edge to read on any ground
+            cv2.circle(canvas, centre, radius, NPC_COLOUR, -1 if talked else 2)
+            at = (gx + GRID_SKIP - 5, gy + 6)
+            cv2.putText(canvas, label, at, cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 3)
+            cv2.putText(canvas, label, at, cv2.FONT_HERSHEY_SIMPLEX, 0.4, NPC_COLOUR, 1)
     steps = [(t, p) for t, s, p in gmap.trail
              if s == si and (upto_step is None or t <= upto_step) and (trail_from is None or t > trail_from)]
     if trail:
@@ -1265,7 +1267,7 @@ def render_segment(gmap: GlobalMap, segment: Optional[int] = None, trail: bool =
 # ----------------------------------------------------------------------------
 
 LEGEND = ('@ you   . walkable   # blocked   = ledge (jump down only)   D door/stairs   " tall grass   '
-          '~ water   n person   % not yet recognised   ? never seen')
+          '~ water   n person   N person you have talked to   % not yet recognised   ? never seen')
 SECTORS = ("east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east")
 #: Episodes without a single new cell before the strategist is asked whether it is stuck.
 STALE_EPISODES = 3
@@ -1291,11 +1293,13 @@ def glyph(c: Optional[MapCell]) -> str:
     return {WALKABLE: ".", BLOCKED: "#", LEDGE: "=", UNKNOWN: "%"}.get(c.kind, "?")
 
 
-def ascii_window(gmap: GlobalMap, rx: int = 12, ry: int = 7) -> str:
+def ascii_window(gmap: GlobalMap, rx: int = 12, ry: int = 7, people: Optional[Dict[Cell, str]] = None) -> str:
+    """The map around the player. ``people`` maps a square to ``n`` or ``N`` (a person the player has talked to)."""
     seg, (px, py) = gmap.current, gmap.pos
+    people = people or {}
     rows = []
     for y in range(py + ry, py - ry - 1, -1):
-        rows.append("".join("@" if (x, y) == (px, py) else glyph(seg.get((x, y)))
+        rows.append("".join("@" if (x, y) == (px, py) else people.get((x, y)) or glyph(seg.get((x, y)))
                             for x in range(px - rx, px + rx + 1)))
     return "\n".join(rows)
 
@@ -1817,7 +1821,8 @@ def judge_stuck(gmap: GlobalMap, signs: str, episodes: str, frame: np.ndarray, v
 def prompt_block(gmap: GlobalMap, recent_episodes: Iterable[int],
                  local_kinds: Optional[Dict[Cell, str]] = None,
                  explore: bool = False, episode: Optional[int] = None,
-                 failed_tasks: Iterable[str] = ()) -> Tuple[str, Optional[Dict[str, Any]]]:
+                 failed_tasks: Iterable[str] = (),
+                 people: Optional[Dict[Cell, str]] = None) -> Tuple[str, Optional[Dict[str, Any]]]:
     """
     The map section of the strategist's prompt, and — when the strategist judged itself stuck
     (``explore``) — the frontier target that exploration should override the task with.
@@ -1831,7 +1836,7 @@ def prompt_block(gmap: GlobalMap, recent_episodes: Iterable[int],
         lines.append("You have fully explored this area: no edge of its map is left unexplored.")
     lines += [
         "MAP OF EVERYTHING YOU HAVE SEEN IN THIS AREA (north is up, one character per step):",
-        ascii_window(gmap),
+        ascii_window(gmap, people=people),
         "Legend: " + LEGEND,
         f"Squares mapped here: {len(gmap.current)} (in {gmap.n_areas} separate area(s) overall). "
         f"New squares found in the last episode: "

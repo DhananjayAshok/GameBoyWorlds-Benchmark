@@ -1,5 +1,5 @@
 import re
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from gameboy_worlds.emulation.pokemon import AgentState
 
@@ -91,7 +91,9 @@ class PokemonPlayThroughSupervisor(Supervisor):
 
     def __init__(self, task: str, env, game: str, max_steps: int,
                  tile_recognizer: TileRecognizer, episode_number: int, guidance: Optional[str] = None,
-                 battle_tips: Optional[List[str]] = None, **kwargs: Any) -> None:
+                 battle_tips: Optional[List[str]] = None,
+                 screen_people: Optional[Callable[[], Dict[Tuple[int, int], str]]] = None, **kwargs: Any) -> None:
+        self._screen_people = screen_people              # the people on screen, in the registry's words (or None)
         self._current_tag: Optional[str] = None
         self._guidance = guidance
         self._battle_tips = list(battle_tips or [])
@@ -131,7 +133,13 @@ class PokemonPlayThroughSupervisor(Supervisor):
     def _perceive(self, frame) -> str:
         self._tile_recognizer.record_tiles(frame, self._episode_number)
         self._identified = self._tile_recognizer.identify_tiles(frame)
-        self._screen_tiles = verbalize_tiles(self._identified)
+        people = None
+        if self._screen_people is not None:
+            try:
+                people = self._screen_people()
+            except Exception as e:                       # naming people is a help, never a reason to stop
+                log_warn(f"People on screen could not be named: {type(e).__name__}: {e}", self._parameters)
+        self._screen_tiles = verbalize_tiles(self._identified, people)
         return self._screen_tiles
 
     def _log_block(self) -> str:

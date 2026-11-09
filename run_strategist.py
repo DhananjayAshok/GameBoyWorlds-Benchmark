@@ -18,6 +18,8 @@ there recording the settings it ran under.
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from datetime import datetime
 
 import click
@@ -80,6 +82,9 @@ DEFAULT_ENV_MAX_STEPS = 1_000_000
 @click.option("--resume_run", default=None, type=str,
               help="Fork another run's latest state (artifacts and emulator save) into --name and "
                    "continue from it, e.g. to recreate a failure from a past playthrough.")
+@click.option("--report/--no_report", default=True, show_default=True,
+              help="When the run ends, build the readable report (debug.py strategist view): the goals, the global "
+                   "map with the people marked, the People page. Skipped, with a note, if it fails.")
 @click.option("--resume/--fresh", default=True, show_default=True,
               help="--fresh starts the tile database "
                    "over, discarding what is on disk under this --name. It does NOT reset "
@@ -88,7 +93,7 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
          supervisor_vlm_model, supervisor_vlm_kind, executor_vlm_model, executor_vlm_kind,
          max_episodes, supervisor_max_steps, env_max_steps, strategist_max_new_tokens,
          supervisor_max_new_tokens, subgoal_every, report_detail, controller_variant, save_video,
-         npc_registry, override_goal, resume_run, resume):
+         npc_registry, override_goal, resume_run, report_at_end, resume):
     """Play one long-horizon playthrough with the strategist."""
     parameters = load_parameters()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -148,6 +153,23 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
         environment.close()
 
     log_info("\n" + str(report) + "\n", parameters)
+    if report_at_end:
+        build_report(game, name, parameters)
+
+
+def build_report(game: str, name: str, parameters: dict) -> None:
+    """Build the readable report for the run that just ended, so it is there to open. Never fails the run."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    command = [sys.executable, os.path.join(here, "debug.py"), "--game", game, "--overwrite", "strategist", "view",
+               "--name", name]
+    try:
+        done = subprocess.run(command, cwd=here, capture_output=True, text=True, timeout=1800)
+        shown = next((line for line in reversed(done.stdout.splitlines() + done.stderr.splitlines())
+                      if "view report" in line), None)
+        log_info(shown or f"The report could not be built (exit {done.returncode}); run: {' '.join(command[1:])}",
+                 parameters)
+    except Exception as e:
+        log_info(f"The report could not be built ({type(e).__name__}: {e}); run: {' '.join(command[1:])}", parameters)
 
 
 if __name__ == "__main__":

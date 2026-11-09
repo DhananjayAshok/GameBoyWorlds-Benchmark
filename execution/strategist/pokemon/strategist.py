@@ -391,6 +391,22 @@ class PokemonStrategist:
             except Exception as e:                               # the registry must never break a run
                 log_warn(f"NPC registry skipped the opening screen: {type(e).__name__}: {e}", self._parameters)
 
+    def _screen_people(self) -> Optional[Dict[Tuple[int, int], str]]:
+        """The registry's words for the people on screen (None when there is no registry or no map yet)."""
+        if self.npcs is None or not self.global_map.current:
+            return None
+        return self.npcs.screen_labels(self.global_map)
+
+    def _name_people_on_screen(self) -> None:
+        """Once the opening screen is mapped, write the people on it into the screen text the strategist reads."""
+        try:
+            people = self._screen_people()
+            if people and self._identified:
+                self._screen_tiles = verbalize_tiles(self._identified, people)
+        except Exception as e:
+            log_warn(f"NPC registry: naming the people on screen was skipped: {type(e).__name__}: {e}",
+                     self._parameters)
+
     def _failure_streak(self) -> Tuple[int, List[str]]:
         """Episodes in a row, newest first, that did not complete, and their tasks."""
         streak, failed = 0, []
@@ -506,10 +522,15 @@ class PokemonStrategist:
         local = cell_kinds(self._identified) if self._identified else None
         self.global_map.prune_routes()
         _, failed = self._failure_streak()
+        try:
+            marks = self.npcs.ascii_people(self.global_map) if self.npcs is not None else None
+        except Exception as e:
+            log_warn(f"NPC registry: map marks skipped: {type(e).__name__}: {e}", self._parameters)
+            marks = None
         block, override = prompt_block(self.global_map, list(self.global_map.new_cells_by_episode), local,
                                        explore=self._explore_now,
                                        episode=self.start_episode + self._episodes_run,
-                                       failed_tasks=failed)
+                                       failed_tasks=failed, people=marks)
         if override is not None and override["kind"] == "edge":
             log_info(f"Global map: exploration overrides the task: head to ({override['dx']}, {override['dy']}) "
                      f"{override['sector']} in {self.global_map.area_label(override['area'])}.", self._parameters)
@@ -750,6 +771,7 @@ class PokemonStrategist:
         if self.npcs is not None:
             self.npcs.begin_episode(n, self.global_map)
         self._map_opening_screen(frame)
+        self._name_people_on_screen()
         self._explore_now = self._check_stuck(frame, n)
         self._abandon_failing_plan(n)
         self._plan_goals(n)
@@ -771,6 +793,7 @@ class PokemonStrategist:
             task=task, env=env, game=self._game, max_steps=self._supervisor_max_steps,
             tile_recognizer=self.tiles, episode_number=n, guidance=guidance, parameters=self._parameters,
             max_new_tokens=self._supervisor_max_new_tokens, battle_tips=battle_tips(self.guide),
+            screen_people=self._screen_people if self.npcs is not None else None,
             **self._supervisor_kwargs,
         )
         env.marker = lambda: (len(supervisor.report.narrative), len(supervisor.report.event_log))
@@ -782,6 +805,7 @@ class PokemonStrategist:
         # Let a mid-door-warp black screen clear, so the next task starts from the new place.
         settle_screen(self._env)
         self._name_segments(report, n)
+        self._read_conversations()
         events = record_events(self.guide, self.global_map, self.global_map.warps[warps_from:], n, self._parameters)
 
         before, frame = frame, self._current_frame()
@@ -795,7 +819,7 @@ class PokemonStrategist:
         if town_event is not None:
             events.append(town_event)
         if report.narrative or any(r.notes and r.notes.strip() for r in report.executor_reports):
-            self._extract_knowledge(report.digest, before, frame, n)
+            self._extract_knowledge(report.digest + self._conversation_digest(n), before, frame, n)
         self._update_notepad(report.digest, summary, n)
         if closed:
             self._absorb_notepad(closed, n)
@@ -807,6 +831,26 @@ class PokemonStrategist:
 
         self._finish_episode(record, calls_from)
         return record
+
+    def _read_conversations(self) -> None:
+        """Close the episode's open conversation and have the model read what was said (each is read once)."""
+        if self.npcs is None:
+            return
+        try:
+            self.npcs.finish_conversations()
+            self.npcs.read_conversations(self._vlm_caller("npc_ocr"))
+        except Exception as e:
+            log_warn(f"NPC registry: reading the conversations failed and was skipped: "
+                     f"{type(e).__name__}: {e}", self._parameters)
+
+    def _conversation_digest(self, n: int) -> str:
+        if self.npcs is None:
+            return ""
+        try:
+            return self.npcs.digest_lines(n, self.global_map)
+        except Exception as e:
+            log_warn(f"NPC registry: the conversation digest was skipped: {type(e).__name__}: {e}", self._parameters)
+            return ""
 
     def _archive_episode(self, record: EpisodeRecord, calls_from: int) -> None:
         calls = [event for event in self.report.event_log[calls_from:]
@@ -827,14 +871,9 @@ class PokemonStrategist:
         log_info(f"Global map: {added} new squares this episode, {self.global_map.n_cells} in all, "
                  f"{self.global_map.n_areas} area(s).", self._parameters)
         if self.npcs is not None:
+            self._read_conversations()
             try:
-                self.npcs.finish_conversations()
-                self.npcs.read_conversations(self._vlm_caller("npc_ocr"))
-            except Exception as e:
-                log_warn(f"NPC registry: reading the conversations failed and was skipped: "
-                         f"{type(e).__name__}: {e}", self._parameters)
-            try:
-                self.npcs.end_episode(self.global_map, episode_number=record.n)
+                self.npcs.end_episode(self.global_map, vlm_caller=self._vlm_caller, episode_number=record.n)
             except Exception as e:
                 log_warn(f"NPC registry end-of-episode failed and was skipped: {type(e).__name__}: {e}",
                          self._parameters)

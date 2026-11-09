@@ -19,6 +19,7 @@ from execution.strategist.pokemon.goals import PokemonGoalTree
 from execution.strategist.pokemon.guide import StrategyGuide
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree
 from execution.strategist.pokemon.notepad import ThoughtNotepad
+from execution.strategist.pokemon.npc_model import display_name
 from execution.strategist.pokemon.npcs import NPCRegistry
 from execution.strategist.report import episode_report_path, load_episode_report
 from python_scripts.paths import debug_dir, debug_frames_dir, strategist_dir
@@ -318,6 +319,8 @@ def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[
     for si in live:
         seg, info = gmap.segments[si], gmap.info(si)
         markers = people.markers(gmap, si) if people is not None else []
+        if people is not None:                                   # people the map saw only partly: a ring marked ?
+            markers += [(square, "?", False) for square in people.unconfirmed(gmap, si)]
         png = map_image(report, gmap, si, report.image_path("globalmap", f"ep{episode}_seg{si}.png"), doors=True,
                         people=markers)
         blocks += [md.h3(f"Segment {si}{' (current)' if si == gmap.segment else ''}: {gmap.place_label(si)}, "
@@ -329,7 +332,9 @@ def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[
         blocks.append(report.img(f"segment {si}", png))
         if markers:
             blocks.append(md.table(pd.DataFrame([
-                {"marker": label, "person": people.npcs[f"npc_{int(label):03d}"].name,
+                {"marker": label,
+                 "person": (display_name(people.npcs[f"npc_{int(label):03d}"]) if label != "?"
+                            else "someone cut off by the screen edge or hidden: not seen whole yet"),
                  "talked to here": "yes" if talked else "no", "square": square}
                 for square, label, talked in markers])))
         doors = gmap.door_list(si)
@@ -392,7 +397,8 @@ def view_guide(guide: StrategyGuide, report: Report, episode: int) -> Tuple[List
 
 
 PEOPLE_LEGEND = ("Yellow circles are people at the square they were last seen: filled = talked to in this area, "
-                 "hollow = not yet. The number is the person's id in the People page.")
+                 "hollow = not yet. The number is the person's id in the People page. A ring marked ? is someone the map "
+                 "saw only partly (cut off by the screen edge, or hidden) who has not been seen whole yet.")
 
 
 def looks_sheet(reg: NPCRegistry, path: str) -> Optional[str]:
@@ -419,7 +425,7 @@ def view_npcregistry(reg: NPCRegistry, report: Report, episode: int) -> Tuple[Li
         areas = sorted({gmap.resolve(s.segment, s.square)[0] for s in npc.sightings}) if gmap is not None else []
         rows.append({
             "#": int(npc.id.split("_")[1]), "name": npc.name, "real name": npc.real_name or "",
-            "kind": npc.kind, "look": reg.look_of(npc).id,
+            "kind": npc.kind, "description": npc.description, "look": reg.look_of(npc).id,
             "areas seen": ", ".join(f"{si}: {gmap.place_label(si)}" for si in areas),
             "last seen": f"episode {seen[2].episode}, segment {seen[0]}, square {seen[1]}" if seen else "",
             "sightings": len(npc.sightings), "conversations": len(npc.conversations),
@@ -440,11 +446,14 @@ def view_npcregistry(reg: NPCRegistry, report: Report, episode: int) -> Tuple[Li
     if talked:
         blocks.append(md.h2("Conversations"))
         for c in sorted(talked, key=lambda c: (c.episode, c.map_step_start)):
-            who = reg.npcs[c.npc].name if c.npc in reg.npcs else "unknown"
+            who = display_name(reg.get(c.npc)) if c.npc in reg.npcs else "unknown"
             where = gmap.place_label(gmap.resolve(c.segment, c.square)[0]) if gmap is not None else f"segment {c.segment}"
             blocks.append(md.details(
                 f"Episode {c.episode}: {who} in {where} ({c.trigger})",
-                md.code(c.text or "(no text read)") + (f"\n\n{c.summary}" if c.summary else "")))
+                md.code(c.text or "(no text read)")
+                + (f"\n\n**Summary:** {c.summary}" if c.summary else "\n\n_No summary yet._")
+                + (f" (outcome: {c.outcome}" + (f", speaker: {c.speaker_name}" if c.speaker_name else "") + ")"
+                   if c.outcome else "")))
     if reg.signs:
         blocks += [md.h2("Signs"), md.table(pd.DataFrame([
             {"sign": s.id, "segment": s.segment, "square": s.square, "conversations": len(s.conversations),
@@ -454,6 +463,12 @@ def view_npcregistry(reg: NPCRegistry, report: Report, episode: int) -> Tuple[Li
         blocks += [md.h2("Conversations nobody could be matched to"), md.table(pd.DataFrame([
             {"episode": c.episode, "trigger": c.trigger, "text": (c.text or "(no text read)")[:200]}
             for c in unattributed]))]
+    replies = []
+    for stage, label in (("npc_card", "person card reply"), ("npc_judge", "look-alike judge reply"),
+                         ("npc_summary", "conversation summary reply"), ("npc_ocr", "dialogue reading reply")):
+        replies += stage_replies(report.run_dir, range(episode + 1), stage, label)
+    if replies:
+        blocks += [md.h2("The model's replies"), *replies]
     blocks += [md.h2("Counters"), md.table(pd.Series(dict(reg.stats), dtype=int).sort_index().rename_axis("counter")
                                            .reset_index(name="count")) if reg.stats else md.note("No counters yet.")]
     return blocks, f"{len(people)} people, {len(reg.looks)} looks, {len(reg.conversations)} conversations"
@@ -698,6 +713,30 @@ def debug_strategist_view(obj, name, artifact, episode):
         md.table(pd.DataFrame(rows)),
     ])
     log_info(f"[strategist] view report: {index}", parameters)
+
+
+@debug_strategist.command(name="npc-export")
+@NAME_OPTION
+@click.option("--episode", type=int, default=None,
+              help="Export the registry as of this episode (its latest save at or before it). Defaults to the latest.")
+@click.option("--output", type=click.Path(file_okay=False), default=None,
+              help="Where to write the dataset. Defaults to results/npc_dataset/<game>/<name>.")
+@click.pass_obj
+def debug_strategist_npc_export(obj, name, episode, output):
+    """The people registry as a dataset: JSON lines, CSV and PNG files, readable without this code."""
+    from debug_scripts.npc_export import export_registry
+
+    parameters, game = obj["parameters"], obj["game"]
+    run_dir, _ = setup(obj, name, "npc_export")
+    reg = registry_at(run_dir, episode if episode is not None else 10 ** 9)
+    if reg is None:
+        log_error(f"[strategist] no people registry under {run_dir}; the run needs the registry on.", parameters)
+    maps = [n for n in GlobalMap.saved_episodes(run_dir) if episode is None or n <= episode]
+    gmap = GlobalMap.load(run_dir, maps[-1], parameters=parameters) if maps else None
+    out = output or os.path.join("results", "npc_dataset", game, name)
+    counts = export_registry(reg, gmap, out, game, name)
+    log_info(f"[strategist] npc dataset written to {out}: " + ", ".join(f"{v} {k}" for k, v in counts.items()),
+             parameters)
 
 
 @debug_strategist.command(name="diff")

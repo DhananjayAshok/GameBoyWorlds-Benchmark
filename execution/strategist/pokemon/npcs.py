@@ -20,14 +20,16 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Set, Tuple
 
 import numpy as np
 
 from execution.artifact import StrategistArtifact, update
 from execution.perception.pokemon import sprites as S
 from execution.perception.pokemon.grid import cell_box
-from execution.strategist.pokemon.global_map import DIRECTIONS, GlobalMap, StepEvent
+from execution.strategist.pokemon.global_map import DIRECTIONS, OCCUPIED, GlobalMap, StepEvent
+from execution.strategist.pokemon import npc_model
+from execution.strategist.pokemon.npc_model import display_name
 from execution.strategist.pokemon.npc_names import draw_name
 from utils import log_info, log_warn
 
@@ -109,6 +111,10 @@ class Conversation:
     led_to: Optional[str] = None
     complete: bool = False
     read: bool = False                 # the model has been asked to read the crops
+    context: Optional[np.ndarray] = None   # the screen just before the conversation began
+    summarised: bool = False           # the model has summarised the text (or gave up)
+    name_type: Optional[str] = None    # "personal" | "class" for ``speaker_name``
+    tries: int = 0
 
 
 @dataclass
@@ -127,6 +133,9 @@ class NPC:
     candidates: List[str] = field(default_factory=list)
     created: Tuple[int, int] = (0, 0)
     merged_into: Optional[str] = None
+    context: Optional[np.ndarray] = None   # the screen (greys) on which this person was first seen
+    context_cell: Optional[Cell] = None    # and the square the person stood on in it
+    tries: int = 0                         # model answers that could not be used
 
 
 @dataclass
@@ -160,7 +169,7 @@ class NPCRegistry(StrategistArtifact):
     """Every person the player has seen in one run. See the module docstring."""
 
     _TRANSIENT = ("_gmap", "_episode", "_tracks", "_last_people", "_stack", "_stack_ref", "_look_merges", "_weak",
-                 "_facing", "_open")
+                 "_facing", "_open", "_frame", "_free_frame")
 
     def __init__(self, game: str, run_name: str) -> None:
         self.game = game
@@ -188,6 +197,8 @@ class NPCRegistry(StrategistArtifact):
         self._facing: Optional[str] = None                      # the way the player faces, once known
         self._open: Optional[str] = None                        # the conversation in progress
         self._weak: Dict[Tuple[int, Cell], Set[int]] = {}       # (segment, square) -> map steps it looked like a person
+        self._frame: Optional[np.ndarray] = None                # the frame being read for people
+        self._free_frame: Optional[np.ndarray] = None           # the last free-roam frame (a conversation's context)
 
     def __setstate__(self, state: dict) -> None:
         super().__setstate__(state)
@@ -250,6 +261,7 @@ class NPCRegistry(StrategistArtifact):
     def on_opening_screen(self, frame: np.ndarray, identified: Dict[Any, Any], free: bool) -> None:
         if free and self._gmap is not None:
             self._process(frame, identified, "start", 0)
+            self._free_frame = frame
 
     def on_env_step(self, ev: StepEvent) -> None:
         """A :class:`~execution.strategist.pokemon.global_map.MappingEnvironment` listener."""
@@ -262,6 +274,7 @@ class NPCRegistry(StrategistArtifact):
         if not ev.free or ev.status not in PLACED_STATUS:
             return
         self._process(ev.frame, ev.identified, ev.status, ev.max_steps)
+        self._free_frame = ev.frame
 
     # -- seeing people ----------------------------------------------------------------------------
 
@@ -351,6 +364,7 @@ class NPCRegistry(StrategistArtifact):
 
     def _process(self, frame: np.ndarray, identified: Dict[Any, Any], status: str, max_steps: int) -> None:
         gmap = self._gmap
+        self._frame = frame
         if status in ("relocalised", "new_segment"):
             self._tracks = {}
         if gmap.residual != (0, 0):                      # off the 16 px grid: tags are for the unshifted grid
@@ -493,6 +507,8 @@ class NPCRegistry(StrategistArtifact):
                     candidates += [n.id for n in self.live_npcs()
                                    if self.look_of(n).id == best[1] and n.id not in busy and n.id not in candidates]
                 npc = self._new_npc(look, "card", candidates, step)
+        if npc.context is None and self._frame is not None:
+            npc.context, npc.context_cell = np.array(self._frame, copy=True), det["cell"]
         self.stats["tracks_started"] += 1
         self.next_ids["track"] += 1
         track = Track(id=self.next_ids["track"], npc=npc.id, segment=segment, square=square, view=view_index,
@@ -607,6 +623,8 @@ class NPCRegistry(StrategistArtifact):
             sign.conversations.append(conv.id)
         else:
             self.unattributed.append(conv.id)
+        if self._free_frame is not None:
+            conv.context = np.array(self._free_frame, copy=True)
         self.conversations[conv.id] = conv
         self._open = conv.id
         self.stats["conversations"] += 1
@@ -736,12 +754,37 @@ class NPCRegistry(StrategistArtifact):
                     self.merge_npcs(older, newer)
 
     @update
-    def end_episode(self, gmap: GlobalMap) -> None:
-        """Close the episode's bookkeeping; decorated so the registry is saved every episode."""
+    def end_episode(self, gmap: GlobalMap, vlm_caller: Optional[Callable[[str], Callable[..., Any]]] = None) -> None:
+        """Close the episode's bookkeeping; decorated so the registry is saved every episode.
+
+        ``vlm_caller(stage)`` gives the model caller for a stage (``npc_card``, ``npc_judge``, ``npc_summary``); without
+        it only the code-only steps run. Each model step is guarded: a failure is logged and the run goes on.
+        """
         self._gmap = gmap
         self.finish_conversations()
         self.consolidate()
+        if vlm_caller is not None:
+            self._model_steps(vlm_caller, gmap)
         self._tracks, self._last_people = {}, {}
+
+    def _model_steps(self, vlm_caller: Callable[[str], Callable[..., Any]], gmap: GlobalMap) -> None:
+        for label, step in (("cards and judges", lambda: self.run_model(vlm_caller("npc_card"),
+                                                                       vlm_caller("npc_judge"), gmap)),
+                            ("summaries", lambda: self.run_summaries(vlm_caller("npc_summary"), gmap)),
+                            ("real names", self.apply_real_names)):
+            try:
+                step()
+            except Exception as e:
+                log_warn(f"NPC registry: {label} skipped: {type(e).__name__}: {e}")
+
+    def run_model(self, vlm_card: Callable[..., Any], vlm_judge: Callable[..., Any], gmap: GlobalMap) -> None:
+        npc_model.run_model(self, vlm_card, vlm_judge, self.game, gmap)
+
+    def run_summaries(self, vlm_call: Callable[..., Any], gmap: GlobalMap) -> None:
+        npc_model.run_summaries(self, vlm_call, self.game, gmap)
+
+    def apply_real_names(self) -> None:
+        npc_model.apply_real_names(self)
 
     # -- reading ----------------------------------------------------------------------------------
 
@@ -758,7 +801,8 @@ class NPCRegistry(StrategistArtifact):
         """The block the strategist reads before writing a task: who has been seen in the area it is in, where they
         are from the player, and whether it has already talked to them (with what they said). Empty if nobody."""
         here = [(npc, square) for npc, square in self.people_here(gmap)
-                if self._episode - self.last_seen(gmap, npc)[2].episode <= STALE_EPISODES]
+                if self._episode - self.last_seen(gmap, npc)[2].episode <= STALE_EPISODES
+                and self.look_of(npc).kind_hint != "object"]
         if not here:
             return ""
         px, py = gmap.pos
@@ -779,16 +823,19 @@ class NPCRegistry(StrategistArtifact):
                      and gmap.resolve(self.conversations[c].segment, self.conversations[c].square)[0] == gmap.segment]
             if talks:
                 last = talks[-1]
-                said = f": \"{last.text[:160].strip()}\"" if last.text else ""
+                heard = last.summary or last.text[:160].strip().replace("\n", " ")
+                said = f": \"{heard}\"" if heard else ""
                 status = f"talked to here (episode {last.episode}){said}"
             else:
                 status = "not talked to yet"
-            lines.append(f'- "{npc.name}" at ({dx}, {dy}), {when}: {status}.')
+            what = ", ".join(x for x in (npc.kind if npc.kind != "unknown" else "", npc.description[:70]) if x)
+            lines.append(f'- "{display_name(npc)}"{f" ({what})" if what else ""} at ({dx}, {dy}), {when}: {status}.')
         if len(here) > max_people:
             lines.append(f"...and {len(here) - max_people} more.")
-        block = ("PEOPLE YOU HAVE SEEN IN THIS AREA (positions are steps from you: x right, y up). The names are "
-                 "only labels for this list; the player does not know them, so describe a person by where they "
-                 "stand, not by name. Talking to someone you have not talked to yet can give information or items.\n"
+        block = ("PEOPLE YOU HAVE SEEN IN THIS AREA (positions are steps from you: x right, y up). The quoted names are "
+                 "labels for this list (unless one is a real name the person gave): the player does not know the labels, "
+                 "so describe a person by where they stand, not by name. Talking to someone you have not talked to "
+                 "yet can give information or items.\n"
                  + "\n".join(lines))
         return "\n\n" + block[:max_chars]
 
@@ -800,6 +847,71 @@ class NPCRegistry(StrategistArtifact):
             if c is not None and (c.text or c.crops):
                 found.add(gmap.resolve(c.segment, c.square)[0])
         return found
+
+    def _talks_in(self, gmap: GlobalMap, npc: NPC, segment: int) -> List[Conversation]:
+        return [self.conversations[c] for c in npc.conversations
+                if c in self.conversations and (self.conversations[c].text or self.conversations[c].crops)
+                and gmap.resolve(self.conversations[c].segment, self.conversations[c].square)[0] == segment]
+
+    def screen_labels(self, gmap: GlobalMap) -> Dict[Cell, str]:
+        """What to say about each person on screen right now, keyed by the square relative to the player, for the
+        screen text the strategist and the supervisor read: the quoted name, the kind, and whether the player has
+        talked to them here."""
+        out: Dict[Cell, str] = {}
+        for cell, npc_id in self._last_people.items():
+            npc = self.get(npc_id)
+            if self.look_of(npc).kind_hint == "object":
+                continue
+            talks = self._talks_in(gmap, npc, gmap.segment)
+            if talks:
+                heard = (talks[-1].summary or talks[-1].text)[:50].strip().replace("\n", " ")
+                status = f'talked to here in episode {talks[-1].episode}' + (f': "{heard}"' if heard else "")
+            else:
+                status = "not talked to here"
+                elsewhere = [seg for seg in self.talked_in(gmap, npc) if seg != gmap.segment]
+                if elsewhere:
+                    status += "; met before in another area"
+            out[cell] = f'"{display_name(npc)}" ({npc.kind if npc.kind != "unknown" else "person"}; {status})'[:120]
+        return out
+
+    def ascii_people(self, gmap: GlobalMap) -> Dict[Cell, str]:
+        """``N`` (talked to here) or ``n`` for every person last seen in the player's area, for the text map."""
+        out: Dict[Cell, str] = {}
+        for npc, square in self.people_here(gmap):
+            if self.look_of(npc).kind_hint == "object":
+                continue
+            if self._episode - self.last_seen(gmap, npc)[2].episode > STALE_EPISODES:
+                continue
+            out[square] = "N" if gmap.segment in self.talked_in(gmap, npc) else "n"
+        return out
+
+    def unconfirmed(self, gmap: GlobalMap, segment: int) -> List[Cell]:
+        """Squares the map holds as a person (an ``occupied`` square the tile table tagged as a person) where no
+        registry person was ever seen: someone cut off by the screen edge or hidden, not yet seen whole."""
+        known = []
+        for npc in self.live_npcs():
+            for sighting in npc.sightings:
+                seg, square = self.place(gmap, sighting)
+                if seg == segment:
+                    known.append(square)
+        out = []
+        for square, cell in gmap.segments[segment].items():
+            if cell.kind == OCCUPIED and "npc" in cell.tags and all(_manhattan(square, k) > 1 for k in known):
+                out.append(square)
+        return sorted(out)
+
+    def digest_lines(self, episode: int, gmap: GlobalMap) -> str:
+        """The conversations of one episode, to add to the digest the knowledge extraction reads."""
+        lines = []
+        for c in self.conversations.values():
+            if c.episode != episode or not c.text.strip():
+                continue
+            who = (f'"{display_name(self.get(c.npc))}"' if c.npc in self.npcs else "a sign" if c.sign else "someone")
+            lines.append(f'- {who} in {npc_model._area(self, gmap, gmap.resolve(c.segment, c.square)[0])}: '
+                         f'"{c.text[:400].strip()}"')
+        if not lines:
+            return ""
+        return "\n\nConversations this episode (name the person by the quoted name):\n" + "\n".join(lines)
 
     def markers(self, gmap: GlobalMap, segment: int) -> List[Tuple[Cell, str, bool]]:
         """``(square, label, talked_to_here)`` for every person last seen in ``segment``; the label is the number
