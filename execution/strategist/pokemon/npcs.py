@@ -115,6 +115,8 @@ class Conversation:
     summarised: bool = False           # the model has summarised the text (or gave up)
     name_type: Optional[str] = None    # "personal" | "class" for ``speaker_name``
     tries: int = 0
+    how: str = "seen"                  # "seen" (on screen next to the player), "remembered" (the registry had them on
+                                       # the square in front) or "nearest" (the closest known person, a guess)
 
 
 @dataclass
@@ -607,10 +609,15 @@ class NPCRegistry(StrategistArtifact):
                 sign_square = self._sign_at(target)
         elif len(set(neighbours)) == 1:                          # facing not known, or the person came to us
             speaker = neighbours[0]
+        how = "seen"
+        if speaker is None and sign_square is None:              # not on this frame: use what the registry remembers
+            speaker, how = self._nearest_person(a_press), "nearest"
+            if speaker is not None and a_press and self._facing is not None and self._remembered_at(DIRECTIONS[self._facing]) == speaker:
+                how = "remembered"
         conv = Conversation(
             id=self._next("conv"), npc=speaker, sign=None, episode=self._episode, map_step_start=g.step,
             map_step_end=None, segment=g.segment, square=g.pos, target=sign_square,
-            trigger="a_press" if a_press else "npc_started")
+            trigger="a_press" if a_press else "npc_started", how=how)
         if speaker is not None:
             npc = self.get(speaker)
             conv.npc = npc.id
@@ -628,6 +635,45 @@ class NPCRegistry(StrategistArtifact):
         self.conversations[conv.id] = conv
         self._open = conv.id
         self.stats["conversations"] += 1
+
+    def _people_nearby(self) -> List[Tuple[int, Cell, NPC]]:
+        """Every known person last seen in the player's area, as ``(distance, offset from the player, npc)``."""
+        g = self._gmap
+        segment, here = g.resolve(g.segment, g.pos)
+        out = []
+        for npc in self.live_npcs():
+            if self.look_of(npc).kind_hint == "object":
+                continue
+            seen = self.last_seen(g, npc)
+            if seen is not None and seen[0] == segment:
+                offset = (seen[1][0] - here[0], seen[1][1] - here[1])
+                out.append((abs(offset[0]) + abs(offset[1]), offset, npc))
+        return out
+
+    def _remembered_at(self, offset: Cell) -> Optional[str]:
+        for _, where, npc in self._people_nearby():
+            if where == offset:
+                return npc.id
+        return None
+
+    def _nearest_person(self, a_press: bool) -> Optional[str]:
+        """Who spoke when no person was seen next to the player on this frame: the registry's person on the square
+        in front, else the closest known person (within 2 squares if the player pressed A, 5 if someone started
+        talking). Ties go to whoever is in the direction the player faces."""
+        if a_press and self._facing is not None:
+            there = self._remembered_at(DIRECTIONS[self._facing])
+            if there is not None:
+                return there
+        people = [p for p in self._people_nearby() if 0 < p[0] <= (2 if a_press else 5)]
+        if not people:
+            return None
+        front = DIRECTIONS.get(self._facing, (0, 0)) if self._facing else (0, 0)
+
+        def key(p):
+            ahead = p[1][0] * front[0] + p[1][1] * front[1]
+            return (p[0], -ahead, -p[2].sightings[-1].map_step if p[2].sightings else 0)
+
+        return min(people, key=key)[2].id
 
     def _sign_for(self, segment: int, square: Cell) -> Sign:
         g = self._gmap
@@ -671,8 +717,6 @@ class NPCRegistry(StrategistArtifact):
 
     def read_conversations(self, vlm_call: Any) -> None:
         """Ask the model to read the dialogue pictures of every conversation not read yet (one batched call)."""
-        from utils.vlm import merge_ocr_strings
-
         todo = [c for c in self.conversations.values() if c.crops and not c.text and not c.read]
         if not todo:
             return
@@ -692,7 +736,7 @@ class NPCRegistry(StrategistArtifact):
                 if text and text.lower() != "none":
                     pieces.append(text)
             at += n
-            c.text, c.read = "\n".join(merge_ocr_strings(pieces)), True
+            c.text, c.read = "\n".join(ordered_merge(pieces)), True
             self.stats["conversations_read"] += 1
 
     # -- end of episode ---------------------------------------------------------------------------
@@ -941,6 +985,23 @@ class NPCRegistry(StrategistArtifact):
                              if i in old.npcs and old.npcs[i].kind != n.kind],
             "new_signs": [i for i in self.signs if i not in old.signs],
         }
+
+
+def ordered_merge(pieces: List[str]) -> List[str]:
+    """Join the text of successive dialogue boxes into lines, in the order the boxes were on screen. A box that only
+    repeats lines already there (the same box, or the box before it with its last line scrolled up) adds nothing new;
+    the ▼ "more text" arrow is not text."""
+    lines: List[str] = []
+    for piece in pieces:
+        new = [ln.replace("▼", "").replace("▶", "").strip() for ln in piece.splitlines()]
+        new = [ln for ln in new if ln]
+        for k in range(min(len(lines), len(new)), 0, -1):        # the box before, scrolled up by k lines
+            if lines[-k:] == new[:k]:
+                new = new[k:]
+                break
+        if new and not any(lines[i:i + len(new)] == new for i in range(len(lines) - len(new) + 1)):
+            lines.extend(new)
+    return lines
 
 
 def _pairs(items: List[str]) -> List[Tuple[str, str]]:

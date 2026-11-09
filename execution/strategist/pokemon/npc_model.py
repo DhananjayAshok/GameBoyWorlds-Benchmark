@@ -199,8 +199,11 @@ def parse_summary(output: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]
 
 
 def _replies(out: Any, n: int) -> List[str]:
+    """One reply per prompt. A thinking model answers ``Reasoning: ...  Response:  Kind: person``: only what follows
+    the last ``Response:`` is the answer (the parsers look for lines that start with their key)."""
     out = out if isinstance(out, list) else [out]
-    return [str(x) for x in out] + [""] * (n - len(out))
+    out = [str(x).rsplit("Response:", 1)[1] if "Response:" in str(x) else str(x) for x in out]
+    return [x.strip() for x in out] + [""] * (n - len(out))
 
 
 # -- merging ----------------------------------------------------------------------------------------------------
@@ -260,7 +263,7 @@ def _cards(reg, people, vlm_call, game: str, gmap) -> None:
                 else [])
         pics += [sprite_x4(view)] + [look_sheet(reg.look_of(o)) for o in others]
         images.append(pics)
-    out = _replies(vlm_call(texts=prompts, images=images, max_new_tokens=900), len(people))
+    out = _replies(vlm_call(texts=prompts, images=images, max_new_tokens=2500), len(people))
     for npc, others, reply in zip(people, cands, out):
         card, problem = parse_card(reply, len(others))
         if card is None:
@@ -300,7 +303,7 @@ def _judges(reg, people, vlm_call, game: str, gmap) -> None:
         pics = ([screen_with_box(npc.context, npc.context_cell)] if npc.context is not None and npc.context_cell
                 else [sprite_x4(reg.look_of(npc).views[0])])
         images.append(pics + [look_sheet(reg.look_of(o)) for o in others[:1]])
-    out = _replies(vlm_call(texts=prompts, images=images, max_new_tokens=500), len(people))
+    out = _replies(vlm_call(texts=prompts, images=images, max_new_tokens=1500), len(people))
     for npc, others, reply in zip(people, cands, out):
         if not others:
             npc.needs = None
@@ -322,10 +325,25 @@ def _judges(reg, people, vlm_call, game: str, gmap) -> None:
         npc.needs = None
 
 
+def _same_text(text: str) -> str:
+    return re.sub(r"[\s▼▶]+", " ", text).strip().casefold()
+
+
 def run_summaries(reg, vlm_call: Callable[..., Any], game: str, gmap) -> None:
     """One batched, text-only call for every conversation with text that has no summary yet."""
     todo = [c for c in reg.conversations.values()
             if c.text.strip() and not c.summarised][:MAX_BATCH]
+    done = {}
+    for c in reg.conversations.values():
+        if c.summary:
+            done.setdefault(_same_text(c.text), c)
+    for c in list(todo):                                         # the same words again: the earlier summary stands
+        twin = done.get(_same_text(c.text))
+        if twin is not None and twin is not c:
+            c.summary, c.speaker_name, c.name_type, c.summarised = (twin.summary, twin.speaker_name,
+                                                                    twin.name_type, True)
+            c.outcome = "battle" if c.led_to == "battle" else twin.outcome
+            todo.remove(c)
     if not todo:
         return
     prompts = []
@@ -337,7 +355,7 @@ def run_summaries(reg, vlm_call: Callable[..., Any], game: str, gmap) -> None:
         prompts.append(NPC_SUMMARY_PROMPT.replace("[GAME]", game).replace("[WITH]", with_whom)
                        .replace("[AREA]", _area(reg, gmap, gmap.resolve(c.segment, c.square)[0]))
                        .replace("[TEXT]", c.text[:1500]).replace("[HINT]", hint))
-    out = _replies(vlm_call(texts=prompts, max_new_tokens=500), len(todo))
+    out = _replies(vlm_call(texts=prompts, max_new_tokens=1500), len(todo))
     for c, reply in zip(todo, out):
         parsed, problem = parse_summary(reply)
         if parsed is None:
