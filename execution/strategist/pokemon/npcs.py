@@ -50,6 +50,8 @@ SIGN_TAGS = {"sign", "interactable object", "item"}
 #: At most this many dialogue pictures of one conversation are read by the model.
 MAX_OCR_CROPS = 12
 OCR_PROMPT = "If there is no text in the image, just say NONE. Otherwise, perform OCR and state the text in this image:"
+#: People not seen for more than this many episodes are left out of the strategist's list: they have likely moved.
+STALE_EPISODES = 20
 #: A person the tile table only half recognises (someone seated on a bench, partly behind a counter) is accepted when
 #: at least ``WEAK_QUARTERS`` of the square's quarters read as a person, the outline is this heavy, and the same
 #: square shows it in ``WEAK_FRAMES`` map steps.
@@ -729,7 +731,8 @@ class NPCRegistry(StrategistArtifact):
     def people_block(self, gmap: GlobalMap, max_people: int = 8, max_chars: int = 1800) -> str:
         """The block the strategist reads before writing a task: who has been seen in the area it is in, where they
         are from the player, and whether it has already talked to them (with what they said). Empty if nobody."""
-        here = self.people_here(gmap)
+        here = [(npc, square) for npc, square in self.people_here(gmap)
+                if self._episode - self.last_seen(gmap, npc)[2].episode <= STALE_EPISODES]
         if not here:
             return ""
         px, py = gmap.pos
