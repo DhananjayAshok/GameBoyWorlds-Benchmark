@@ -26,6 +26,7 @@ import numpy as np
 
 from execution.artifact import StrategistArtifact, update
 from execution.perception.pokemon import sprites as S
+from execution.perception.pokemon.grid import cell_box
 from execution.strategist.pokemon.global_map import GlobalMap, StepEvent
 from execution.strategist.pokemon.npc_names import draw_name
 from utils import log_info, log_warn
@@ -44,6 +45,12 @@ MAX_CANDIDATES = 8
 SIGHTING_EVERY = 10
 #: A sprite caught mid-step or half hidden needs at least this many dark pixels to count as a person.
 MIN_TAGGED_BLACK = 12
+#: A person the tile table only half recognises (someone seated on a bench, partly behind a counter) is accepted when
+#: at least ``WEAK_QUARTERS`` of the square's quarters read as a person, the outline is this heavy, and the same
+#: square shows it in ``WEAK_FRAMES`` map steps.
+WEAK_QUARTERS = 2
+WEAK_BLACK = 60
+WEAK_FRAMES = 2
 
 
 @dataclass
@@ -144,7 +151,7 @@ def _manhattan(a: Cell, b: Cell) -> int:
 class NPCRegistry(StrategistArtifact):
     """Every person the player has seen in one run. See the module docstring."""
 
-    _TRANSIENT = ("_gmap", "_episode", "_tracks", "_last_people", "_stack", "_stack_ref", "_look_merges")
+    _TRANSIENT = ("_gmap", "_episode", "_tracks", "_last_people", "_stack", "_stack_ref", "_look_merges", "_weak")
 
     def __init__(self, game: str, run_name: str) -> None:
         self.game = game
@@ -169,6 +176,7 @@ class NPCRegistry(StrategistArtifact):
         self._stack: Optional[np.ndarray] = None
         self._stack_ref: List[Tuple[str, int]] = []
         self._look_merges: Set[Tuple[str, str]] = set()
+        self._weak: Dict[Tuple[int, Cell], Set[int]] = {}       # (segment, square) -> map steps it looked like a person
 
     def __setstate__(self, state: dict) -> None:
         super().__setstate__(state)
@@ -272,6 +280,15 @@ class NPCRegistry(StrategistArtifact):
                 continue
             found.append(dict(cell=cell, offset=(0, 0), window=window, mask=mask,
                               full=S.full_window_ok(identified, cell) and S.complete_sprite(mask)))
+        for cell in S.find_npc_cells(identified, WEAK_QUARTERS):
+            if cell in cells:
+                continue
+            window = S.sprite_window(frame, cell, (0, 0), p["y_offset"])
+            if window is None:
+                continue
+            mask = S.black_mask(window, level)
+            if int(mask.sum()) >= WEAK_BLACK:
+                found.append(dict(cell=cell, offset=(0, 0), window=window, mask=mask, full=False, weak=True))
         keys, _ = self._view_stack()
         if len(keys):
             for cell, offset, _, _ in S.scan_for_views(frame, keys, S.scan_cells(identified, cells), level,
@@ -283,6 +300,37 @@ class NPCRegistry(StrategistArtifact):
                                       full=False))
         return found
 
+    @staticmethod
+    def _one_per_sprite(detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Two detections whose windows overlap on screen are one sprite (a person straddling two squares, or found
+        by both the tile tags and the scan): keep the whole, tag-backed one. Two people never overlap this much."""
+        def origin(det):
+            x0, y0, _, _ = cell_box(*det["cell"])
+            return x0 + det["offset"][0], y0 + det["offset"][1]
+        ranked = sorted(detections, key=lambda d: (bool(d.get("weak")), not d["full"], -int(d["mask"].sum())))
+        kept: List[Dict[str, Any]] = []
+        for det in ranked:
+            ox, oy = origin(det)
+            if all(abs(ox - origin(k)[0]) >= 12 or abs(oy - origin(k)[1]) >= 12 for k in kept):
+                kept.append(det)
+        return kept
+
+    def _confirm_weak(self, detections: List[Dict[str, Any]], segment: int, step: int) -> List[Dict[str, Any]]:
+        """Half-recognised people count only once the same square has shown one in ``WEAK_FRAMES`` map steps; then
+        they may start a look like any other person (a seated person is whole, only the tile table is unsure)."""
+        kept = [d for d in detections if not d.get("weak")]
+        claimed = [d["square"] for d in kept]
+        for det in sorted((d for d in detections if d.get("weak")), key=lambda d: -int(d["mask"].sum())):
+            if any(_manhattan(det["square"], square) <= 1 for square in claimed):
+                continue                                  # the same person, straddling two squares
+            claimed.append(det["square"])
+            seen = self._weak.setdefault((segment, det["square"]), set())
+            seen.add(step)
+            if len(seen) >= WEAK_FRAMES:
+                det["full"] = True
+                kept.append(det)
+        return kept
+
     def _process(self, frame: np.ndarray, identified: Dict[Any, Any], status: str, max_steps: int) -> None:
         gmap = self._gmap
         if status in ("relocalised", "new_segment"):
@@ -293,7 +341,8 @@ class NPCRegistry(StrategistArtifact):
         detections = self._detect(frame, identified)
         for det in detections:
             det["square"] = (pos[0] + det["cell"][0], pos[1] + det["cell"][1])
-        live = {t.id: t for t in self._tracks.values() if t.segment == segment}
+        detections = self._confirm_weak(self._one_per_sprite(detections), segment, step)
+        live ={t.id: t for t in self._tracks.values() if t.segment == segment}
         allowance = max(1, min(max_steps, 4))
 
         # a detection close to another one could be mistaken for it: those tracks never link views
@@ -519,6 +568,27 @@ class NPCRegistry(StrategistArtifact):
             if seen is not None and seen[0] == gmap.segment:
                 found.append((npc, seen[1]))
         return found
+
+    def talked_in(self, gmap: GlobalMap, npc: NPC) -> Set[int]:
+        """The (resolved) segments where the player heard this person say something."""
+        found = set()
+        for conversation_id in npc.conversations:
+            c = self.conversations.get(conversation_id)
+            if c is not None and (c.text or c.crops):
+                found.add(gmap.resolve(c.segment, c.square)[0])
+        return found
+
+    def markers(self, gmap: GlobalMap, segment: int) -> List[Tuple[Cell, str, bool]]:
+        """``(square, label, talked_to_here)`` for every person last seen in ``segment``; the label is the number
+        in the person's id, so it matches the debug table."""
+        out = []
+        for npc in sorted(self.live_npcs(), key=lambda n: n.id):
+            if self.look_of(npc).kind_hint == "object":
+                continue
+            seen = self.last_seen(gmap, npc)
+            if seen is not None and seen[0] == segment:
+                out.append((seen[1], str(int(npc.id.split("_")[1])), segment in self.talked_in(gmap, npc)))
+        return out
 
     def diff(self, old: "NPCRegistry") -> Dict[str, Any]:
         new_npcs = [i for i in self.npcs if i not in old.npcs]

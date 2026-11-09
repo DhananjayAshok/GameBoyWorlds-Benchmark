@@ -1189,13 +1189,18 @@ def segment_bounds(gmap: GlobalMap, segment: int) -> Optional[Tuple[int, int, in
     return min(xs) - 1, max(xs) + 1, min(ys) - 1, max(ys) + 1
 
 
+#: People are drawn in yellow (BGR): not used by the green, blue, red, cyan, orange or magenta marks.
+NPC_COLOUR = (0, 255, 255)
+
+
 def render_segment(gmap: GlobalMap, segment: Optional[int] = None, trail: bool = True,
                    upto_step: Optional[int] = None, bounds: Optional[Tuple[int, int, int, int]] = None,
                    highlight: Iterable[Cell] = (), trail_from: Optional[int] = None,
-                   doors: bool = False) -> Optional[np.ndarray]:
+                   doors: bool = False, people: Iterable[Tuple[Cell, str, bool]] = ()) -> Optional[np.ndarray]:
     """
     The segment as a picture assembled from the cells actually seen (BGR), unseen space hatched,
     frontier cells outlined green, the trail drawn in blue and the player boxed in red.
+    ``people`` are ``(square, label, talked_to)``: a yellow circle (filled once talked to) with the label beside it.
     """
     import cv2
 
@@ -1232,6 +1237,14 @@ def render_segment(gmap: GlobalMap, segment: Optional[int] = None, trail: bool =
                     outline(g, colour, 2)
             gx, gy = box(door["cells"][0])
             cv2.putText(canvas, str(i), (gx + 1, gy + 11), cv2.FONT_HERSHEY_SIMPLEX, 0.35, colour, 1)
+    for g, label, talked in people:
+        if x0 <= g[0] <= x1 and y0 <= g[1] <= y1:
+            gx, gy = box(g)
+            centre = (gx + GRID_SKIP // 2, gy + GRID_SKIP // 2)
+            if talked:
+                cv2.circle(canvas, centre, 7, (0, 0, 0), 1)
+            cv2.circle(canvas, centre, 6, NPC_COLOUR, -1 if talked else 1)
+            cv2.putText(canvas, label, (gx + GRID_SKIP - 5, gy + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.35, NPC_COLOUR, 1)
     steps = [(t, p) for t, s, p in gmap.trail
              if s == si and (upto_step is None or t <= upto_step) and (trail_from is None or t > trail_from)]
     if trail:

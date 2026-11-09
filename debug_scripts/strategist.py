@@ -19,6 +19,7 @@ from execution.strategist.pokemon.goals import PokemonGoalTree
 from execution.strategist.pokemon.guide import StrategyGuide
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree
 from execution.strategist.pokemon.notepad import ThoughtNotepad
+from execution.strategist.pokemon.npcs import NPCRegistry
 from execution.strategist.report import episode_report_path, load_episode_report
 from python_scripts.paths import debug_dir, debug_frames_dir, strategist_dir
 from utils import log_error, log_info
@@ -31,10 +32,12 @@ ARTIFACTS = {
     "notepad": ThoughtNotepad,
     "globalmap": GlobalMap,
     "guide": StrategyGuide,
+    "npcregistry": NPCRegistry,
 }
 TITLES = {"goals": "Goals", "knowledge": "Knowledge", "tiles": "Tiles",
-          "notepad": "Thought notepad", "globalmap": "Global map", "guide": "Strategy guide"}
-OPTIONAL = {"globalmap", "guide"}
+          "notepad": "Thought notepad", "globalmap": "Global map", "guide": "Strategy guide",
+          "npcregistry": "People (NPC registry)"}
+OPTIONAL = {"globalmap", "guide", "npcregistry"}
 
 TILE_SCALE = 6
 IMAGE_SCALE = 2
@@ -228,6 +231,14 @@ def episode_brief(run_dir: str, episode: int) -> Tuple[str, str]:
     return archive.episode.task or "", direction
 
 
+def registry_at(run_dir: str, episode: int) -> Optional[NPCRegistry]:
+    """The people registry as of ``episode`` (its latest save at or before it), or None if the run has none."""
+    if not NPCRegistry.exists(run_dir):
+        return None
+    eligible = [n for n in NPCRegistry.saved_episodes(run_dir) if n <= episode]
+    return NPCRegistry.load(run_dir, eligible[-1]) if eligible else None
+
+
 def map_image(report: Report, gmap: GlobalMap, segment: int, path: str, **kwargs) -> Optional[str]:
     if report.fresh(path):
         canvas = render_segment(gmap, segment, **kwargs)
@@ -301,9 +312,14 @@ def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[
          "description": gmap.info(si).description or ""}
         for si in live])))
     blocks.append(md.para(MAP_LEGEND + " " + DOOR_LEGEND))
+    people = registry_at(report.run_dir, episode)
+    if people is not None:
+        blocks.append(md.para(PEOPLE_LEGEND))
     for si in live:
         seg, info = gmap.segments[si], gmap.info(si)
-        png = map_image(report, gmap, si, report.image_path("globalmap", f"ep{episode}_seg{si}.png"), doors=True)
+        markers = people.markers(gmap, si) if people is not None else []
+        png = map_image(report, gmap, si, report.image_path("globalmap", f"ep{episode}_seg{si}.png"), doors=True,
+                        people=markers)
         blocks += [md.h3(f"Segment {si}{' (current)' if si == gmap.segment else ''}: {gmap.place_label(si)}, "
                          f"{info.kind or 'kind not known'}, {len(seg)} squares")]
         if info.description:
@@ -311,6 +327,11 @@ def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[
         if info.aliases:
             blocks.append(md.para("Also named, before merges: " + "; ".join(name for name, _ in info.aliases)))
         blocks.append(report.img(f"segment {si}", png))
+        if markers:
+            blocks.append(md.table(pd.DataFrame([
+                {"marker": label, "person": people.npcs[f"npc_{int(label):03d}"].name,
+                 "talked to here": "yes" if talked else "no", "square": square}
+                for square, label, talked in markers])))
         doors = gmap.door_list(si)
         if doors:
             blocks.append(doors_table(gmap, doors))
@@ -370,9 +391,78 @@ def view_guide(guide: StrategyGuide, report: Report, episode: int) -> Tuple[List
     return blocks, f"{len(guide.rules)} rules ({own} the strategist's own), {len(guide.events)} triggers fired"
 
 
+PEOPLE_LEGEND = ("Yellow circles are people at the square they were last seen: filled = talked to in this area, "
+                 "hollow = not yet. The number is the person's id in the People page.")
+
+
+def looks_sheet(reg: NPCRegistry, path: str) -> Optional[str]:
+    """One picture: a row per look, its views side by side (x4), the facing known for each if any."""
+    rows = []
+    for look in reg.looks.values():
+        tiles = [np.kron(v.pixels.astype(np.uint8), np.ones((4, 4), np.uint8)) for v in look.views]
+        rows.append(np.concatenate([x for t in tiles for x in (t, np.full((64, 6), 128, np.uint8))], axis=1))
+    if not rows:
+        return None
+    width = max(r.shape[1] for r in rows)
+    sheet = np.concatenate([np.pad(r, ((0, 6), (0, width - r.shape[1])), constant_values=255) for r in rows], axis=0)
+    Image.fromarray(sheet).save(path)
+    return path
+
+
+def view_npcregistry(reg: NPCRegistry, report: Report, episode: int) -> Tuple[List[str], str]:
+    editions = [n for n in GlobalMap.saved_episodes(report.run_dir) if n <= episode]
+    gmap = GlobalMap.load(report.run_dir, editions[-1]) if editions else None
+    people = sorted(reg.live_npcs(), key=lambda n: n.id)
+    rows = []
+    for npc in people:
+        seen = reg.last_seen(gmap, npc) if gmap is not None else None
+        areas = sorted({gmap.resolve(s.segment, s.square)[0] for s in npc.sightings}) if gmap is not None else []
+        rows.append({
+            "#": int(npc.id.split("_")[1]), "name": npc.name, "real name": npc.real_name or "",
+            "kind": npc.kind, "look": reg.look_of(npc).id,
+            "areas seen": ", ".join(f"{si}: {gmap.place_label(si)}" for si in areas),
+            "last seen": f"episode {seen[2].episode}, segment {seen[0]}, square {seen[1]}" if seen else "",
+            "sightings": len(npc.sightings), "conversations": len(npc.conversations),
+            "needs": npc.needs or ""})
+    blocks = [
+        md.para(f"{len(people)} people seen, {len(reg.looks)} different looks, "
+                f"{len(reg.conversations)} conversations recorded."),
+        md.h2("People"),
+        md.table(pd.DataFrame(rows)) if rows else md.note("Nobody has been seen yet."),
+    ]
+    sheet = looks_sheet(reg, report.image_path("npcregistry", f"ep{episode}_looks.png"))
+    if sheet:
+        blocks += [md.h2("Looks"),
+                   md.para("One row per look: every picture of the sprite the registry holds (facing and walking frames). "
+                           "A person's look is shown in the People table."),
+                   report.img("looks", sheet)]
+    talked = [reg.conversations[c] for n in people for c in n.conversations if c in reg.conversations]
+    if talked:
+        blocks.append(md.h2("Conversations"))
+        for c in sorted(talked, key=lambda c: (c.episode, c.map_step_start)):
+            who = reg.npcs[c.npc].name if c.npc in reg.npcs else "unknown"
+            where = gmap.place_label(gmap.resolve(c.segment, c.square)[0]) if gmap is not None else f"segment {c.segment}"
+            blocks.append(md.details(
+                f"Episode {c.episode}: {who} in {where} ({c.trigger})",
+                md.code(c.text or "(no text read)") + (f"\n\n{c.summary}" if c.summary else "")))
+    if reg.signs:
+        blocks += [md.h2("Signs"), md.table(pd.DataFrame([
+            {"sign": s.id, "segment": s.segment, "square": s.square, "conversations": len(s.conversations),
+             "text": s.text[:200]} for s in reg.signs.values()]))]
+    unattributed = [reg.conversations[c] for c in reg.unattributed if c in reg.conversations]
+    if unattributed:
+        blocks += [md.h2("Conversations nobody could be matched to"), md.table(pd.DataFrame([
+            {"episode": c.episode, "trigger": c.trigger, "text": (c.text or "(no text read)")[:200]}
+            for c in unattributed]))]
+    blocks += [md.h2("Counters"), md.table(pd.Series(dict(reg.stats), dtype=int).sort_index().rename_axis("counter")
+                                           .reset_index(name="count")) if reg.stats else md.note("No counters yet.")]
+    return blocks, f"{len(people)} people, {len(reg.looks)} looks, {len(reg.conversations)} conversations"
+
+
 VIEWS: Dict[str, Callable[..., Tuple[List[str], str]]] = {
     "goals": view_goals, "knowledge": view_knowledge, "tiles": view_tiles,
     "notepad": view_notepad, "globalmap": view_globalmap, "guide": view_guide,
+    "npcregistry": view_npcregistry,
 }
 
 
@@ -510,9 +600,27 @@ def diff_guide(new, old, d, report: Report, a: int, b: int) -> Tuple[List[str], 
                                  (len(d["edited"]), "rewritten"), (len(d["removed"]), "removed")])
 
 
+def diff_npcregistry(new: NPCRegistry, old: NPCRegistry, d, report: Report, a: int, b: int
+                     ) -> Tuple[List[str], str]:
+    blocks = []
+    if d["new_npcs"]:
+        blocks += [md.h3("People met"), md.bullets(f"+ {new.npcs[i].name} ({i})" for i in d["new_npcs"])]
+    if d["new_looks"] or d["new_views"]:
+        blocks.append(md.para(f"New looks: {len(d['new_looks'])}. Looks that gained a picture: {len(d['new_views'])}."))
+    if d["merged"]:
+        blocks += [md.h3("People found to be one"), md.bullets(f"{i} → {j}" for i, j in d["merged"].items())]
+    if d["new_conversations"]:
+        blocks += [md.h3("Conversations"), md.bullets(
+            f"{(new.npcs[new.conversations[c].npc].name if new.conversations[c].npc in new.npcs else 'unknown')}: "
+            f"{(new.conversations[c].text or '(no text)')[:120]}" for c in d["new_conversations"])]
+    return blocks, count_phrase([(len(d["new_npcs"]), "people met"), (len(d["new_conversations"]), "conversations"),
+                                 (len(d["merged"]), "merged")])
+
+
 DIFFS: Dict[str, Callable[..., Tuple[List[str], str]]] = {
     "goals": diff_goals, "knowledge": diff_knowledge, "tiles": diff_tiles,
     "notepad": diff_notepad, "globalmap": diff_globalmap, "guide": diff_guide,
+    "npcregistry": diff_npcregistry,
 }
 
 
@@ -546,7 +654,7 @@ def selected(artifact: Optional[str], run_dir: str) -> List[str]:
 @click.group(name="strategist")
 def debug_strategist():
     """Inspect a strategist run's saved artifacts (goals, knowledge, tiles, notepad, global map,
-    strategy guide)."""
+    strategy guide, people)."""
 
 
 ARTIFACT_OPTION = click.option("--artifact", type=click.Choice(list(ARTIFACTS)), default=None,
