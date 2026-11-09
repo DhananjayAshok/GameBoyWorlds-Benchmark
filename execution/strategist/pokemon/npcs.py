@@ -434,6 +434,20 @@ class NPCRegistry(StrategistArtifact):
                 found.append((distance, -seen[2].map_step, npc))
         return [npc for _, _, npc in sorted(found, key=lambda x: (x[0], x[1]))]
 
+    def _static_at(self, segment: int, square: Cell, busy: Set[str]) -> Optional[NPC]:
+        """The person last seen on exactly this square who has only ever been seen on that square (so, someone
+        who stands still), and is not being followed right now."""
+        gmap = self._gmap
+        for npc in self.live_npcs():
+            if npc.id in busy:
+                continue
+            seen = self.last_seen(gmap, npc)
+            if seen is None or seen[0] != segment or seen[1] != square:
+                continue
+            if len({self.place(gmap, s) for s in npc.sightings}) == 1:
+                return npc
+        return None
+
     def _start_track(self, det: Dict[str, Any], busy: Set[str], segment: int, step: int) -> Optional[Track]:
         """A person we were not following: who is it? Compared against every view of every look."""
         p, square = self._p, det["square"]
@@ -461,12 +475,24 @@ class NPCRegistry(StrategistArtifact):
             if not det["full"]:
                 self.stats["ignored_partial"] += 1
                 return None
-            look = self._new_look(det, step)
-            candidates = [n.id for n in self._near(segment, square, busy)]
-            if best is not None and best[0] <= p["maybe"]:
-                candidates += [n.id for n in self.live_npcs()
-                               if self.look_of(n).id == best[1] and n.id not in busy and n.id not in candidates]
-            npc = self._new_npc(look, "card", candidates, step)
+            npc = self._static_at(segment, square, busy)
+            if npc is not None:
+                # a picture nobody has seen, on the square of someone who never moves: that person turned round
+                look = self.look_of(npc)
+                last = self.last_seen(self._gmap, npc)[2]
+                look.views.append(View(det["window"].copy(), det["mask"].copy(), None, None, (self._episode, step)))
+                look.links.append((last.view, len(look.views) - 1, "same_square"))
+                view_index = len(look.views) - 1
+                self._stack = None
+                self.stats["views_added"] += 1
+                self.stats["same_square"] += 1
+            else:
+                look = self._new_look(det, step)
+                candidates = [n.id for n in self._near(segment, square, busy)]
+                if best is not None and best[0] <= p["maybe"]:
+                    candidates += [n.id for n in self.live_npcs()
+                                   if self.look_of(n).id == best[1] and n.id not in busy and n.id not in candidates]
+                npc = self._new_npc(look, "card", candidates, step)
         self.stats["tracks_started"] += 1
         self.next_ids["track"] += 1
         track = Track(id=self.next_ids["track"], npc=npc.id, segment=segment, square=square, view=view_index,
