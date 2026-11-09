@@ -26,7 +26,7 @@ import numpy as np
 
 from execution.artifact import StrategistArtifact, update
 from execution.perception.pokemon import sprites as S
-from execution.perception.pokemon.grid import cell_box
+from execution.perception.pokemon.grid import LEFT_COL, TOP_ROW, cell_box
 from execution.strategist.pokemon.global_map import DIRECTIONS, OCCUPIED, GlobalMap, StepEvent
 from execution.strategist.pokemon import npc_model
 from execution.strategist.pokemon.npc_model import display_name
@@ -116,7 +116,8 @@ class Conversation:
     name_type: Optional[str] = None    # "personal" | "class" for ``speaker_name``
     tries: int = 0
     how: str = "seen"                  # "seen" (on screen next to the player), "remembered" (the registry had them on
-                                       # the square in front) or "nearest" (the closest known person, a guess)
+                                       # the square in front), "nearest" (the closest known person, a guess) or "none"
+    confidence: str = "high"           # "low" when a person who walks about was attributed from memory
 
 
 @dataclass
@@ -170,8 +171,8 @@ def _manhattan(a: Cell, b: Cell) -> int:
 class NPCRegistry(StrategistArtifact):
     """Every person the player has seen in one run. See the module docstring."""
 
-    _TRANSIENT = ("_gmap", "_episode", "_tracks", "_last_people", "_stack", "_stack_ref", "_look_merges", "_weak",
-                 "_facing", "_open", "_frame", "_free_frame")
+    _TRANSIENT = ("_gmap", "_episode", "_tracks", "_last_people", "_last_people_at", "_stack", "_stack_ref",
+                  "_look_merges", "_weak", "_facing", "_open", "_frame", "_free_frame")
 
     def __init__(self, game: str, run_name: str) -> None:
         self.game = game
@@ -192,7 +193,8 @@ class NPCRegistry(StrategistArtifact):
         self._gmap: Optional[GlobalMap] = None
         self._episode = 0
         self._tracks: Dict[int, Track] = {}
-        self._last_people: Dict[Cell, str] = {}
+        self._last_people: Dict[Cell, str] = {}                # map square -> person, on the latest free-roam frame
+        self._last_people_at: Optional[Tuple[int, int]] = None  # (segment, map step) of that frame; None = not read
         self._stack: Optional[np.ndarray] = None
         self._stack_ref: List[Tuple[str, int]] = []
         self._look_merges: Set[Tuple[str, str]] = set()
@@ -252,12 +254,40 @@ class NPCRegistry(StrategistArtifact):
         segment, square = self.place(gmap, newest)
         return segment, square, newest
 
+    def squares_in(self, gmap: GlobalMap, npc: NPC, segment: int) -> List[Cell]:
+        """Every square this person has been seen on in the (resolved) segment, newest first."""
+        out: List[Cell] = []
+        for s in sorted(npc.sightings, key=lambda s: -s.map_step):
+            seg, square = self.place(gmap, s)
+            if seg == segment and square not in out:
+                out.append(square)
+        return out
+
+    def _forget_screen(self) -> None:
+        self._last_people, self._last_people_at = {}, None
+
+    def on_screen(self, gmap: GlobalMap) -> Dict[Cell, str]:
+        """The people detected on the latest free-roam frame, keyed by their square relative to the player now
+        (empty when that frame was not read, or the player has since changed area)."""
+        if self._last_people_at is None or self._last_people_at[0] != gmap.segment:
+            return {}
+        px, py = gmap.pos
+        return {(x - px, y - py): npc for (x, y), npc in self._last_people.items()}
+
+    def in_view(self, gmap: GlobalMap, square: Cell) -> bool:
+        """Whether a square of the current (raw) segment was on the latest screen that was read for people."""
+        if self._last_people_at is None or self._last_people_at[0] != gmap.segment:
+            return False
+        dx, dy = square[0] - gmap.pos[0], square[1] - gmap.pos[1]
+        return LEFT_COL <= dx <= LEFT_COL + 9 and TOP_ROW - 8 <= dy <= TOP_ROW
+
     # -- the per-episode and per-step hooks -------------------------------------------------------
 
     def begin_episode(self, episode: int, gmap: GlobalMap) -> None:
         """Called by the strategist before the episode's first step: tracks never run across episodes."""
         self._gmap, self._episode = gmap, episode
-        self._tracks, self._last_people = {}, {}
+        self._tracks = {}
+        self._forget_screen()
         self._facing, self._open = None, None
 
     def on_opening_screen(self, frame: np.ndarray, identified: Dict[Any, Any], free: bool) -> None:
@@ -273,7 +303,10 @@ class NPCRegistry(StrategistArtifact):
             self._conversation_step(ev)
         except Exception as e:
             log_warn(f"NPC registry: conversation step skipped: {type(e).__name__}: {e}")
-        if not ev.free or ev.status not in PLACED_STATUS:
+        if not ev.free:
+            return
+        if ev.status not in PLACED_STATUS:
+            self._forget_screen()                                # not placed: who is on screen now is unknown
             return
         self._process(ev.frame, ev.identified, ev.status, ev.max_steps)
         self._free_frame = ev.frame
@@ -370,6 +403,7 @@ class NPCRegistry(StrategistArtifact):
         if status in ("relocalised", "new_segment"):
             self._tracks = {}
         if gmap.residual != (0, 0):                      # off the 16 px grid: tags are for the unshifted grid
+            self._forget_screen()
             return
         pos, segment, step = gmap.pos, gmap.segment, gmap.step
         detections = self._detect(frame, identified)
@@ -415,8 +449,9 @@ class NPCRegistry(StrategistArtifact):
         self._tracks = now
         people = [t.npc for t in now.values()]
         self.covisible.update(frozenset(pair) for pair in _pairs(people))
-        by_square = {d["square"]: d["cell"] for d in detections}
-        self._last_people = {by_square[t.square]: t.npc for t in now.values() if t.square in by_square}
+        squares = {d["square"] for d in detections}
+        self._last_people = {t.square: t.npc for t in now.values() if t.square in squares}
+        self._last_people_at = (segment, step)
         self.stats["frames_with_people"] += bool(now)
 
     def _new_look(self, det: Dict[str, Any], step: int) -> Look:
@@ -601,23 +636,33 @@ class NPCRegistry(StrategistArtifact):
         a_press = self._is_a_press(ev.action, ev.kwargs)
         speaker: Optional[str] = None
         sign_square: Optional[Cell] = None
-        neighbours = [n for c, n in self._last_people.items() if abs(c[0]) + abs(c[1]) == 1]
+        on_screen = self.on_screen(g)
+        neighbours = [n for c, n in on_screen.items() if abs(c[0]) + abs(c[1]) == 1]
         if a_press and self._facing is not None:
             target = DIRECTIONS[self._facing]
-            speaker = self._last_people.get(target)
+            speaker = on_screen.get(target)
             if speaker is None:
                 sign_square = self._sign_at(target)
         elif len(set(neighbours)) == 1:                          # facing not known, or the person came to us
             speaker = neighbours[0]
-        how = "seen"
+        how, confidence = "seen", "high"
         if speaker is None and sign_square is None:              # not on this frame: use what the registry remembers
             speaker, how = self._nearest_person(a_press), "nearest"
             if speaker is not None and a_press and self._facing is not None and self._remembered_at(DIRECTIONS[self._facing]) == speaker:
                 how = "remembered"
+            if speaker is not None:
+                # people move: memory of someone seen on several squares is weak, and gone once they roamed
+                squares = self.squares_in(g, self.get(speaker), g.resolve(g.segment, g.pos)[0])
+                if _spread(squares) > 1:
+                    speaker = None
+                elif len(squares) > 1:
+                    confidence = "low"
+        if speaker is None and sign_square is None:
+            how = "none"
         conv = Conversation(
             id=self._next("conv"), npc=speaker, sign=None, episode=self._episode, map_step_start=g.step,
             map_step_end=None, segment=g.segment, square=g.pos, target=sign_square,
-            trigger="a_press" if a_press else "npc_started", how=how)
+            trigger="a_press" if a_press else "npc_started", how=how, confidence=confidence)
         if speaker is not None:
             npc = self.get(speaker)
             conv.npc = npc.id
@@ -809,7 +854,8 @@ class NPCRegistry(StrategistArtifact):
         self.consolidate()
         if vlm_caller is not None:
             self._model_steps(vlm_caller, gmap)
-        self._tracks, self._last_people = {}, {}
+        self._tracks = {}
+        self._forget_screen()
 
     def _model_steps(self, vlm_caller: Callable[[str], Callable[..., Any]], gmap: GlobalMap) -> None:
         for label, step in (("cards and judges", lambda: self.run_model(vlm_caller("npc_card"),
@@ -835,11 +881,30 @@ class NPCRegistry(StrategistArtifact):
     def people_here(self, gmap: GlobalMap) -> List[Tuple[NPC, Cell]]:
         """People whose last sighting is in the player's current (resolved) segment, with that square."""
         found = []
+        here = gmap.resolve(gmap.segment, gmap.pos)[0]
         for npc in self.live_npcs():
             seen = self.last_seen(gmap, npc)
-            if seen is not None and seen[0] == gmap.segment:
+            if seen is not None and seen[0] == here:
                 found.append((npc, seen[1]))
         return found
+
+    def when_seen(self, gmap: GlobalMap, npc: NPC, square: Cell) -> str:
+        """How fresh the registry's place for a person is. People move, so a remembered place is memory, not truth:
+        it carries its age, and a square on screen right now without the person says they may have moved."""
+        seen = self.last_seen(gmap, npc)
+        if npc.id in self.on_screen(gmap).values():
+            return "on screen now"
+        steps = gmap.step - seen[2].map_step
+        if seen[2].episode == self._episode:
+            when = f"last seen {steps} step(s) ago"
+        else:
+            when = f"last seen {self._episode - seen[2].episode} episode(s) ago"
+        squares = self.squares_in(gmap, npc, seen[0])
+        if len(squares) > 1:
+            when += f", seen on {len(squares)} different squares (walks about)"
+        if self.in_view(gmap, square):
+            when += "; not recognised on that square, which is on screen now: may have moved"
+        return when
 
     def people_block(self, gmap: GlobalMap, max_people: int = 8, max_chars: int = 1800) -> str:
         """The block the strategist reads before writing a task: who has been seen in the area it is in, where they
@@ -851,17 +916,10 @@ class NPCRegistry(StrategistArtifact):
             return ""
         px, py = gmap.pos
         here.sort(key=lambda r: abs(r[1][0] - px) + abs(r[1][1] - py))
-        on_screen = set(self._last_people.values())
         lines = []
         for npc, square in here[:max_people]:
             dx, dy = square[0] - px, square[1] - py
-            seen = self.last_seen(gmap, npc)
-            if npc.id in on_screen:
-                when = "on screen now"
-            elif seen and seen[2].episode == self._episode:
-                when = "seen earlier this episode"
-            else:
-                when = f"last seen {self._episode - (seen[2].episode if seen else 0)} episode(s) ago"
+            when = self.when_seen(gmap, npc, square)
             talks = [self.conversations[c] for c in npc.conversations
                      if c in self.conversations and (self.conversations[c].text or self.conversations[c].crops)
                      and gmap.resolve(self.conversations[c].segment, self.conversations[c].square)[0] == gmap.segment]
@@ -902,7 +960,7 @@ class NPCRegistry(StrategistArtifact):
         screen text the strategist and the supervisor read: the quoted name, the kind, and whether the player has
         talked to them here."""
         out: Dict[Cell, str] = {}
-        for cell, npc_id in self._last_people.items():
+        for cell, npc_id in self.on_screen(gmap).items():
             npc = self.get(npc_id)
             if self.look_of(npc).kind_hint == "object":
                 continue
@@ -1002,6 +1060,11 @@ def ordered_merge(pieces: List[str]) -> List[str]:
         if new and not any(lines[i:i + len(new)] == new for i in range(len(lines) - len(new) + 1)):
             lines.extend(new)
     return lines
+
+
+def _spread(squares: List[Cell]) -> int:
+    """How far apart the squares a person was seen on are (0 for someone who never moved)."""
+    return max((_manhattan(a, b) for a in squares for b in squares), default=0)
 
 
 def _pairs(items: List[str]) -> List[Tuple[str, str]]:

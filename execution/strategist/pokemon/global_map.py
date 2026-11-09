@@ -144,6 +144,16 @@ def grid_offset(frame: np.ndarray) -> Optional[Cell]:
     return coarse[0][1]
 
 
+def frame_residual(frame: np.ndarray) -> Optional[Cell]:
+    """How far off the cell grid the frame itself is drawn (as a residual), when its tiles show it clearly and it is
+    within a scroll's reach; else None."""
+    shift = grid_offset(frame)
+    if shift is None:
+        return None
+    residual = grid_residual(shift)
+    return residual if max(abs(residual[0]), abs(residual[1])) <= PX_SLACK else None
+
+
 def _still_lit(piece: np.ndarray, prior: np.ndarray) -> np.ndarray:
     new, prior, half = np.squeeze(piece), np.squeeze(prior), GRID_SKIP // 2
     lit = np.zeros(new.shape, dtype=bool)
@@ -573,6 +583,13 @@ class GlobalMap(StrategistArtifact):
                                                   self.residual)
         if placed is not None:
             delta, residual, structural = placed
+            measured = None if structural else frame_residual(frame)
+            if measured is not None and measured != residual:
+                # registration only measures the axis moved along and otherwise carries the last residual over, so
+                # a frame caught mid-scroll would leave the map off the grid after the player settled: when the
+                # frame shows its own grid, believe the frame
+                residual = measured
+                self.stats["residual_corrected"] += 1
             pos = (self.pos[0] + delta[0], self.pos[1] + delta[1])
             shift = tuple((-r) % GRID_SKIP for r in residual)
             if not structural and self._blacks_out(frame, self.segment, pos, shift):
