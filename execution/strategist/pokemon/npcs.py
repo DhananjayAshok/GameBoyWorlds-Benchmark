@@ -271,7 +271,7 @@ class NPCRegistry(StrategistArtifact):
             if int(mask.sum()) < MIN_TAGGED_BLACK:
                 continue
             found.append(dict(cell=cell, offset=(0, 0), window=window, mask=mask,
-                              full=S.full_window_ok(identified, cell)))
+                              full=S.full_window_ok(identified, cell) and S.complete_sprite(mask)))
         keys, _ = self._view_stack()
         if len(keys):
             for cell, offset, _, _ in S.scan_for_views(frame, keys, S.scan_cells(identified, cells), level,

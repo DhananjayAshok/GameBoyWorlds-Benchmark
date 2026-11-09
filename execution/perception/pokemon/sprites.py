@@ -73,6 +73,16 @@ def stack_distances(keys: np.ndarray, mask: np.ndarray) -> Tuple[np.ndarray, np.
     return np.minimum(plain, flipped), flipped < plain
 
 
+def complete_sprite(mask: np.ndarray) -> bool:
+    """Whether the black outline fills the window the way a whole, aligned person does: it reaches near the top and
+    the bottom and is not a thin sliver. A person caught mid-step or half hidden fails this, and so would store a
+    cut-off picture."""
+    rows, cols = np.flatnonzero(mask.any(axis=1)), np.flatnonzero(mask.any(axis=0))
+    if len(rows) == 0 or len(cols) == 0:
+        return False
+    return bool(rows[0] <= 3 and rows[-1] >= 12 and cols[-1] - cols[0] + 1 >= 8 and mask.sum() >= 30)
+
+
 def tag_counts(identified: Dict[Tuple[int, int, str], Any], cell: Cell) -> Dict[str, int]:
     counts: Dict[str, int] = {}
     for quarter in ("top_left", "top_right", "bottom_left", "bottom_right"):
