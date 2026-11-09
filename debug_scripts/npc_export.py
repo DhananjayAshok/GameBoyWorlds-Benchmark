@@ -128,7 +128,8 @@ def export_registry(reg: NPCRegistry, gmap: Optional[GlobalMap], out: str, game:
             "npc": f"{game}/{run}/{reg.get(c.npc).id}" if c.npc in reg.npcs else None,
             "sign": c.sign, "episode": c.episode, "map_step_start": c.map_step_start, "map_step_end": c.map_step_end,
             "segment": seg, "area": _area(gmap, seg), "player_square": list(square),
-            "target_square": list(c.target) if c.target else None, "trigger": c.trigger, "text": c.text,
+            "target_square": list(c.target) if c.target else None, "trigger": c.trigger,
+            "attribution": getattr(c, "how", "seen"), "text": c.text,
             "summary": c.summary, "speaker_name": c.speaker_name, "name_type": c.name_type, "outcome": c.outcome,
             "led_to": c.led_to, "complete": c.complete, "dialogue_images": crops, "context_image": before})
 
