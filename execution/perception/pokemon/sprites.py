@@ -83,6 +83,26 @@ def complete_sprite(mask: np.ndarray) -> bool:
     return bool(rows[0] <= 3 and rows[-1] >= 12 and cols[-1] - cols[0] + 1 >= 8 and mask.sum() >= 30)
 
 
+def sprite_like(frame: np.ndarray, cell: Cell, y_offset: int = 4) -> bool:
+    """Whether what stands on ``cell`` is drawn like a sprite (``y_offset`` px above the square) rather than like
+    background on the 16 px grid. A standing person leaves the bottom ``y_offset`` rows of the square clear; failing
+    that (a chair, or another sprite's head, behind those rows), the person's head fills the ``y_offset`` rows above
+    the square with clear ground above it. A statue or a bush the tile table calls a person reaches the bottom of the
+    square and has no head above it. Measured against Red RAM on saved states (lab/align_eval.py)."""
+    screen = _screen(frame)
+    level = black_level(screen)
+    x0, y0, _, _ = cell_box(*cell)
+    columns = slice(x0, x0 + GRID_SKIP)
+    if not (screen[y0 + GRID_SKIP - y_offset:y0 + GRID_SKIP, columns] <= level).any():
+        return True
+    top = y0 - y_offset
+    if top - 2 < 0:
+        return False
+    head = (screen[top:y0, columns] <= level).any()
+    clear_above = not (screen[top - 2:top, columns] <= level).any()
+    return bool(head and clear_above)
+
+
 def tag_counts(identified: Dict[Tuple[int, int, str], Any], cell: Cell) -> Dict[str, int]:
     counts: Dict[str, int] = {}
     for quarter in ("top_left", "top_right", "bottom_left", "bottom_right"):

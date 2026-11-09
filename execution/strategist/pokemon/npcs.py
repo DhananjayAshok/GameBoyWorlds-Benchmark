@@ -186,6 +186,9 @@ class NPCRegistry(StrategistArtifact):
         self.covisible: Set[FrozenSet[str]] = set()         # two people seen in one frame are never the same person
         self.next_ids: Counter = Counter()
         self.stats: Counter = Counter()
+        #: (raw segment, square) the tile table tagged as a person -> whether it was ever drawn like a sprite there
+        #: (False: only ever like background, such as a statue or a bush)
+        self.tagged_squares: Dict[Tuple[int, Cell], bool] = {}
         self.version = 1
         self._reset_transient()
 
@@ -209,7 +212,7 @@ class NPCRegistry(StrategistArtifact):
         self._reset_transient()
         for name, default in (("look_aliases", dict), ("covisible", set), ("unattributed", list),
                               ("signs", dict), ("conversations", dict), ("stats", Counter),
-                              ("next_ids", Counter), ("version", lambda: 1)):
+                              ("next_ids", Counter), ("version", lambda: 1), ("tagged_squares", dict)):
             self.__dict__.setdefault(name, default())
 
     @property
@@ -406,6 +409,7 @@ class NPCRegistry(StrategistArtifact):
             self._forget_screen()
             return
         pos, segment, step = gmap.pos, gmap.segment, gmap.step
+        self._judge_tagged(frame, identified, segment, pos)
         detections = self._detect(frame, identified)
         for det in detections:
             det["square"] = (pos[0] + det["cell"][0], pos[1] + det["cell"][1])
@@ -453,6 +457,19 @@ class NPCRegistry(StrategistArtifact):
         self._last_people = {t.square: t.npc for t in now.values() if t.square in squares}
         self._last_people_at = (segment, step)
         self.stats["frames_with_people"] += bool(now)
+
+    def _judge_tagged(self, frame: np.ndarray, identified: Dict[Any, Any], segment: int, pos: Cell) -> None:
+        """Note, for every square the tile table tags (even in part) as a person, whether it is drawn like a sprite."""
+        for cell in {(x, y) for (x, y, _), tile in identified.items() if tile.tag == "npc" and (x, y) != (0, 0)}:
+            key = (segment, (pos[0] + cell[0], pos[1] + cell[1]))
+            if S.sprite_like(frame, cell, self._p["y_offset"]):
+                self.tagged_squares[key] = True
+            else:
+                self.tagged_squares.setdefault(key, False)
+
+    def background_squares(self, gmap: GlobalMap) -> Set[Tuple[int, Cell]]:
+        """(Resolved) squares the tile table calls a person that were only ever drawn like background."""
+        return {gmap.resolve(*key) for key, sprite in self.tagged_squares.items() if not sprite}
 
     def _new_look(self, det: Dict[str, Any], step: int) -> Look:
         look = Look(id=self._next("look"), views=[View(det["window"].copy(), det["mask"].copy(), None, None,
@@ -989,7 +1006,9 @@ class NPCRegistry(StrategistArtifact):
 
     def unconfirmed(self, gmap: GlobalMap, segment: int) -> List[Cell]:
         """Squares the map holds as a person (an ``occupied`` square the tile table tagged as a person) where no
-        registry person was ever seen: someone cut off by the screen edge or hidden, not yet seen whole."""
+        registry person was ever seen, and not only ever drawn like background: someone cut off by the screen edge
+        or hidden, not yet seen whole."""
+        background = {square for seg, square in self.background_squares(gmap) if seg == segment}
         known = []
         for npc in self.live_npcs():
             for sighting in npc.sightings:
@@ -998,7 +1017,8 @@ class NPCRegistry(StrategistArtifact):
                     known.append(square)
         out = []
         for square, cell in gmap.segments[segment].items():
-            if cell.kind == OCCUPIED and "npc" in cell.tags and all(_manhattan(square, k) > 1 for k in known):
+            if (cell.kind == OCCUPIED and "npc" in cell.tags and square not in background
+                    and all(_manhattan(square, k) > 1 for k in known)):
                 out.append(square)
         return sorted(out)
 

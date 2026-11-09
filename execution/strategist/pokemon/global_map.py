@@ -1284,7 +1284,8 @@ def render_segment(gmap: GlobalMap, segment: Optional[int] = None, trail: bool =
 # ----------------------------------------------------------------------------
 
 LEGEND = ('@ you   . walkable   # blocked   = ledge (jump down only)   D door/stairs   " tall grass   '
-          '~ water   n person   N person you have talked to   % not yet recognised   ? never seen')
+          '~ water   n person   N person you have talked to   o maybe a person, not confirmed   '
+          '% not yet recognised   ? never seen')
 SECTORS = ("east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east")
 #: Episodes without a single new cell before the strategist is asked whether it is stuck.
 STALE_EPISODES = 3
@@ -1300,7 +1301,8 @@ def glyph(c: Optional[MapCell]) -> str:
         return "?"
     tags = set(c.tags)
     if c.kind == OCCUPIED:
-        return "n"
+        # the tile table took something here for a person; people the registry knows are marked over this
+        return "#" if "obstacle" in tags else "o"
     if is_door(c):
         return "D"
     if "water" in tags:

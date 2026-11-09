@@ -334,7 +334,7 @@ def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[
             blocks.append(md.table(pd.DataFrame([
                 {"marker": label,
                  "person": (display_name(people.npcs[f"npc_{int(label):03d}"]) if label != "?"
-                            else "someone cut off by the screen edge or hidden: not seen whole yet"),
+                            else "the screen reader tagged a person here; no sprite confirmed"),
                  "talked to here": "yes" if talked else "no", "square": square}
                 for square, label, talked in markers])))
         doors = gmap.door_list(si)
@@ -397,8 +397,9 @@ def view_guide(guide: StrategyGuide, report: Report, episode: int) -> Tuple[List
 
 
 PEOPLE_LEGEND = ("Yellow circles are people at the square they were last seen: filled = talked to in this area, "
-                 "hollow = not yet. The number is the person's id in the People page. A ring marked ? is someone the map "
-                 "saw only partly (cut off by the screen edge, or hidden) who has not been seen whole yet.")
+                 "hollow = not yet. The number is the person's id in the People page. A ring marked ? is a square the screen "
+                 "reader tagged as a person, drawn like a sprite, where nobody has been seen whole yet (cut off by the "
+                 "screen edge, or hidden); squares drawn like background (a statue, a bush) get no ring.")
 
 
 def looks_sheet(reg: NPCRegistry, path: str) -> Optional[str]:
