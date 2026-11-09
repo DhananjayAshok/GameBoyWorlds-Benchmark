@@ -82,7 +82,7 @@ DEFAULT_ENV_MAX_STEPS = 1_000_000
 @click.option("--resume_run", default=None, type=str,
               help="Fork another run's latest state (artifacts and emulator save) into --name and "
                    "continue from it, e.g. to recreate a failure from a past playthrough.")
-@click.option("--report/--no_report", default=True, show_default=True,
+@click.option("--report/--no_report", "report_at_end", default=True, show_default=True,
               help="When the run ends, build the readable report (debug.py strategist view): the goals, the global "
                    "map with the people marked, the People page. Skipped, with a note, if it fails.")
 @click.option("--resume/--fresh", default=True, show_default=True,
