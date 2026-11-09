@@ -110,12 +110,14 @@ def export_registry(reg: NPCRegistry, gmap: Optional[GlobalMap], out: str, game:
             seg, square = resolve(s.segment, s.square)
             rows.append({"dataset_id": f"{game}/{run}/{npc.id}", "episode": s.episode, "map_step": s.map_step,
                          "segment": seg, "area": _area(gmap, seg), "x": square[0], "y": square[1], "view": s.view,
+                         "facing": reg.sighting_facing(reg.look_of(npc), s), "turned_mirror": s.flipped,
                          "raw_segment": s.segment, "raw_x": s.square[0], "raw_y": s.square[1]})
     with open(os.path.join(out, "sightings.csv"), "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0]) if rows else ["dataset_id"])
         writer.writeheader()
         writer.writerows(rows)
 
+    visit_of = {c.id: (k, same) for npc in reg.live_npcs() for k, c, same in reg.visits(npc)}
     conversations = []
     for c in sorted(reg.conversations.values(), key=lambda c: (c.episode, c.map_step_start)):
         seg, square = resolve(c.segment, c.square)

@@ -422,6 +422,19 @@ def looks_sheet(reg: NPCRegistry, path: str) -> Optional[str]:
     return path
 
 
+def facing_summary(reg: NPCRegistry, npc) -> str:
+    """How often the person was seen facing each way. Without a model reading the first picture the way is unknown,
+    so it is told relative to that picture: "as first seen" or "turned (mirror image)"."""
+    look = reg.look_of(npc)
+    counts: Dict[str, int] = {}
+    for s_ in npc.sightings:
+        way = reg.sighting_facing(look, s_)
+        if way is None or look.views[min(s_.view, len(look.views) - 1)].facing not in ("left", "right"):
+            way = ("turned (mirror image)" if s_.flipped else "as first seen") if way is None else way
+        counts[way] = counts.get(way, 0) + 1
+    return ", ".join(f"{k} x{v}" for k, v in counts.items())
+
+
 def view_npcregistry(reg: NPCRegistry, report: Report, episode: int) -> Tuple[List[str], str]:
     editions = [n for n in GlobalMap.saved_episodes(report.run_dir) if n <= episode]
     gmap = GlobalMap.load(report.run_dir, editions[-1]) if editions else None
@@ -436,7 +449,7 @@ def view_npcregistry(reg: NPCRegistry, report: Report, episode: int) -> Tuple[Li
             "areas seen": ", ".join(f"{si}: {gmap.place_label(si)}" for si in areas),
             "last seen": f"episode {seen[2].episode}, segment {seen[0]}, square {seen[1]}" if seen else "",
             "sightings": len(npc.sightings), "conversations": len(npc.conversations),
-            "needs": npc.needs or ""})
+            "facing seen": facing_summary(reg, npc), "needs": npc.needs or ""})
     blocks = [
         md.para(f"{len(people)} people seen, {len(reg.looks)} different looks, "
                 f"{len(reg.conversations)} conversations recorded."),
@@ -449,18 +462,26 @@ def view_npcregistry(reg: NPCRegistry, report: Report, episode: int) -> Tuple[Li
                    md.para("One row per look: every picture of the sprite the registry holds (facing and walking frames). "
                            "A person's look is shown in the People table."),
                    report.img("looks", sheet)]
-    talked = [reg.conversations[c] for n in people for c in n.conversations if c in reg.conversations]
-    if talked:
-        blocks.append(md.h2("Conversations"))
-        for c in sorted(talked, key=lambda c: (c.episode, c.map_step_start)):
-            who = display_name(reg.get(c.npc)) if c.npc in reg.npcs else "unknown"
-            where = gmap.place_label(gmap.resolve(c.segment, c.square)[0]) if gmap is not None else f"segment {c.segment}"
-            blocks.append(md.details(
-                f"Episode {c.episode}: {who} in {where} ({c.trigger})",
-                md.code(c.text or "(no text read)")
-                + (f"\n\n**Summary:** {c.summary}" if c.summary else "\n\n_No summary yet._")
-                + (f" (outcome: {c.outcome}" + (f", speaker: {c.speaker_name}" if c.speaker_name else "") + ")"
-                   if c.outcome else "")))
+    if any(n.conversations for n in people):
+        blocks.append(md.h2("Who said what"))
+        blocks.append(md.para("One line per time the player talked to a person: what the conversation was about. "
+                              "The full text stays in the dataset export, not here."))
+        for npc in people:
+            visits = reg.visits(npc)
+            if not visits:
+                continue
+            lines = []
+            for k, c, same in visits:
+                where = (gmap.place_label(gmap.resolve(c.segment, c.square)[0]) if gmap is not None
+                         else f"segment {c.segment}")
+                if same:
+                    body = f"same words as visit {same}"
+                elif c.summary:
+                    body = c.summary + (f" (outcome: {c.outcome})" if c.outcome else "")
+                else:
+                    body = "no summary yet" + (f" - text starts: {c.text.replace(chr(10), ' / ')[:90]}" if c.text else "")
+                lines.append(f"Visit {k} (episode {c.episode}, {where}): {body}")
+            blocks += [md.h3(f"P{int(npc.id.split('_')[1])} {display_name(npc)}"), md.bullets(lines)]
     if reg.signs:
         blocks += [md.h2("Signs"), md.table(pd.DataFrame([
             {"sign": s.id, "segment": s.segment, "square": s.square, "conversations": len(s.conversations),

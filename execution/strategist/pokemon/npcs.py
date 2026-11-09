@@ -91,6 +91,7 @@ class Sighting:
     view: int
     offset: Cell = (0, 0)
     track: int = -1
+    flipped: bool = False              # drawn as the mirror image of its view: the person turned left <-> right
 
 
 @dataclass
@@ -164,6 +165,7 @@ class Track:
     ambiguous: bool = False
     last_sight_step: int = -10_000
     last_sight_square: Optional[Cell] = None
+    last_sight_flipped: bool = False
 
 
 @dataclass
@@ -195,7 +197,7 @@ class NPCRegistry(StrategistArtifact):
     """Every person the player has seen in one run. See the module docstring."""
 
     _TRANSIENT = ("_gmap", "_episode", "_tracks", "_last_people", "_last_people_at", "_stack", "_stack_ref",
-                  "_look_merges", "_weak", "_facing", "_open", "_frame", "_free_frame")
+                  "_look_merges", "_weak", "_facing", "_open", "_frame", "_free_frame", "_live")
 
     def __init__(self, game: str, run_name: str) -> None:
         self.game = game
@@ -229,6 +231,7 @@ class NPCRegistry(StrategistArtifact):
         self._weak: Dict[Tuple[int, Cell], Set[int]] = {}       # (segment, square) -> map steps it looked like a person
         self._frame: Optional[np.ndarray] = None                # the frame being read for people
         self._free_frame: Optional[np.ndarray] = None           # the last free-roam frame (a conversation's context)
+        self._live: Optional[Callable[[str], Callable[..., Any]]] = None   # model caller by stage, for live summaries
 
     def __setstate__(self, state: dict) -> None:
         super().__setstate__(state)
@@ -624,11 +627,17 @@ class NPCRegistry(StrategistArtifact):
         self._note_sighting(track, det, step)
 
     def _note_sighting(self, track: Track, det: Dict[str, Any], step: int) -> None:
-        if track.last_sight_square == det["square"] and step - track.last_sight_step < SIGHTING_EVERY:
+        # The picture comparison allows a left/right mirror (the game draws "left" by flipping "right"), so a person
+        # who turns that way is still the same picture: the turn is recorded here, per sighting, and a turn always
+        # makes a new sighting.
+        views = self.look_of(self.npcs[track.npc]).views
+        flipped = bool(track.view < len(views) and S.mask_distance(det["mask"], views[track.view].key)[1])
+        if (track.last_sight_square == det["square"] and step - track.last_sight_step < SIGHTING_EVERY
+                and flipped == track.last_sight_flipped):
             return
         self.npcs[track.npc].sightings.append(Sighting(self._episode, step, track.segment, det["square"], track.view,
-                                                       det["offset"], track.id))
-        track.last_sight_step, track.last_sight_square = step, det["square"]
+                                                       det["offset"], track.id, flipped))
+        track.last_sight_step, track.last_sight_square, track.last_sight_flipped = step, det["square"], flipped
         self.stats["sightings"] += 1
 
     # -- conversations ----------------------------------------------------------------------------
@@ -795,15 +804,38 @@ class NPCRegistry(StrategistArtifact):
                 self.unattributed.remove(conv.id)
             self.stats["battle_starts"] += 1
         self._open = None
+        self._summarise_now(conv)
+
+    def attach_model(self, vlm_caller: Optional[Callable[[str], Callable[..., Any]]]) -> None:
+        """Let the registry call the model while a run goes on: each conversation is read and summarised the moment
+        it ends. ``vlm_caller(stage)`` gives the caller for ``npc_ocr`` and ``npc_summary``. Not saved."""
+        self._live = vlm_caller
+
+    def _summarise_now(self, conv: Conversation) -> None:
+        """Read (if needed) and summarise a conversation that just ended. Guarded: anything left undone is picked up
+        by the end-of-episode steps."""
+        if self._live is None or self._gmap is None:
+            return
+        try:
+            if not conv.text and conv.crops and not conv.read:
+                self.read_conversations(self._live("npc_ocr"), only=[conv])
+            if conv.text.strip() and not conv.summarised:
+                self.run_summaries(self._live("npc_summary"), self._gmap, only=[conv])
+                if conv.npc in self.npcs:
+                    self.apply_real_names()
+        except Exception as e:
+            log_warn(f"NPC registry: summarising {conv.id} on the spot failed ({type(e).__name__}: {e}); "
+                     f"it is retried at the end of the episode")
 
     def finish_conversations(self) -> None:
         """An episode ends: a conversation still open is closed as interrupted (its text still counts)."""
         if self._open is not None and self._gmap is not None:
             self._close_conversation("episode_end", False)
 
-    def read_conversations(self, vlm_call: Any) -> None:
+    def read_conversations(self, vlm_call: Any, only: Optional[List[Conversation]] = None) -> None:
         """Ask the model to read the dialogue pictures of every conversation not read yet (one batched call)."""
-        todo = [c for c in self.conversations.values() if c.crops and not c.text and not c.read]
+        todo = [c for c in (only if only is not None else self.conversations.values())
+                if c.crops and not c.text and not c.read]
         if not todo:
             return
         images = [[crop] for c in todo for crop in c.crops[:MAX_OCR_CROPS]]
@@ -822,6 +854,8 @@ class NPCRegistry(StrategistArtifact):
                 if text and text.lower() != "none":
                     pieces.append(text)
             at += n
+            if not pieces and only is not None:
+                continue                                         # nothing came back: try again at the episode end
             c.text, c.read = "\n".join(ordered_merge(pieces)), True
             self.stats["conversations_read"] += 1
 
@@ -911,8 +945,32 @@ class NPCRegistry(StrategistArtifact):
     def run_model(self, vlm_card: Callable[..., Any], vlm_judge: Callable[..., Any], gmap: GlobalMap) -> None:
         npc_model.run_model(self, vlm_card, vlm_judge, self.game, gmap)
 
-    def run_summaries(self, vlm_call: Callable[..., Any], gmap: GlobalMap) -> None:
-        npc_model.run_summaries(self, vlm_call, self.game, gmap)
+    def run_summaries(self, vlm_call: Callable[..., Any], gmap: GlobalMap,
+                      only: Optional[List[Conversation]] = None) -> None:
+        npc_model.run_summaries(self, vlm_call, self.game, gmap, only=only)
+
+    @staticmethod
+    def sighting_facing(look: Look, sighting: Sighting) -> Optional[str]:
+        """Which way the person faced at a sighting: the view's facing (once a model said so), turned round if the
+        sighting is the mirror image of the view and the view faces left or right."""
+        facing = look.views[sighting.view].facing if sighting.view < len(look.views) else None
+        if sighting.flipped and facing in ("left", "right"):
+            return "left" if facing == "right" else "right"
+        return facing
+
+    def visits(self, npc: NPC) -> List[Tuple[int, Conversation, Optional[int]]]:
+        """``(visit number, conversation, number of the earlier visit with the same words or None)`` for each time
+        the player talked to ``npc``, oldest first."""
+        talks = sorted((self.conversations[c] for c in npc.conversations if c in self.conversations),
+                       key=lambda c: (c.episode, c.map_step_start))
+        seen: Dict[str, int] = {}
+        out = []
+        for k, c in enumerate(talks, 1):
+            words = npc_model._same_text(c.text)
+            out.append((k, c, seen.get(words) if words else None))
+            if words:
+                seen.setdefault(words, k)
+        return out
 
     def apply_real_names(self) -> None:
         npc_model.apply_real_names(self)
@@ -1061,7 +1119,7 @@ class NPCRegistry(StrategistArtifact):
             xs, ys = [q[0] for q in squares], [q[1] for q in squares]
             marks.append(PersonMark(
                 npc_id=npc.id, number=int(npc.id.split("_")[1]), name=display_name(npc), kind=npc.kind,
-                square=square, facing=views[newest.view].facing if newest.view < len(views) else None,
+                square=square, facing=self.sighting_facing(self.look_of(npc), newest),
                 last_seen=(newest.episode, newest.map_step), on_screen=npc.id in on_screen,
                 talked="yes" if sure else "probably" if talks else "no", times_talked=len(talks),
                 same_words=len(talks) > 1 and len(words) == 1 and "" not in words, earlier=squares[1:4],

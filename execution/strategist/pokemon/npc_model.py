@@ -329,9 +329,9 @@ def _same_text(text: str) -> str:
     return re.sub(r"[\s▼▶]+", " ", text).strip().casefold()
 
 
-def run_summaries(reg, vlm_call: Callable[..., Any], game: str, gmap) -> None:
-    """One batched, text-only call for every conversation with text that has no summary yet."""
-    todo = [c for c in reg.conversations.values()
+def run_summaries(reg, vlm_call: Callable[..., Any], game: str, gmap, only=None) -> None:
+    """One batched, text-only call for every conversation with text that has no summary yet (or just ``only``)."""
+    todo = [c for c in (only if only is not None else reg.conversations.values())
             if c.text.strip() and not c.summarised][:MAX_BATCH]
     done = {}
     for c in reg.conversations.values():

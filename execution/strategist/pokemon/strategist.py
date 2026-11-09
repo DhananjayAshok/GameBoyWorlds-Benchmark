@@ -183,6 +183,8 @@ class PokemonStrategist:
         self._npc_registry = npc_registry
         self.npcs = (self._load_or_default(NPCRegistry, lambda: NPCRegistry(game, name), load_episode)
                      if npc_registry else None)
+        if self.npcs is not None:
+            self.npcs.attach_model(self._vlm_caller)         # conversations are read and summarised as they end
         self._map_placed = True                          # the map placed this episode's opening screen
 
         if not resume:
