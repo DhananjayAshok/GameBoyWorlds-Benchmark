@@ -371,6 +371,15 @@ class MapCell:
 class GlobalMap(StrategistArtifact):
     """Segments of global grid, the player's place on them, and the bookkeeping to explain both."""
 
+    #: Set by MappingEnvironment to the tile recognizer's canonical_hash, so that a cell keeps its hashes
+    #: when the palette changes with the time of day. Not saved; without it cells hash their raw pixels.
+    _TRANSIENT = ("canonical_hash",)
+    canonical_hash: Optional[Callable[[np.ndarray], Optional[str]]] = None
+
+    def _cell_hashes(self, quarters: Dict[str, np.ndarray]) -> Tuple[Optional[str], ...]:
+        hash_of = self.canonical_hash or cell_key
+        return tuple(hash_of(quarters[q]) for q in QUARTERS)
+
     def __init__(self) -> None:
         self.segments: List[Dict[Cell, MapCell]] = [{}]
         self.segment = 0
@@ -546,7 +555,7 @@ class GlobalMap(StrategistArtifact):
         for (x, y), piece in _local_cells(a, shift):
             pixels = piece.copy()
             quarters = split_quarters(piece)
-            hashes = tuple(cell_key(quarters[q]) for q in QUARTERS)
+            hashes = self._cell_hashes(quarters)
             if (x, y) == (0, 0):
                 tags, kind = ("player",), WALKABLE
             elif shift != (0, 0):
@@ -863,7 +872,7 @@ class GlobalMap(StrategistArtifact):
             if (x, y) == (0, 0) or piece.min() == piece.max():
                 continue
             quarters = split_quarters(piece)
-            local[(x, y)] = tuple(cell_key(quarters[q]) for q in QUARTERS)
+            local[(x, y)] = self._cell_hashes(quarters)
         best = None
         for si, seg in enumerate(self.segments):
             if si == exclude or not seg:
@@ -1148,6 +1157,8 @@ class MappingEnvironment:
         self._env = env
         self._map = global_map
         self._tiles = tile_recognizer
+        if tile_recognizer is not None and hasattr(tile_recognizer, "canonical_hash"):
+            global_map.canonical_hash = tile_recognizer.canonical_hash
         self._parameters = parameters
         self.marker = None
 
