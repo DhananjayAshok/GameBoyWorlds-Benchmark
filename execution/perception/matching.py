@@ -98,3 +98,46 @@ def group_cells(
             related[i][j] = shared
             related[j][i] = shared
     return groups, related
+
+
+def _distinct_per_row(values: np.ndarray) -> np.ndarray:
+    ordered = np.sort(values, axis=1)
+    return 1 + (np.diff(ordered, axis=1) != 0).sum(axis=1)
+
+
+def shade_bank(images: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Pixels, per-image shade indices and shade counts of equally sized pieces, for shade_candidates."""
+    pixels = np.stack([np.asarray(image).reshape(-1) for image in images]).astype(np.int64)
+    shade_index = np.stack([np.unique(row, return_inverse=True)[1] for row in pixels]).astype(np.int64)
+    return pixels, shade_index, _distinct_per_row(pixels)
+
+
+def shade_candidates(bank: Tuple[np.ndarray, np.ndarray, np.ndarray], piece: np.ndarray,
+                     min_shades: int = 2, ordered: bool = True) -> np.ndarray:
+    """
+    Indices of the bank pieces that ``piece`` is a recolouring of: the same picture in other shades, as when
+    a Game Boy Color palette changes with the time of day. Shades may merge in either direction (night
+    palettes map several day shades onto one), but each shade maps to one shade and their light-to-dark
+    order is kept (``ordered``; some night palettes do reorder shades, so callers may drop it when other
+    evidence says the screen was recoloured). Only the candidates that keep the most distinct shades are returned. Pieces with fewer than
+    ``min_shades`` shades on either side match nothing: a single-shade piece is a recolouring of anything.
+    """
+    pixels, shade_index, n_shades = bank
+    p = np.asarray(piece).reshape(-1).astype(np.int64)
+    p_index = np.unique(p, return_inverse=True)[1].astype(np.int64)
+    n_p = int(p_index.max()) + 1
+    if n_p < min_shades or len(pixels) == 0:
+        return np.zeros(0, dtype=np.int64)
+    # piece = g(bank piece): each bank shade becomes one piece shade, in order
+    forward = _distinct_per_row(shade_index * 256 + p[None, :]) == n_shades
+    if ordered:
+        forward &= np.all(np.diff(p[np.argsort(pixels, axis=1, kind="stable")], axis=1) >= 0, axis=1)
+    # bank piece = g(piece): each piece shade becomes one bank shade, in order
+    backward = _distinct_per_row(p_index[None, :] * 256 + pixels) == n_p
+    if ordered:
+        backward &= np.all(np.diff(pixels[:, np.argsort(p, kind="stable")], axis=1) >= 0, axis=1)
+    ok = (n_shades >= min_shades) & (forward | backward)
+    if not ok.any():
+        return np.zeros(0, dtype=np.int64)
+    kept = np.where(ok, np.minimum(n_shades, n_p), -1)
+    return np.flatnonzero(kept == kept.max())
