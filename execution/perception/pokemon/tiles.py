@@ -123,6 +123,9 @@ class TileRecognizer(StrategistArtifact):
     #: screen has been recoloured, and pieces with this many shades may match too.
     SHADE_SCREEN_EVIDENCE = 8
     SHADE_RECOLOURED_MIN_SHADES = 2
+    #: On a recoloured screen, also accept recolourings that reorder shades (some night palettes swap
+    #: light and dark), as a last pass.
+    SHADE_RECOLOURED_UNORDERED = True
 
     def __init__(
         self,
@@ -140,7 +143,7 @@ class TileRecognizer(StrategistArtifact):
         self._by_hash: Dict[str, Tile] = {}
 
     def _shade_match(self, tile_hash: Optional[str], piece: np.ndarray,
-                     min_shades: Optional[int] = None) -> Optional[Tile]:
+                     min_shades: Optional[int] = None, ordered: bool = True) -> Optional[Tile]:
         """
         The known tile ``piece`` shows in other shades, if any. Game Boy Color games recolour the map with
         the time of day (Pokemon Crystal's morning, day and night palettes), which changes every pixel value
@@ -157,10 +160,10 @@ class TileRecognizer(StrategistArtifact):
             self._shade_aliases = {}
         if tile_hash in self._shade_aliases:
             return self._shade_aliases[tile_hash]
-        misses = self._shade_misses.setdefault(min_shades, set())
+        misses = self._shade_misses.setdefault((min_shades, ordered), set())
         if tile_hash in misses:
             return None
-        candidates = [self.tiles[i] for i in shade_candidates(self._shade_bank, piece, min_shades)]
+        candidates = [self.tiles[i] for i in shade_candidates(self._shade_bank, piece, min_shades, ordered)]
         if not candidates or len({tile.tag for tile in candidates}) != 1:
             misses.add(tile_hash)
             return None
@@ -192,6 +195,8 @@ class TileRecognizer(StrategistArtifact):
             for key, (tile_hash, piece) in pending.items():
                 if found[key] is None:
                     found[key] = self._shade_match(tile_hash, piece, self.SHADE_RECOLOURED_MIN_SHADES)
+                if found[key] is None and self.SHADE_RECOLOURED_UNORDERED:
+                    found[key] = self._shade_match(tile_hash, piece, self.SHADE_RECOLOURED_MIN_SHADES, ordered=False)
         return found
 
     def canonical_hash(self, piece: np.ndarray) -> Optional[str]:
