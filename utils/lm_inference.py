@@ -127,6 +127,7 @@ _RATE_LIMITS: dict[str, int] = {
     "google/gemini-3.1-pro-preview": 60,
     # Raised above the default: Flash is the cheap, high-throughput arm.
     "google/gemini-3.6-flash": 200,
+    "google/gemini-4-argon": 120,
     "qwen/qwen3-vl-235b-a22b-instruct": 60,
     "google/gemma-4-31b-it": 1000,
 }
@@ -1586,7 +1587,7 @@ class vLLMModel(OpenAIAPIModel):
         """
         parameters = load_parameters(parameters)
         if base_url is None:
-            base_url = parameters["vLLM_base_url"]
+            base_url = os.environ.get("VLLM_BASE_URL") or parameters["vLLM_base_url"]
         super().__init__(
             model=model,
             base_url=base_url,

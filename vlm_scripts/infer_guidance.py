@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import click
 from tqdm import tqdm
 
+from python_scripts import paths
 from utils import log_info, log_warn, log_error, VLM, parse_key_value, HuggingFaceModel
 
 # ---------------------------------------------------------------------------
@@ -215,9 +216,9 @@ def infer_guidance_cmd(obj, trajectory_path, max_obs_at_once, max_concurrency):
     parameters = obj["parameters"]
 
     vlm = VLM(model_name, vlm_kind)
-    model_save_name = model_name.split("/")[-1]
+    model_save_name = paths.model_save_name(model_name)
     # have a guard to ensure we aren't using different models
-    if model_save_name not in trajectory_path:
+    if model_save_name not in trajectory_path.lower():
         log_error(
             f"Model name '{model_save_name}' not found in trajectory_path '{trajectory_path}'. "
             "Ensure the trajectory was produced by the same model.",
