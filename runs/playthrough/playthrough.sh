@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# One long-horizon strategist playthrough. The invocation the slurm/strategist_*.sh files
-# wrap, so the six of them stop each carrying their own copy.
+# One long-horizon playthrough. The invocation the slurm/playthrough_*.sh files wrap, so
+# they stop each carrying their own copy.
 #
 # Does NOT start a vLLM server. For --vlm_kind vllm, bring one up first.
 
@@ -19,6 +19,12 @@ ARGS["subgoal_every"]=5
 ARGS["report_detail"]="strategist"
 ARGS["controller_variant"]="state_wise"
 ARGS["resume"]=true
+# Render the debug view/diff reports once the playthrough returns. On by default: they are
+# cheap markdown over artifacts already on disk, and every per-run slurm job wanted them.
+ARGS["debug_reports"]=true
+# Which artifact those reports cover. "all" passes no --artifact, so debug.py reports on
+# every artifact the run saved.
+ARGS["debug_artifact"]="all"
 
 # --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
@@ -69,7 +75,7 @@ else
     resume_flag="--fresh"
 fi
 
-python run_strategist.py \
+python run_playthrough.py \
     --game "${ARGS["game"]}" \
     --init_state "${ARGS["init_state"]}" \
     --name "${ARGS["name"]}" \
@@ -81,5 +87,21 @@ python run_strategist.py \
     --report_detail "${ARGS["report_detail"]}" \
     --controller_variant "${ARGS["controller_variant"]}" \
     $resume_flag
+run_status=$?
+
+# Reports are rendered even when the playthrough exited non-zero: a run killed by the wall
+# clock has written every episode up to that point, and that is exactly when the reports are
+# wanted. The run's own status is what this script exits with.
+if [[ "${ARGS["debug_reports"]}" == "true" || "${ARGS["debug_reports"]}" == "yes" ]]; then
+    artifact_flag=()
+    if [[ "${ARGS["debug_artifact"]}" != "all" ]]; then
+        artifact_flag=(--artifact "${ARGS["debug_artifact"]}")
+    fi
+    python debug.py --game "${ARGS["game"]}" playthrough view \
+        --name "${ARGS["name"]}" "${artifact_flag[@]}"
+    python debug.py --game "${ARGS["game"]}" playthrough diff \
+        --name "${ARGS["name"]}" "${artifact_flag[@]}"
+fi
 
 echo "DONE: ${ARGS["name"]} on ${ARGS["game"]}"
+exit $run_status

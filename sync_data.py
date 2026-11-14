@@ -48,9 +48,11 @@ ALLOWED_SETS = {
         ],
         "ignore_patterns": ["*info_subgoal_parametric_*"],
     },
-    # The three trees one strategist playthrough writes to. Kept as separate sets because
-    # they sit under two different storage roots and differ by orders of magnitude in size.
-    "strategist": {
+    # The three trees one playthrough writes to. Kept as separate sets because they sit
+    # under two different storage roots and differ by orders of magnitude in size.
+    # The set names say "playthrough"; the patterns still say "strategist" because that is
+    # the on-disk segment, which was deliberately left alone when the code was renamed.
+    "playthrough": {
         "root": "storage_dir",
         "subdir": "playthrough_artifacts",
         "allow_patterns": [
@@ -62,7 +64,7 @@ ALLOWED_SETS = {
         # the shared tile database, which is not a per-playthrough artifact.
         "ignore_patterns": [],
     },
-    "strategist_videos": {
+    "playthrough_videos": {
         "root": "gameboy_worlds_storage_dir",
         "subdir": "sessions",
         "allow_patterns": ["*/strategist/*/videos/*.mp4"],
@@ -78,7 +80,7 @@ ALLOWED_SETS = {
     # PokemonStrategist._emulator_state_name's -- so the uuid-named temporaries that
     # Environment._simulate leaves behind when a job is killed stay out. The ignores restate
     # the ROM exclusion locally so that widening the allow list cannot leak one.
-    "strategist_states": {
+    "playthrough_states": {
         "root": "gameboy_worlds_storage_dir",
         "subdir": "rom_data",
         "allow_patterns": ["*/states/custom_strategist*.state"],

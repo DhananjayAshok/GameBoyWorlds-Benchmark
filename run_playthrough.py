@@ -1,16 +1,16 @@
 """
-Entry point for a strategist playthrough. Use --help for CLI options.
+Entry point for a playthrough. Use --help for CLI options.
 
 Not a benchmark arm. Every arm in ``run_benchmark.py`` sweeps a fixed list of short tasks
-and scores each independently; a strategist run is the opposite shape -- one long-horizon
-playthrough, one emulator session, and a sequence of tasks the strategist chooses as it goes.
+and scores each independently; a playthrough is the opposite shape -- one long-horizon
+run, one emulator session, and a sequence of tasks the strategist chooses as it goes.
 There is no task list to sweep and no per-task pass rate to average.
 
-    python run_strategist.py --name gemma_starter --init_state starter \\
+    python run_playthrough.py --name gemma_starter --init_state starter \\
         --model google/gemma-4-31b-it --vlm_kind vllm --max_episodes 400
 
 State (tiles) persists under
-``Paths.strategist_dir(name)`` and is resumed by default, so re-running the same --name
+``Paths.playthrough_dir(name)`` and is resumed by default, so re-running the same --name
 continues the same playthrough. Each process writes its own ``provenance_<stamp>.json``
 there recording the settings it ran under.
 """
@@ -90,13 +90,13 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
     """Play one long-horizon playthrough with the strategist."""
     parameters = load_parameters()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = paths.strategist_dir(parameters, game=game, name=name)
+    out_dir = paths.playthrough_dir(parameters, game=game, name=name)
     # The strategist makes its own directory. Making it here as well breaks --resume_run, which
     # refuses to fork into a directory that already exists.
     if resume_run is None:
         os.makedirs(out_dir, exist_ok=True)
 
-    log_info(f"Strategist playthrough {name!r} on {game} from {init_state!r}", parameters)
+    log_info(f"Playthrough {name!r} on {game} from {init_state!r}", parameters)
     log_info(f"State: {out_dir}", parameters)
 
     environment = get_environment(
@@ -107,11 +107,13 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
         max_steps=env_max_steps,
         headless=True,
         save_video=save_video,
-        # depathify'd for the same reason strategist_dir is: a name with spaces or
+        # depathify'd for the same reason playthrough_dir is: a name with spaces or
         # slashes in it becomes a directory name here, on GameBoyWorlds' storage.
         # No game segment: GameBoyWorlds roots every session at sessions/<game>/
         # already, so putting it here would repeat it one level down.
-        session_name=f"strategist/{paths.depathify(name)}/{stamp}/",
+        # The leading segment must stay in step with paths.playthrough_sessions_root,
+        # which is what reads these back, so it is taken from there rather than spelled again.
+        session_name=f"{paths.PLAYTHROUGH_SEGMENT}/{paths.depathify(name)}/{stamp}/",
     )
     try:
         environment.reset()

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Every strategist playthrough, in sequence, on one model. The four Pokemon titles the
-# strategist plays; see runs/games.sh POKEMON_GAMES.
+# Every playthrough, in sequence, on one model. The four Pokemon titles the strategist
+# plays; see runs/games.sh POKEMON_GAMES.
 #
 # Sequential on purpose: each playthrough owns an emulator and a long wall clock, so these
-# are normally one slurm job each (slurm/strategist_*.sh). This driver is for running the
+# are normally one slurm job each (slurm/playthrough_*.sh). This driver is for running the
 # set on one node.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
@@ -78,9 +78,9 @@ for game in "${games[@]}"; do
     name="${game#pokemon_}_${suffix}"
     echo ""
     echo "############################################################"
-    echo "# $game  —  strategist playthrough '$name'"
+    echo "# $game  —  playthrough '$name'"
     echo "############################################################"
-    if ! bash runs/strategist/playthrough.sh \
+    if ! bash runs/playthrough/playthrough.sh \
             --game "$game" \
             --name "$name" \
             --model "${ARGS["model"]}" \

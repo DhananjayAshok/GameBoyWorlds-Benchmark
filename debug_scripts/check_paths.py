@@ -17,13 +17,13 @@ def _mark(path: str) -> str:
     return "OK  " if os.path.exists(path) else "MISS"
 
 
-def _strategist_lines(paths, name: str) -> list:
-    """The strategist block: state directory, archived episodes, provenance, tile database."""
+def _playthrough_lines(paths, name: str) -> list:
+    """The playthrough block: state directory, archived episodes, provenance, tile database."""
     from execution.artifact import episode_dirs
     from execution.strategist.report import saved_episode_reports
 
-    run_dir = paths.strategist_dir(name)
-    lines = ["", "-- strategist --", f"  [{_mark(run_dir)}] {run_dir}"]
+    run_dir = paths.playthrough_dir(name)
+    lines = ["", "-- playthrough --", f"  [{_mark(run_dir)}] {run_dir}"]
     if os.path.isdir(run_dir):
         episodes = episode_dirs(run_dir)
         archived = saved_episode_reports(run_dir)
@@ -42,10 +42,10 @@ def _strategist_lines(paths, name: str) -> list:
 @click.command(name="check_paths")
 @click.option("--model_name", default=None,
               help="Full VLM name (e.g. google/gemma-4-31b-it). Omit to check curiosity paths only.")
-@click.option("--strategist_name", default=None,
-              help="A strategist run's --name. Omit to skip the strategist block.")
+@click.option("--playthrough_name", default=None,
+              help="A playthrough's --name. Omit to skip the playthrough block.")
 @click.pass_obj
-def check_paths(obj, model_name, strategist_name):
+def check_paths(obj, model_name, playthrough_name):
     """Print every derived path with an exists/missing marker."""
     paths = Paths(
         parameters=obj["parameters"],
@@ -63,7 +63,7 @@ def check_paths(obj, model_name, strategist_name):
         f"run_name   : {paths.run_name}",
         f"executor   : {paths.executor}",
         f"model_name : {model_name or '(not given)'}",
-        f"strategist : {strategist_name or '(not given)'}",
+        f"playthrough: {playthrough_name or '(not given)'}",
         f"storage_dir: {paths.storage_dir}",
         f"results_dir: {paths.results_dir}",
         "",
@@ -75,9 +75,9 @@ def check_paths(obj, model_name, strategist_name):
         states = sorted(d for d in os.listdir(grouped) if os.path.exists(paths.grouped_file(d)))
         lines.append(f"         {len(states)} init_state(s) with grouped trajectories")
 
-    # Keyed on the strategist's own --name, not on model_name, so it is reported either way.
-    if strategist_name is not None:
-        lines += _strategist_lines(paths, strategist_name)
+    # Keyed on the playthrough's own --name, not on model_name, so it is reported either way.
+    if playthrough_name is not None:
+        lines += _playthrough_lines(paths, playthrough_name)
 
     if model_name is None:
         lines.append("\n(model_name not given — skipping model-keyed stages)")

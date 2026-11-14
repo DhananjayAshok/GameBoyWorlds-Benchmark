@@ -204,7 +204,7 @@ Unlike the original games, fan-made games are scarcely documented and so models 
 To run a playthrough: 
 
 ```bash
-python run_strategist.py \
+python run_playthrough.py \
     --game pokemon_red \
     --name gemini_run \
     --model google/gemini-3.6-flash \
@@ -232,10 +232,10 @@ Alongside them, `provenance_<stamp>.json` records the settings each process ran 
 
 ```bash
 # Every artifact as it stood at one moment
-python debug.py --game pokemon_red strategist view --name gemini_run --episode 120
+python debug.py --game pokemon_red playthrough view --name gemini_run --episode 120
 
 # How each artifact CHANGED, save by save, from first version to latest
-python debug.py --game pokemon_red strategist diff --name gemini_run
+python debug.py --game pokemon_red playthrough diff --name gemini_run
 ```
 
 `diff` shows you the moment the agent discovered a route, revised a belief, or spent forty episodes re-deriving something it already knew. Add `--artifact locations` (or `goals`, `knowledge`, `tiles`, `notepad`) to narrow it to one.

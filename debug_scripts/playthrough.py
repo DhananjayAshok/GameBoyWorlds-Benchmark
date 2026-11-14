@@ -20,7 +20,7 @@ from execution.strategist.pokemon.guide import StrategyGuide
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree
 from execution.strategist.pokemon.notepad import ThoughtNotepad
 from execution.strategist.report import episode_report_path, load_episode_report
-from python_scripts.paths import debug_dir, debug_frames_dir, strategist_dir
+from python_scripts.paths import debug_dir, debug_frames_dir, playthrough_dir
 from utils import log_error, log_info
 from utils.fundamental import depathify
 
@@ -523,15 +523,15 @@ DIFFS: Dict[str, Callable[..., Tuple[List[str], str]]] = {
 
 def setup(obj: dict, name: str, mode: str) -> Tuple[str, Report]:
     parameters, game = obj["parameters"], obj["game"]
-    run_dir = strategist_dir(parameters, game=game, name=name)
+    run_dir = playthrough_dir(parameters, game=game, name=name)
     if not os.path.isdir(run_dir):
-        log_error(f"[strategist] no strategist run at {run_dir}. run_strategist.py --name {name!r} "
+        log_error(f"[playthrough] no playthrough at {run_dir}. run_playthrough.py --name {name!r} "
                   f"--game {game} writes it.", parameters)
     segment = depathify(name)
-    report_dir = debug_dir(parameters, game=game, stage="strategist", sub=(segment, mode),
+    report_dir = debug_dir(parameters, game=game, stage="playthrough", sub=(segment, mode),
                            output_dir=obj["output_dir"])
     images_dir = _storage_link(report_dir, "images",
-                               debug_frames_dir(parameters, game=game, stage="strategist", sub=(segment, mode)),
+                               debug_frames_dir(parameters, game=game, stage="playthrough", sub=(segment, mode)),
                                parameters)
     report = Report(report_dir=report_dir, images_dir=images_dir, overwrite=obj["overwrite"], run_dir=run_dir)
     return run_dir, report
@@ -543,25 +543,25 @@ def selected(artifact: Optional[str], run_dir: str) -> List[str]:
     return [key for key, cls in ARTIFACTS.items() if key not in OPTIONAL or cls.exists(run_dir)]
 
 
-@click.group(name="strategist")
-def debug_strategist():
-    """Inspect a strategist run's saved artifacts (goals, knowledge, tiles, notepad, global map,
+@click.group(name="playthrough")
+def debug_playthrough():
+    """Inspect a playthrough's saved artifacts (goals, knowledge, tiles, notepad, global map,
     strategy guide)."""
 
 
 ARTIFACT_OPTION = click.option("--artifact", type=click.Choice(list(ARTIFACTS)), default=None,
                                help="One artifact to report on. Omit for all of them.")
-NAME_OPTION = click.option("--name", required=True, help="The strategist run's --name.")
+NAME_OPTION = click.option("--name", required=True, help="The playthrough's --name.")
 
 
-@debug_strategist.command(name="view")
+@debug_playthrough.command(name="view")
 @NAME_OPTION
 @ARTIFACT_OPTION
 @click.option("--episode", type=int, default=None,
               help="Show each artifact as of this episode: its latest save at or before it. "
                    "Defaults to the latest save of each.")
 @click.pass_obj
-def debug_strategist_view(obj, name, artifact, episode):
+def debug_playthrough_view(obj, name, artifact, episode):
     """Each artifact as it stood at one episode."""
     parameters = obj["parameters"]
     run_dir, report = setup(obj, name, "view")
@@ -571,7 +571,7 @@ def debug_strategist_view(obj, name, artifact, episode):
         eligible = [n for n in cls.saved_episodes(run_dir) if episode is None or n <= episode]
         if not eligible:
             where = f" at or before episode {episode}" if episode is not None else ""
-            log_error(f"[strategist] no saved {cls.__name__} under {run_dir}{where}.", parameters)
+            log_error(f"[playthrough] no saved {cls.__name__} under {run_dir}{where}.", parameters)
         loaded = eligible[-1]
         blocks, summary = VIEWS[key](cls.load(run_dir, loaded, parameters=parameters), report, loaded)
         path = md.write_report(os.path.join(report.report_dir, f"{key}.md"), [
@@ -583,20 +583,20 @@ def debug_strategist_view(obj, name, artifact, episode):
                      "summary": summary})
     requested = f"episode {episode}" if episode is not None else "the latest episode"
     index = md.write_report(os.path.join(report.report_dir, "index.md"), [
-        md.h1(f"Strategist artifacts: {name}"),
+        md.h1(f"Playthrough artifacts: {name}"),
         md.para(f"Run directory: `{run_dir}`"),
         md.para(f"As of {requested}. Each artifact is shown from its own latest save at or before that point, "
                 "so the episodes below can differ."),
         md.table(pd.DataFrame(rows)),
     ])
-    log_info(f"[strategist] view report: {index}", parameters)
+    log_info(f"[playthrough] view report: {index}", parameters)
 
 
-@debug_strategist.command(name="diff")
+@debug_playthrough.command(name="diff")
 @NAME_OPTION
 @ARTIFACT_OPTION
 @click.pass_obj
-def debug_strategist_diff(obj, name, artifact):
+def debug_playthrough_diff(obj, name, artifact):
     """How each artifact changed, save by save, from its first version to its latest."""
     parameters = obj["parameters"]
     run_dir, report = setup(obj, name, "diff")
@@ -605,7 +605,7 @@ def debug_strategist_diff(obj, name, artifact):
         cls = ARTIFACTS[key]
         episodes = cls.saved_episodes(run_dir)
         if not episodes:
-            log_error(f"[strategist] no saved {cls.__name__} under {run_dir}.", parameters)
+            log_error(f"[playthrough] no saved {cls.__name__} under {run_dir}.", parameters)
         previous = cls.load(run_dir, episodes[0], parameters=parameters)
         first_blocks, first_summary = VIEWS[key](previous, report, episodes[0])
         blocks = [
@@ -627,9 +627,9 @@ def debug_strategist_diff(obj, name, artifact):
                      "first": episodes[0], "latest": episodes[-1],
                      "last change": steps[-1] if steps else "(only one version)"})
     index = md.write_report(os.path.join(report.report_dir, "index.md"), [
-        md.h1(f"Strategist artifact history: {name}"),
+        md.h1(f"Playthrough artifact history: {name}"),
         md.para(f"Run directory: `{run_dir}`"),
         md.para("Each artifact is diffed between consecutive episodes where it was saved, oldest first."),
         md.table(pd.DataFrame(rows)),
     ])
-    log_info(f"[strategist] diff report: {index}", parameters)
+    log_info(f"[playthrough] diff report: {index}", parameters)

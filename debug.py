@@ -28,7 +28,7 @@ from debug_scripts import (
     debug_info,
     debug_retrieval,
     debug_practice,
-    debug_strategist,
+    debug_playthrough,
 )
 
 
@@ -77,7 +77,7 @@ main.add_command(debug_compare, name="compare")
 main.add_command(debug_info, name="info")
 main.add_command(debug_retrieval, name="retrieval")
 main.add_command(debug_practice, name="practice")
-main.add_command(debug_strategist, name="strategist")
+main.add_command(debug_playthrough, name="playthrough")
 
 
 if __name__ == "__main__":

@@ -373,69 +373,74 @@ def tile_recognizer_file(parameters=None, *, game: str, name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Strategist
+# Playthrough
 # ---------------------------------------------------------------------------
 
+#: The on-disk segment every playthrough tree is filed under. Still ``strategist``: the
+#: directories, session paths and save states named by it predate the rename and are live,
+#: so the segment is deliberately not the function names' ``playthrough``.
+PLAYTHROUGH_SEGMENT = "strategist"
 
-def strategist_dir(parameters=None, *, game: str, name: str) -> str:
-    """Where one strategist's persistent state lives, beside :func:`tile_recognizer_file`
+
+def playthrough_dir(parameters=None, *, game: str, name: str) -> str:
+    """Where one playthrough's persistent state lives, beside :func:`tile_recognizer_file`
     under the same ``playthrough_artifacts/<game>`` root.
 
-    :return: Path to the strategist's state directory.
+    :return: Path to the playthrough's state directory.
     :rtype: str
     """
     parameters, storage, _ = _roots(parameters)
     segment = depathify(name)
     if not segment:
-        log_error(f"Strategist name {name!r} has no usable characters for a directory name.", parameters)
-    return os.path.join(storage, "playthrough_artifacts", game, "strategist", segment)
+        log_error(f"Playthrough name {name!r} has no usable characters for a directory name.", parameters)
+    return os.path.join(storage, "playthrough_artifacts", game, PLAYTHROUGH_SEGMENT, segment)
 
 
-def strategist_sessions_root(*, game: str) -> str:
+def playthrough_sessions_root(*, game: str) -> str:
     """``<GameBoyWorlds storage>/sessions/<game>/strategist`` — what a provenance
     ``session_dir`` is relative to.
 
-    :return: The root every strategist session directory for this game sits under.
+    :return: The root every playthrough session directory for this game sits under.
     :rtype: str
     """
-    return os.path.join(sessions_dir(game=game), "strategist")
+    return os.path.join(sessions_dir(game=game), PLAYTHROUGH_SEGMENT)
 
 
-def strategist_session_rel(path: str, *, game: str, parameters=None) -> str:
-    """An absolute strategist session directory, cut down to what provenance stores:
+def playthrough_session_rel(path: str, *, game: str, parameters=None) -> str:
+    """An absolute playthrough session directory, cut down to what provenance stores:
     ``<name>/<stamp>/<n>_<hash>``.
 
     A prefix check and cut rather than :func:`os.path.relpath`, which would emit a ``../..``
     chain for a path outside the root instead of failing. The trailing separator matters:
     without it a sibling like ``strategist_old/`` would pass the check.
 
-    :return: The path relative to :func:`strategist_sessions_root`.
+    :return: The path relative to :func:`playthrough_sessions_root`.
     :rtype: str
     """
-    root = strategist_sessions_root(game=game) + os.sep
+    root = playthrough_sessions_root(game=game) + os.sep
     if not path.startswith(root):
         log_error(f"Session directory {path!r} is not under {root!r}, so it cannot be "
                   f"recorded relative to it.", parameters)
     return path[len(root):]
 
 
-def strategist_session_abs(value: str, *, game: str) -> str:
-    """Inverse of :func:`strategist_session_rel`. Tolerates a legacy absolute ``value``,
+def playthrough_session_abs(value: str, *, game: str) -> str:
+    """Inverse of :func:`playthrough_session_rel`. Tolerates a legacy absolute ``value``,
     which :func:`os.path.join` returns unchanged.
 
     :return: The absolute session directory.
     :rtype: str
     """
-    return os.path.join(strategist_sessions_root(game=game), value)
+    return os.path.join(playthrough_sessions_root(game=game), value)
 
 
-def strategist_video(value: str, *, game: str) -> Optional[str]:
+def playthrough_video(value: str, *, game: str) -> Optional[str]:
     """The playthrough mp4 for a provenance ``session_dir``.
 
     :return: Path to ``videos/0.mp4``, or ``None`` when the run saved no video.
     :rtype: Optional[str]
     """
-    path = os.path.join(strategist_session_abs(value, game=game), "videos", "0.mp4")
+    path = os.path.join(playthrough_session_abs(value, game=game), "videos", "0.mp4")
     return path if os.path.exists(path) else None
 
 
@@ -772,10 +777,10 @@ class Paths:
     def tile_recognizer_file(self, name: str) -> str:
         return tile_recognizer_file(self.parameters, game=self.game, name=name)
 
-    # -- strategist -------------------------------------------------------
+    # -- playthrough ------------------------------------------------------
 
-    def strategist_dir(self, name: str) -> str:
-        return strategist_dir(self.parameters, game=self.game, name=name)
+    def playthrough_dir(self, name: str) -> str:
+        return playthrough_dir(self.parameters, game=self.game, name=name)
 
     # -- benchmark --------------------------------------------------------
 

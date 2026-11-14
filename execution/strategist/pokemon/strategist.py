@@ -38,7 +38,7 @@ from execution.strategist.pokemon.global_map import (FAILURE_EPISODES, GlobalMap
 from execution.perception.pokemon.navigation import cell_kinds
 from execution.strategist.report import (REPORT_DETAILS, EpisodeArchive, EpisodeRecord, StrategistReport,
                                          StrategistVLMCallRecord, save_episode_report, trim_episode)
-from python_scripts.paths import strategist_dir, strategist_session_rel
+from python_scripts.paths import playthrough_dir, playthrough_session_rel
 from utils import VLM, load_parameters, log_error, log_info, log_warn
 from utils.lm_inference import clean_value, parse_key_value
 from utils.parsing import parse_list
@@ -67,14 +67,14 @@ def settle_screen(env) -> None:
 # Recovering the other two, given a provenance_<stamp>.json payload:
 #
 #   1. State, under this project's storage:
-#        paths.strategist_dir(game=payload["game"], name=payload["init_kwargs"]["name"])
+#        paths.playthrough_dir(game=payload["game"], name=payload["init_kwargs"]["name"])
 #      holds episode_<n>/*.pkl, episode_<n>/report.pkl.gz and the provenance files. Also
 #      recorded verbatim as payload["init_kwargs"]["storage"].
 #
 #   2. Video, under GameBoyWorlds' storage. payload["session_dir"] is relative to
-#      paths.strategist_sessions_root(game=...) and resolves with:
-#        paths.strategist_session_abs(payload["session_dir"], game=payload["game"])
-#        paths.strategist_video(payload["session_dir"], game=payload["game"])
+#      paths.playthrough_sessions_root(game=...) and resolves with:
+#        paths.playthrough_session_abs(payload["session_dir"], game=payload["game"])
+#        paths.playthrough_video(payload["session_dir"], game=payload["game"])
 #      The second returns None when the run saved no video. Do NOT rebuild this path from
 #      the stamp in the provenance filename; see _resolve_session_dir for why it differs.
 #      A payload["session_dir"] of None means the run predates this field, or the emulator
@@ -147,7 +147,7 @@ class PokemonStrategist:
         self._supervisor_kwargs = supervisor_kwargs
         self._vlm_instance: Optional[VLM] = None
 
-        self._dir = strategist_dir(self._parameters, game=game, name=name)
+        self._dir = playthrough_dir(self._parameters, game=game, name=name)
         self._resume_run = resume_run
         self._resume_episode = resume_episode
         self._resume_dir = self._dir
@@ -166,7 +166,7 @@ class PokemonStrategist:
             if os.path.exists(self._dir):
                 log_error(f"resume_run={resume_run!r} would fork that run's state into {name!r}, "
                           f"but {self._dir} already exists.", self._parameters)
-            self._resume_dir = strategist_dir(self._parameters, game=game, name=resume_run)
+            self._resume_dir = playthrough_dir(self._parameters, game=game, name=resume_run)
 
         #: --fresh starts every artifact over too.
         load_episode = None if self._resume_episode == "latest" else self._resume_episode
@@ -243,7 +243,7 @@ class PokemonStrategist:
         """The emulator's session directory, cut to ``<name>/<stamp>/<n>_<hash>``.
 
         Read off the emulator rather than rebuilt from the naming convention: the stamp in
-        the session path is minted by ``run_strategist.py`` before the emulator boots, while
+        the session path is minted by ``run_playthrough.py`` before the emulator boots, while
         this class's own ``_started_at`` is minted after, so the two disagree whenever
         construction crosses a second boundary. Recording what the emulator actually used is
         the only reliable link between the two halves of a run.
@@ -259,7 +259,7 @@ class PokemonStrategist:
             log_warn("The environment exposed no session_path, so this run's provenance "
                      "cannot record where its video was written.", self._parameters)
             return None
-        return strategist_session_rel(session_path, game=self._game, parameters=self._parameters)
+        return playthrough_session_rel(session_path, game=self._game, parameters=self._parameters)
 
     def _write_provenance(self) -> str:
         payload = {
