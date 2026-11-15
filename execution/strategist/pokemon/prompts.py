@@ -313,7 +313,7 @@ The tasks you gave the player recently, oldest first:
 Other areas you have already named:
 [NAMED]
 
-[ASK] Use the name the game gives it if a sign, the town map or dialogue said so; otherwise a short descriptive name, such as "Pewter City Pokemon Center" or "the cave north of Route 3". Name the whole area, not one building in it. If this area is part of a place you have already named, such as another floor of the same building or another part of the same town, make that clear in its name. The description is for finding your way back later: what kind of place it is, how it is laid out, its notable buildings, people and objects, and its exits.
+[ASK] Use the name the game gives it if a sign, the town map or dialogue said so; otherwise a short descriptive name, such as "Pewter City Pokemon Center" or "the cave north of Route 3". Name the whole area, not one building in it. If this area is part of a place you have already named, such as another floor of the same building or another part of the same town, make that clear in its name. The description is for finding your way back later: what kind of place it is, how it is laid out, its notable buildings, people and objects, and its exits.[NAMING_RULES]
 
 Also say what kind of area it is: outdoors (a town, city or route under the open sky), building (any floor inside a building, such as a house, a Pokemon Center, a shop, a gym, a lab or a gatehouse), or cave (a cave, forest, tunnel or other enclosed place that is not a building).
 
@@ -394,6 +394,13 @@ Return: <YES or NO>
 DEFEAT_RETURN_LINE = "You lost a battle in episode [EPISODE] at [WHERE] You decided the player should go back there once ready."
 
 SEGMENT_NAME_NEW = "Name the area and describe it."
+
+#: Added to SEGMENT_NAME_PROMPT at [NAMING_RULES] with --explore_buildings; empty otherwise.
+SEGMENT_NAME_EVIDENCE_RULE = """
+
+Do not name a building after the person who lives there or after someone inside it, such as "Red's house" or "Blue's house", unless a sign, the town map or someone in the game said whose it is, in what you were told above. People in the game look alike and are easy to mistake for one another. Otherwise name it by where its door is in the town and what kind of building it is, such as "north-west house in Pallet Town", and describe who is inside without guessing who they are."""
+
+SEGMENT_NAME_ENTRANCE = """ The player came into this area through [ENTRANCE]; use that to tell apart buildings that look alike."""
 SEGMENT_NAME_REVIEW = """You named this area "[NAME]" and described it as: [DESCRIPTION]
 Its map has grown from about [BEFORE] to [AFTER] squares since then, so look again. Keep the name and description if they still fit, by answering UNCHANGED. Change them only if the larger map shows the area better: for example if the name was for one building or corner and the area turns out to be a whole town, or the name is wrong."""
 

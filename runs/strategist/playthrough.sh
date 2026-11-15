@@ -19,6 +19,7 @@ ARGS["subgoal_every"]=5
 ARGS["report_detail"]="strategist"
 ARGS["controller_variant"]="state_wise"
 ARGS["resume"]=true
+ARGS["explore_buildings"]=false
 
 # --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
@@ -68,6 +69,10 @@ if [[ "${ARGS["resume"]}" == "true" || "${ARGS["resume"]}" == "yes" || "${ARGS["
 else
     resume_flag="--fresh"
 fi
+buildings_flag=""
+if [[ "${ARGS["explore_buildings"]}" == "true" || "${ARGS["explore_buildings"]}" == "yes" || "${ARGS["explore_buildings"]}" == "y" ]]; then
+    buildings_flag="--explore_buildings"
+fi
 
 python run_strategist.py \
     --game "${ARGS["game"]}" \
@@ -80,6 +85,6 @@ python run_strategist.py \
     --subgoal_every "${ARGS["subgoal_every"]}" \
     --report_detail "${ARGS["report_detail"]}" \
     --controller_variant "${ARGS["controller_variant"]}" \
-    $resume_flag
+    $resume_flag $buildings_flag
 
 echo "DONE: ${ARGS["name"]} on ${ARGS["game"]}"

@@ -1372,11 +1372,22 @@ def _parse_segment_name(review: bool):
 
 
 def name_segment(gmap: GlobalMap, segment: int, mark: Optional[Cell], left: bool, tasks: str, steps: str, vlm_call,
-                 game: str, episode: int, parameters: Optional[dict] = None) -> Optional[Tuple[bool, str, str]]:
+                 game: str, episode: int, parameters: Optional[dict] = None,
+                 buildings: bool = False) -> Optional[Tuple[bool, str, str]]:
+    """
+    Ask the strategist to name (or review the name of) a segment. With ``buildings`` (--explore_buildings)
+    the prompt also says which door the area was entered by and forbids owner names nothing in the game
+    stated, since a misread person once gave a house the wrong owner and the agent kept re-entering it.
+    """
     import cv2
     from PIL import Image
 
     info = gmap.info(segment)
+    naming_rules = ""
+    if buildings:
+        entrance = entrance_text(gmap, segment)
+        naming_rules = P.SEGMENT_NAME_EVIDENCE_RULE + (P.SEGMENT_NAME_ENTRANCE.replace("[ENTRANCE]", entrance)
+                                                       if entrance else "")
     review = info.name is not None
     named = [f"- {other.name}: {other.description}" for si, other in sorted(gmap.segment_info.items())
              if other.name is not None and si != segment and si not in gmap.merged_into]
@@ -1402,6 +1413,7 @@ def name_segment(gmap: GlobalMap, segment: int, mark: Optional[Cell], left: bool
               .replace("[STEPS]", steps or "(nothing was recorded)")
               .replace("[NAMED]", "\n".join(named[-MAX_NAMED_LINES:]) or "(none yet)")
               .replace("[ASK]", ask_text)
+              .replace("[NAMING_RULES]", naming_rules)
               .replace("[NAME_FORMAT]", f'<a short name, or {UNCHANGED} to keep "{info.name}">' if review
                        else "<a short name>")
               .replace("[DESCRIPTION_FORMAT]", f"<one to three sentences, or {UNCHANGED} to keep the current one>"
@@ -1707,16 +1719,35 @@ def route_lines(gmap: GlobalMap) -> List[str]:
 MAX_DOOR_LINES = 8
 
 
-def door_lines(gmap: GlobalMap) -> List[str]:
+def door_visits(gmap: GlobalMap, segment: int, cells: Iterable[Cell]) -> int:
+    """How many times the player has gone through the door made of ``cells`` from ``segment``."""
+    cells = set(cells)
+    count = 0
+    for _, a, pa, _, _ in gmap.warps:
+        a, pa = gmap.resolve(a, pa)
+        if a == segment and gmap._door_at(a, pa) in cells:
+            count += 1
+    return count
+
+
+def door_offsets(gmap: GlobalMap, segment: Optional[int] = None) -> List[Tuple[int, int, int, Optional[int], int]]:
+    """(steps, dx, dy, leads_to, times gone through) for each door of a segment (the current one by default),
+    nearest first, measured from the player."""
+    si = gmap.segment if segment is None else segment
     px, py = gmap.pos
     doors = []
-    for door in gmap.door_list():
+    for door in gmap.door_list(si):
         dx, dy = min(((g[0] - px, g[1] - py) for g in door["cells"]), key=lambda d: abs(d[0]) + abs(d[1]))
-        doors.append((abs(dx) + abs(dy), dx, dy, door["leads_to"]))
+        doors.append((abs(dx) + abs(dy), dx, dy, door["leads_to"], door_visits(gmap, si, door["cells"])))
+    return sorted(doors, key=lambda d: d[:3])
+
+
+def door_lines(gmap: GlobalMap) -> List[str]:
+    doors = door_offsets(gmap)
     if not doors:
         return []
     lines = ["Doors and stairs in this area (x = steps to the right, y = steps up, measured from you):"]
-    for steps, dx, dy, leads_to in sorted(doors, key=lambda d: d[:3])[:MAX_DOOR_LINES]:
+    for steps, dx, dy, leads_to, _ in doors[:MAX_DOOR_LINES]:
         behind = (f"leads to {gmap.area_label(leads_to)}"
                   + (", fully explored" if gmap.info(leads_to).explored is not None else "")
                   if leads_to is not None else "NOT entered yet")
@@ -1724,11 +1755,191 @@ def door_lines(gmap: GlobalMap) -> List[str]:
     return lines
 
 
-def explore_elsewhere(gmap: GlobalMap) -> List[Dict[str, Any]]:
+# ----------------------------------------------------------------------------
+# Building exploration (--explore_buildings): rules for the strategist, never a task picked for it
+# ----------------------------------------------------------------------------
+
+BUILDINGS_HEADER = ("BUILDING EXPLORATION. The aim is to go inside every building once. One visit is enough: go "
+                    "in through its door, then come straight back out. Going back into a building you have already "
+                    "been inside wastes the episode. These rules come before anything else you have been told about "
+                    "talking to people or reading signs inside buildings.")
+
+
+def _entrance(gmap: GlobalMap, segment: int) -> Optional[Tuple[int, Cell]]:
+    """(segment, square) the player last left from to come into ``segment`` through a door, if it ever did."""
+    for _, a, pa, b, _ in reversed(gmap.warps):
+        a, pa = gmap.resolve(a, pa)
+        b = gmap.resolve(b, (0, 0))[0]
+        if b == segment and a != segment:
+            return a, pa
+    return None
+
+
+def _came_from(gmap: GlobalMap, segment: int) -> Optional[int]:
+    """The segment the player last came into ``segment`` from through a door, if it ever did."""
+    entrance = _entrance(gmap, segment)
+    return entrance[0] if entrance is not None else None
+
+
+def entrance_text(gmap: GlobalMap, segment: int) -> Optional[str]:
+    """
+    Where the door the player came into ``segment`` by lies within the area it led from, e.g. "a door in
+    the north-west part of Pallet Town". Read off the map, so it does not depend on what anything was named.
+    """
+    entrance = _entrance(gmap, segment)
+    if entrance is None:
+        return None
+    source, pos = entrance
+    door = gmap._door_at(source, pos)
+    name = gmap.area_label(source)
+    # Placed among the other doors found there rather than within the area's map, whose bounds also take
+    # in whatever routes were mapped onto the same segment and so put a town's centre off to one side.
+    others = [d["cells"][0] for d in gmap.door_list(source)
+              if d["leads_to"] is None or gmap.resolve(d["leads_to"], (0, 0))[0] != source]
+    if len(others) < 2:
+        return f"a door in {name}, the only door found there so far"
+
+    def third(value: int, low: int, high: int, names: Tuple[str, str]) -> str:
+        if high == low:
+            return ""
+        t = (value - low) / (high - low)
+        return names[0] if t < 1 / 3 else names[1] if t > 2 / 3 else ""
+
+    ns = third(door[1], min(g[1] for g in others), max(g[1] for g in others), ("south", "north"))
+    ew = third(door[0], min(g[0] for g in others), max(g[0] for g in others), ("west", "east"))
+    where = "-".join(p for p in (ns, ew) if p) or "middle"
+    return f"the {where} one of the {len(others)} doors found so far in {name}"
+
+
+def is_inside(gmap: GlobalMap, segment: int) -> Optional[bool]:
+    """
+    Whether a segment is inside a building or cave, from the kind it was given when named. One not
+    named yet (naming waits for the end of an episode) is outside if nothing led into it, which is
+    where the run started, and unknown (None) if the player came in through a door: the map also opens
+    a new segment when it fails to recognise more of the same town after a fade, so a door alone
+    cannot tell the inside of a building from the outdoors.
+    """
+    kind = gmap.info(segment).kind
+    if kind is not None:
+        return kind in (BUILDING, CAVE)
+    return False if _came_from(gmap, segment) is None else None
+
+
+def _times(n: int) -> str:
+    return "once" if n == 1 else "twice" if n == 2 else f"{n} times"
+
+
+def _real_doors(gmap: GlobalMap, segment: int) -> List[Tuple[int, int, int, Optional[int], int]]:
+    """``door_offsets`` without links from the segment back into itself, which merging segments leaves behind."""
+    segment = gmap.resolve(segment, (0, 0))[0]
+    return [d for d in door_offsets(gmap, segment)
+            if d[3] is None or gmap.resolve(d[3], (0, 0))[0] != segment]
+
+
+def building_lines(gmap: GlobalMap) -> Tuple[List[str], bool]:
+    """
+    The building-exploration section of the strategist's prompts: the doors of this area the player
+    has been through and must not go through again, the ones it has not, and where to look when none
+    are left. Only information and rules: the strategist still writes the task. Also returns whether
+    there is a door to aim for, which takes precedence over the stuck check's push to an unexplored edge.
+    """
+    here = gmap.area_label(gmap.segment)
+    doors = _real_doors(gmap, gmap.segment)
+    inside, source = is_inside(gmap, gmap.segment), _came_from(gmap, gmap.segment)
+    lines = [BUILDINGS_HEADER]
+
+    def where(steps: int, dx: int, dy: int) -> str:
+        return f"({dx}, {dy}), {steps} steps {sector(dx, dy) if steps else 'here'}"
+
+    exits = [d for d in doors if d[3] is not None and d[3] == source]
+    if not exits and inside:
+        exits = [d for d in doors if d[3] is not None and is_inside(gmap, d[3]) is False]
+    if exits:
+        steps, dx, dy, leads_to, _ = exits[0]
+        leave = (f"walk straight back out through the door you came in by, at {where(steps, dx, dy)}, "
+                 f"to {gmap.area_label(leads_to)}")
+    else:
+        leave = "walk straight out of this building"
+    leave += ". Do not talk to anyone, read anything or explore this building first."
+    if inside:
+        lines += [f"You are inside {here}. Being inside is enough: it now counts as visited.",
+                  f"Leave right away. This episode's task MUST be to {leave}"]
+        return lines, True
+    if inside is None:
+        lines.append(f"You came into {here} through a door from {gmap.area_label(source)}, and have not named it "
+                     f"yet. Look at the screen. If this is the inside of a building, being inside is enough: it now "
+                     f"counts as visited, so this episode's task MUST be to {leave} If it is outdoors, the rules "
+                     f"below apply.")
+    way_back = exits[0] if inside is None and exits else None
+    entered = [d for d in doors if d[3] is not None and d is not way_back]
+    new = [d for d in doors if d[3] is None]
+    if entered:
+        lines.append("Doors in this area you have ALREADY been through (x = steps to the right, y = steps up, "
+                     "measured from you). Do NOT go through any of them again: you have already been where each "
+                     "one leads.")
+        lines += [f"- {where(steps, dx, dy)}: leads to {gmap.area_label(leads_to)}"
+                  + (f"; you have been through it {_times(visits)}" if visits else "")
+                  for steps, dx, dy, leads_to, visits in entered]
+    if new:
+        lines.append("Doors in this area you have NOT been through yet. This episode's task MUST be to walk to one "
+                     "of them and go inside:")
+        lines += [f"- {where(steps, dx, dy)}" for steps, dx, dy, _, _ in new]
+        return lines, True
+    visited = [d for d in entered if is_inside(gmap, d[3]) is not False]
+    if visited and inside is False:
+        lines.append(f"You have been inside every building whose door you have found in {here}: "
+                     f"{len(visited)} building{'s' if len(visited) != 1 else ''}.")
+        if gmap.frontier():
+            lines.append("More buildings could only be beyond the unexplored edges of your map. If you think there are "
+                         "more here, walk to one of those edges to find their doors. If you think you have now been "
+                         "inside every building here, the goal of entering every building is done here.")
+        else:
+            lines.append(f"Every edge of the map of {here} is explored too, so the goal of entering every building is "
+                         f"done here.")
+    elif gmap.frontier():
+        lines.append(f"No door in {here} is left that you have not been through. The buildings you have not found "
+                     f"yet lie beyond the unexplored edges of your map, so this episode's task MUST be to walk to one "
+                     f"of those edges and keep going until new doors come into view.")
+    else:
+        lines.append(f"You have been through every door in {here} and explored every edge of its map: the "
+                     f"buildings here are all visited.")
+    return lines, inside is None
+
+
+def building_summary(gmap: GlobalMap) -> Optional[str]:
+    """
+    For the goal check: the buildings of the outdoor area the player is in (or just came from) that it has
+    been inside, how often, and how many doors there it has not been through yet. None if there is no
+    outdoor area to speak of yet.
+    """
+    here = gmap.resolve(gmap.segment, (0, 0))[0]
+    town = here if is_inside(gmap, here) is False else _came_from(gmap, here)
+    if town is None or is_inside(gmap, town) is not False:
+        return None
+    doors = _real_doors(gmap, town)
+    visited = [d for d in doors if d[3] is not None and is_inside(gmap, d[3]) is not False]
+    new = sum(d[3] is None for d in doors)
+    name = gmap.area_label(town)
+    if not visited and not new:
+        return f"From your map: no doors found in {name} yet."
+    parts = [f"{gmap.area_label(d[3]) if gmap.info(d[3]).name else 'a building not named yet'} "
+             f"(been through its door {_times(d[4])})" for d in visited]
+    text = (f"From your map: in {name} you have been inside {len(visited)} "
+            f"building{'s' if len(visited) != 1 else ''}" + (": " + "; ".join(parts) if parts else "") + ". ")
+    text += (f"{new} door{'s' if new != 1 else ''} found there that you have not been through yet." if new
+             else "That is every building whose door you have found there.")
+    return text
+
+
+def explore_elsewhere(gmap: GlobalMap, outdoors_only: bool = False) -> List[Dict[str, Any]]:
+    """Other segments with frontier left, grouped by the first door on the way; with ``outdoors_only``, buildings
+    and caves (and areas reached through a door and not named yet) are left out, since one visit is enough."""
     groups: Dict[Any, Dict[str, Any]] = {}
     unreachable = []
     for si, seg in enumerate(gmap.segments):
         if not seg or si in gmap.merged_into or si == gmap.segment or not gmap.frontier(si):
+            continue
+        if outdoors_only and is_inside(gmap, si) is not False:
             continue
         plan = plan_route(gmap, [si])
         if plan is None or not plan["hops"]:
@@ -1768,7 +1979,7 @@ def elsewhere_lines(gmap: GlobalMap, groups: List[Dict[str, Any]]) -> List[str]:
     return lines
 
 
-def explore_text(gmap: GlobalMap) -> str:
+def explore_text(gmap: GlobalMap, buildings: bool = False) -> str:
     here, lines = gmap.area_label(gmap.segment), []
     edge = len(gmap.frontier())
     if edge:
@@ -1776,10 +1987,12 @@ def explore_text(gmap: GlobalMap) -> str:
     unentered = sum(door["leads_to"] is None for door in gmap.door_list())
     if unentered:
         lines.append(f"- {here}, where you are: {unentered} door(s) or stairs not entered yet.")
-    groups = explore_elsewhere(gmap)
+    groups = explore_elsewhere(gmap, outdoors_only=buildings)
     if groups:
         lines.append("Other areas with unexplored edges, grouped by the way out of here:")
         lines += elsewhere_lines(gmap, groups)
+    if buildings:
+        lines += building_lines(gmap)[0]
     return "\n".join(lines) or "(none)"
 
 
@@ -1819,10 +2032,12 @@ def judge_stuck(gmap: GlobalMap, signs: str, episodes: str, frame: np.ndarray, v
 def prompt_block(gmap: GlobalMap, recent_episodes: Iterable[int],
                  local_kinds: Optional[Dict[Cell, str]] = None,
                  explore: bool = False, episode: Optional[int] = None,
-                 failed_tasks: Iterable[str] = ()) -> Tuple[str, Optional[Dict[str, Any]]]:
+                 failed_tasks: Iterable[str] = (), buildings: bool = False) -> Tuple[str, Optional[Dict[str, Any]]]:
     """
     The map section of the strategist's prompt, and — when the strategist judged itself stuck
-    (``explore``) — the frontier target that exploration should override the task with.
+    (``explore``) — the frontier target that exploration should override the task with. With
+    ``buildings``, the building-exploration rules are appended, and a door to aim for takes
+    precedence over that override.
     """
     recent = list(recent_episodes)
     stale = gmap.episodes_without_new_cells(recent)
@@ -1854,11 +2069,12 @@ def prompt_block(gmap: GlobalMap, recent_episodes: Iterable[int],
         lines.append("Every reachable edge of this area has been explored; the way on is a door, "
                      "stairs or a path you have not tried.")
     override = None
-    triggered = explore and episode is not None
+    rules, door_target = building_lines(gmap) if buildings else ([], False)
+    triggered = explore and episode is not None and not door_target
     # One episode of exploring is not enough to rule a direction out, and the strategist's own goals
     # pull it straight back to what was failing, so exploration stays in charge for a few episodes.
-    active = exploring(gmap, episode)
-    elsewhere = explore_elsewhere(gmap) if (triggered or active) and not targets else []
+    active = exploring(gmap, episode) and not door_target
+    elsewhere = explore_elsewhere(gmap, outdoors_only=buildings) if (triggered or active) and not targets else []
     if (triggered or active) and (targets or elsewhere):
         if triggered and not active:
             gmap.exploring_until = episode + EXPLORE_EPISODES - 1
@@ -1884,4 +2100,5 @@ def prompt_block(gmap: GlobalMap, recent_episodes: Iterable[int],
         if failed:
             lines.append("Do NOT set any of these recent tasks again — each of them failed: " +
                          "; ".join(f'"{t}"' for t in failed) + ".")
+    lines += rules
     return "\n".join(lines), override

@@ -75,6 +75,13 @@ DEFAULT_ENV_MAX_STEPS = 1_000_000
 @click.option("--save_video", default=True, show_default=True, type=bool)
 @click.option("--override_goal", default=None, type=str,
               help="On a fresh run, replace the default goal tree with this single goal; subgoals are planned under it.")
+@click.option("--explore_buildings", is_flag=True, default=False,
+              help="Tell the strategist, in every task and subgoal prompt, which doors it has already been "
+                   "through and how often (not to be entered again), which it has not, to look past the map's "
+                   "unexplored edges when none are left, and when every building found has been entered (also "
+                   "told to the goal check). Areas are named by where their door is unless the game said whose "
+                   "they are. Rules only: the strategist still writes every task. "
+                   "Not saved with the run, so pass it again when resuming.")
 @click.option("--resume_run", default=None, type=str,
               help="Fork another run's latest state (artifacts and emulator save) into --name and "
                    "continue from it, e.g. to recreate a failure from a past playthrough.")
@@ -86,7 +93,7 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
          supervisor_vlm_model, supervisor_vlm_kind, executor_vlm_model, executor_vlm_kind,
          max_episodes, supervisor_max_steps, env_max_steps, strategist_max_new_tokens,
          supervisor_max_new_tokens, subgoal_every, report_detail, controller_variant, save_video,
-         override_goal, resume_run, resume):
+         override_goal, explore_buildings, resume_run, resume):
     """Play one long-horizon playthrough with the strategist."""
     parameters = load_parameters()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -130,6 +137,7 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
             resume=resume,
             resume_run=resume_run,
             override_goal=override_goal,
+            explore_buildings=explore_buildings,
             parameters=parameters,
             # Forwarded to each episode's PokemonPlayThroughSupervisor, which forwards the
             # vlm_* pair on to every executor it spawns.

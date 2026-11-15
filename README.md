@@ -214,6 +214,22 @@ python run_strategist.py \
 
 `--name` is the identity of the playthrough. State is resumed by default, so re-running the same name continues where it left off rather than starting over. `--init_state starter` begins at the point where the first party member is chosen; `initial` is the true start of the game. You can override the model per layer with `--strategist_vlm_model`, `--supervisor_vlm_model` and `--executor_vlm_model`.
 
+### Exploring buildings
+
+`--explore_buildings` (or `explore_buildings=true` in `runs/strategist/playthrough.sh`) adds building-exploration rules to the strategist's task and subgoal prompts. The aim is to go inside every building once:
+
+- **Outdoors**, the prompt lists the doors in the area the agent has already been through, with how often (it is told not to go back in), and the doors it has not been through yet (it must pick one). Once every door it has found has been entered, it is sent to the map's unexplored edges to look for more.
+- **Inside a building**, the visit counts as done, and the task must be to walk straight back out the way it came in.
+- **Goal check**: a short summary of which buildings in the current town have been entered, and how many doors are left, is added to what the goal check sees, so a goal like "enter every building" can close.
+- **Area naming**: buildings get names from where their door is (e.g. "north-west house in Pallet Town") unless a sign, the town map or dialogue said whose they are. This stops one misread NPC from giving a house the wrong owner.
+
+When a door is waiting to be entered, it takes priority over the stuck check's push toward an unexplored edge. These are prompt rules only: the strategist still writes every task. The flag is not saved with the run, so pass it again when resuming.
+
+```bash
+python run_strategist.py --game pokemon_red --name pallet_buildings \
+    --override_goal "Enter every building in Pallet Town" --explore_buildings
+```
+
 ### Where the artifacts go
 
 The playthrough's memory lives at `<storage_dir>/playthrough_artifacts/<game>/strategist/<name>/`, and it is the point of the whole exercise. Five artifacts, each saved per episode:

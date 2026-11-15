@@ -32,8 +32,9 @@ from execution.strategist.pokemon.guide import (StrategyGuide, battle_tips, guid
                                                 record_new_town, reflect_on_defeat, town_question, update_guide)
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree, remember
 from execution.strategist.pokemon.notepad import ThoughtNotepad
-from execution.strategist.pokemon.global_map import (FAILURE_EPISODES, GlobalMap, MappingEnvironment, explore_text,
-                                                     exploring, judge_merge, judge_stuck, name_segment, navigate_map,
+from execution.strategist.pokemon.global_map import (FAILURE_EPISODES, GlobalMap, MappingEnvironment,
+                                                     building_summary, door_offsets, explore_text, exploring,
+                                                     is_inside, judge_merge, judge_stuck, name_segment, navigate_map,
                                                      prompt_block, stuck_signs)
 from execution.perception.pokemon.navigation import cell_kinds
 from execution.strategist.report import (REPORT_DETAILS, EpisodeArchive, EpisodeRecord, StrategistReport,
@@ -118,10 +119,14 @@ class PokemonStrategist:
         resume_episode: Union[str, int] = "latest",
         on_episode_complete: Optional[Callable[["StrategistReport"], None]] = None,
         override_goal: Optional[str] = None,
+        explore_buildings: bool = False,
         parameters: Optional[dict] = None,
         **supervisor_kwargs: Any,
     ) -> None:
         self._env = env
+        #: Adds the building-exploration rules (doors entered, doors not, where to look) to the
+        #: dispatch and subgoal prompts. Rules only: the strategist still writes every task.
+        self._explore_buildings = explore_buildings
         self._game = game
         self._name = name
         self._max_episodes = max_episodes
@@ -237,6 +242,7 @@ class PokemonStrategist:
             "resume_dir": self._resume_dir,
             "supervisor_kwargs": dict(self._supervisor_kwargs),
             "override_goal": self._override_goal,
+            "explore_buildings": self._explore_buildings,
         }
 
     def _resolve_session_dir(self) -> Optional[str]:
@@ -477,7 +483,8 @@ class PokemonStrategist:
             marker = entry["marker"] if left else (len(report.narrative), len(report.event_log))
             before = gmap.info(segment).name
             answer = name_segment(gmap, segment, mark, left, tasks, self._supervisor_steps(report, marker, left),
-                                  self._vlm_caller("segment_name"), self._game, n, self._parameters)
+                                  self._vlm_caller("segment_name"), self._game, n, self._parameters,
+                                  buildings=self._explore_buildings)
             if answer is None:
                 continue
             changed, name, description = answer
@@ -498,7 +505,7 @@ class PokemonStrategist:
         block, override = prompt_block(self.global_map, list(self.global_map.new_cells_by_episode), local,
                                        explore=self._explore_now,
                                        episode=self.start_episode + self._episodes_run,
-                                       failed_tasks=failed)
+                                       failed_tasks=failed, buildings=self._explore_buildings)
         if override is not None and override["kind"] == "edge":
             log_info(f"Global map: exploration overrides the task: head to ({override['dx']}, {override['dy']}) "
                      f"{override['sector']} in {self.global_map.area_label(override['area'])}.", self._parameters)
@@ -506,6 +513,13 @@ class PokemonStrategist:
             names = ", ".join(self.global_map.area_label(si) for si in override["areas"])
             log_info(f"Global map: exploration overrides the task: nothing left here, head for one of: {names}.",
                      self._parameters)
+        if self._explore_buildings:
+            gmap = self.global_map
+            doors = door_offsets(gmap)
+            where = {True: "inside", False: "outside", None: "not sure if inside"}[is_inside(gmap, gmap.segment)]
+            log_info(f"Building exploration: {where} {gmap.area_label(gmap.segment)}; "
+                     f"{sum(d[3] is not None for d in doors)} door(s) here already entered, "
+                     f"{sum(d[3] is None for d in doors)} not entered yet.", self._parameters)
         back = self.global_map.defeat_return
         if back is not None and self.start_episode + self._episodes_run - back["episode"] <= self.RETURN_EPISODES:
             block += "\n" + (P.DEFEAT_RETURN_LINE.replace("[EPISODE]", str(back["episode"]))
@@ -712,7 +726,8 @@ class PokemonStrategist:
             if unsuccessful_for <= 0 or unsuccessful_for % self._subgoal_every:
                 return
         self.global_map.routes = []
-        create_subgoals(self.goals, self.knowledge, self._current_place(), explore_text(self.global_map),
+        create_subgoals(self.goals, self.knowledge, self._current_place(),
+                        explore_text(self.global_map, buildings=self._explore_buildings),
                         self.notepad.text,
                         lambda request: navigate_map(self.global_map, request, self._vlm_caller, self._game,
                                                      self._parameters),
@@ -761,7 +776,14 @@ class PokemonStrategist:
         before, frame = frame, self._current_frame()
         self._perceive(frame, n)
 
-        closed = check_goals(self.goals, report.digest, self.notepad.text, self._vlm_caller, self._game, n,
+        goal_digest = report.digest
+        if self._explore_buildings:
+            # The goal check sees only the report and the notepad, so without this it cannot know from the map
+            # that every building found has been entered, and "enter every building" never closes.
+            summary = building_summary(self.global_map)
+            if summary:
+                goal_digest += "\n\n" + summary
+        closed = check_goals(self.goals, goal_digest, self.notepad.text, self._vlm_caller, self._game, n,
                              self._parameters)
         summary, town = self._review(report.digest)
         record.summary = summary or record.summary
