@@ -240,6 +240,12 @@ def registry_at(run_dir: str, episode: int) -> Optional[NPCRegistry]:
     return NPCRegistry.load(run_dir, eligible[-1]) if eligible else None
 
 
+def people_drawing(marks: list, maybe: list = ()) -> dict:
+    """``render_segment`` arguments that draw the registry's people, at twice the size so their labels can be read,
+    with a strip naming them; nothing (the picture as without a registry) when there is nobody to draw."""
+    return dict(people=marks, maybe=maybe, scale=2, legend=True) if marks or maybe else {}
+
+
 def map_image(report: Report, gmap: GlobalMap, segment: int, path: str, **kwargs) -> Optional[str]:
     if report.fresh(path):
         canvas = render_segment(gmap, segment, **kwargs)
@@ -323,7 +329,7 @@ def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[
         marks = people.map_people(gmap, si) if people is not None else []
         maybe = people.unconfirmed(gmap, si) if people is not None else []
         png = map_image(report, gmap, si, report.image_path("globalmap", f"ep{episode}_seg{si}.png"), doors=True,
-                        people=marks, maybe=maybe, scale=2, legend=True)
+                        **people_drawing(marks, maybe))
         blocks += [md.h3(f"Segment {si}{' (current)' if si == gmap.segment else ''}: {gmap.place_label(si)}, "
                          f"{info.kind or 'kind not known'}, {len(seg)} squares")]
         if info.description:
@@ -585,14 +591,14 @@ def diff_globalmap(new, old, d, report: Report, a: int, b: int) -> Tuple[List[st
     before, after = d["exploring"]
     if before != after:
         blocks.append(md.para(f"Forced exploration: until episode {before} → until episode {after}."))
+    people = registry_at(report.run_dir, b)
     for si in sorted(set(d["new_cells"]) | set(d["reclassified"])):
         if not new.segments[si]:
             continue
         added, relabelled = d["new_cells"].get(si, []), d["reclassified"].get(si, [])
-        people = registry_at(report.run_dir, b)
+        marks = people.map_people(new, si) if people is not None else []
         png = map_image(report, new, si, report.image_path("globalmap", f"ep{a}_to_ep{b}_seg{si}.png"),
-                        highlight=added, trail_from=old.step, doors=True, scale=2, legend=True,
-                        people=people.map_people(new, si) if people is not None else ())
+                        highlight=added, trail_from=old.step, doors=True, **people_drawing(marks))
         blocks += [md.h3(f"Segment {si}: {len(added)} new squares, {len(relabelled)} recognised since"),
                    report.img(f"segment {si}", png)]
     if d["new_cells"] or d["reclassified"]:

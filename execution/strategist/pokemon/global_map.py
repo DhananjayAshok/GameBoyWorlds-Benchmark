@@ -381,6 +381,12 @@ class MapCell:
 class GlobalMap(StrategistArtifact):
     """Segments of global grid, the player's place on them, and the bookkeeping to explain both."""
 
+    #: Opt-in, off by default (the strategist turns it on only with the NPC registry): when a placed frame shows its
+    #: own grid clearly, take the residual from it. Registration measures only the axis moved along and carries the
+    #: other over, so a frame caught mid-scroll left the map off the 16 px grid until the next warp, and the registry,
+    #: which reads people square by square, saw nobody meanwhile. A class attribute, so old pickles load as off.
+    trust_frame_grid = False
+
     def __init__(self) -> None:
         self.segments: List[Dict[Cell, MapCell]] = [{}]
         self.segment = 0
@@ -583,11 +589,10 @@ class GlobalMap(StrategistArtifact):
                                                   self.residual)
         if placed is not None:
             delta, residual, structural = placed
-            measured = None if structural else frame_residual(frame)
+            measured = None if structural or not self.trust_frame_grid else frame_residual(frame)
             if measured is not None and measured != residual:
-                # registration only measures the axis moved along and otherwise carries the last residual over, so
-                # a frame caught mid-scroll would leave the map off the grid after the player settled: when the
-                # frame shows its own grid, believe the frame
+                # opt-in (see ``trust_frame_grid``): a frame caught mid-scroll would leave the map off the grid
+                # after the player settled; when the frame shows its own grid, believe the frame
                 residual = measured
                 self.stats["residual_corrected"] += 1
             pos = (self.pos[0] + delta[0], self.pos[1] + delta[1])
@@ -1402,9 +1407,10 @@ def render_segment(gmap: GlobalMap, segment: Optional[int] = None, trail: bool =
 # ----------------------------------------------------------------------------
 
 LEGEND = ('@ you   . walkable   # blocked   = ledge (jump down only)   D door/stairs   " tall grass   '
-          '~ water   o maybe a person, not confirmed   % not yet recognised   ? never seen')
-#: Added to the legend when the people the registry knows are on the map.
-PEOPLE_LEGEND = "   1-9 a person (listed under the map)   + a person who may have moved"
+          '~ water   n person   % not yet recognised   ? never seen')
+#: The legend when the NPC registry's people are on the map: they get numbers, so the tile table's guesses get o.
+PEOPLE_LEGEND = (LEGEND.replace("n person", "o maybe a person, not confirmed")
+                 + "   1-9 a person (listed under the map)   + a person who may have moved")
 SECTORS = ("east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east")
 #: Episodes without a single new cell before the strategist is asked whether it is stuck.
 STALE_EPISODES = 3
@@ -1415,11 +1421,13 @@ EXPLORE_EPISODES = 3
 STUCK_ATTEMPTS = 2
 
 
-def glyph(c: Optional[MapCell]) -> str:
+def glyph(c: Optional[MapCell], registry: bool = False) -> str:
     if c is None:
         return "?"
     tags = set(c.tags)
     if c.kind == OCCUPIED:
+        if not registry:
+            return "n"
         # the tile table took something here for a person; people the registry knows are marked over this
         return "#" if "obstacle" in tags else "o"
     if is_door(c):
@@ -1432,13 +1440,17 @@ def glyph(c: Optional[MapCell]) -> str:
 
 
 def ascii_window(gmap: GlobalMap, rx: int = 12, ry: int = 7, people: Optional[Dict[Cell, str]] = None) -> str:
-    """The map around the player. ``people`` maps a square to the character to print for the person there."""
+    """The map around the player. ``people`` (from the NPC registry) maps a square to the character to print for the
+    person there; with it, squares the tile table alone took for a person print as ``o`` (see ``glyph``)."""
     seg, (px, py) = gmap.current, gmap.pos
-    people = people or {}
     rows = []
     for y in range(py + ry, py - ry - 1, -1):
-        rows.append("".join("@" if (x, y) == (px, py) else people.get((x, y)) or glyph(seg.get((x, y)))
-                            for x in range(px - rx, px + rx + 1)))
+        if people is None:
+            rows.append("".join("@" if (x, y) == (px, py) else glyph(seg.get((x, y)))
+                                for x in range(px - rx, px + rx + 1)))
+        else:
+            rows.append("".join("@" if (x, y) == (px, py) else people.get((x, y)) or glyph(seg.get((x, y)), True)
+                                for x in range(px - rx, px + rx + 1)))
     return "\n".join(rows)
 
 
@@ -2013,8 +2025,8 @@ def prompt_block(gmap: GlobalMap, recent_episodes: Iterable[int],
         lines.append("You have fully explored this area: no edge of its map is left unexplored.")
     lines += [
         "MAP OF EVERYTHING YOU HAVE SEEN IN THIS AREA (north is up, one character per step):",
-        ascii_window(gmap, people=grid),
-        "Legend: " + LEGEND + (PEOPLE_LEGEND if people is not None else ""),
+        ascii_window(gmap, people=grid if people is not None else None),
+        "Legend: " + (PEOPLE_LEGEND if people is not None else LEGEND),
         f"Squares mapped here: {len(gmap.current)} (in {gmap.n_areas} separate area(s) overall). "
         f"New squares found in the last episode: "
         f"{gmap.new_cells_by_episode.get(max(recent), 0) if recent else 0}; "
