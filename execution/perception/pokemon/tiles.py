@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 
 from execution.artifact import StrategistArtifact, update
-from execution.perception.matching import cell_key, split_quarters
+from execution.perception.matching import cell_key, shade_bank, shade_candidates, split_quarters
 from execution.perception.pokemon.grid import GRID_SKIP, cell_box, draw_box, split_grid
 from execution.perception.pokemon.prompts import PLAYER_SIDES, TILE_IN_CELL_PROMPT, TILE_TAGS, fill_player_note
 from utils import log_error, parse_key_value
@@ -115,8 +115,17 @@ def verbalize_neighbourhood(identified: Dict[TileKey, Tile]) -> str:
 
 class TileRecognizer(StrategistArtifact):
     #: Not picklable -- it closes over the strategist's bound VLM call. Callers must
-    #: call set_vlm_call() again after load().
-    _TRANSIENT = ("vlm_call",)
+    #: call set_vlm_call() again after load(). The shade-matching caches are rebuilt on demand.
+    _TRANSIENT = ("vlm_call", "_shade_bank", "_shade_bank_size", "_shade_aliases", "_shade_misses")
+    #: Fewest shades both pieces need for a shade match (see shade_candidates) ...
+    SHADE_MIN_SHADES = 3
+    #: ... unless at least this many distinct pieces on the same screen already matched by shade: the
+    #: screen has been recoloured, and pieces with this many shades may match too.
+    SHADE_SCREEN_EVIDENCE = 8
+    SHADE_RECOLOURED_MIN_SHADES = 2
+    #: On a recoloured screen, also accept recolourings that reorder shades (some night palettes swap
+    #: light and dark), as a last pass.
+    SHADE_RECOLOURED_UNORDERED = True
 
     def __init__(
         self,
@@ -132,6 +141,71 @@ class TileRecognizer(StrategistArtifact):
         self.max_new_tokens = max_new_tokens
         self.tiles: List[Tile] = []
         self._by_hash: Dict[str, Tile] = {}
+
+    def _shade_match(self, tile_hash: Optional[str], piece: np.ndarray,
+                     min_shades: Optional[int] = None, ordered: bool = True) -> Optional[Tile]:
+        """
+        The known tile ``piece`` shows in other shades, if any. Game Boy Color games recolour the map with
+        the time of day (Pokemon Crystal's morning, day and night palettes), which changes every pixel value
+        but not the picture, so an exact hash alone would see a whole new set of tiles. Accepted only when
+        every best candidate carries the same tag; otherwise the piece stays unknown.
+        """
+        min_shades = self.SHADE_MIN_SHADES if min_shades is None else min_shades
+        if tile_hash is None or not self.tiles:
+            return None
+        if getattr(self, "_shade_bank_size", None) != len(self.tiles):
+            self._shade_bank = shade_bank([tile.image for tile in self.tiles])
+            self._shade_bank_size, self._shade_misses = len(self.tiles), {}
+        if getattr(self, "_shade_aliases", None) is None:
+            self._shade_aliases = {}
+        if tile_hash in self._shade_aliases:
+            return self._shade_aliases[tile_hash]
+        misses = self._shade_misses.setdefault((min_shades, ordered), set())
+        if tile_hash in misses:
+            return None
+        candidates = [self.tiles[i] for i in shade_candidates(self._shade_bank, piece, min_shades, ordered)]
+        if not candidates or len({tile.tag for tile in candidates}) != 1:
+            misses.add(tile_hash)
+            return None
+        self._shade_aliases[tile_hash] = candidates[0]
+        return candidates[0]
+
+    def _resolve_screen(self, pieces: Dict[TileKey, np.ndarray]) -> Dict[TileKey, Optional[Tile]]:
+        """
+        Exact matches first, then shade matches. A screen recoloured as a whole (the palette changed with the
+        time of day) shows many pieces that are recolourings of known tiles even under the strict
+        SHADE_MIN_SHADES rule; only then are pieces with fewer shades matched too (SHADE_RECOLOURED_MIN_SHADES),
+        since dark night palettes merge shades. A lone two-shade lookalike on an ordinary screen stays unknown.
+        """
+        found: Dict[TileKey, Optional[Tile]] = {}
+        pending: Dict[TileKey, Tuple[str, np.ndarray]] = {}
+        for key, piece in pieces.items():
+            tile_hash = cell_key(piece)
+            tile = self._by_hash.get(tile_hash)
+            found[key] = tile
+            if tile is None:
+                pending[key] = (tile_hash, piece)
+        recoloured = set()
+        for key, (tile_hash, piece) in pending.items():
+            tile = self._shade_match(tile_hash, piece)
+            if tile is not None:
+                found[key] = tile
+                recoloured.add(tile_hash)
+        if len(recoloured) >= self.SHADE_SCREEN_EVIDENCE:
+            for key, (tile_hash, piece) in pending.items():
+                if found[key] is None:
+                    found[key] = self._shade_match(tile_hash, piece, self.SHADE_RECOLOURED_MIN_SHADES)
+                if found[key] is None and self.SHADE_RECOLOURED_UNORDERED:
+                    found[key] = self._shade_match(tile_hash, piece, self.SHADE_RECOLOURED_MIN_SHADES, ordered=False)
+        return found
+
+    def canonical_hash(self, piece: np.ndarray) -> Optional[str]:
+        """The hash of the known tile ``piece`` shows, in whatever shades; its own hash if none is known."""
+        tile_hash = cell_key(piece)
+        if tile_hash in self._by_hash:
+            return tile_hash
+        tile = self._shade_match(tile_hash, piece)
+        return tile.hash if tile is not None else tile_hash
 
     def set_vlm_call(self, vlm_call: Callable[..., Any]) -> None:
         self.vlm_call = vlm_call
@@ -152,24 +226,20 @@ class TileRecognizer(StrategistArtifact):
         return pieces
 
     def identify_tiles(self, frame: np.ndarray) -> Dict[TileKey, Tile]:
-        identified = {}
-        for key, piece in self._split(frame).items():
+        pieces = {key: piece for key, piece in self._split(frame).items() if key[:2] != PLAYER_CELL}
+        identified = {key: tile or UNKNOWN_TILE for key, tile in self._resolve_screen(pieces).items()}
+        for key in self._split(frame):
             if key[:2] == PLAYER_CELL:
                 identified[key] = PLAYER_TILE
-            else:
-                identified[key] = self._by_hash.get(cell_key(piece), UNKNOWN_TILE)
         return identified
 
     def record_tiles(self, frame: np.ndarray, episode_number: int) -> None:
         pieces = self._split(frame)
+        resolved = self._resolve_screen({key: piece for key, piece in pieces.items() if key[:2] != PLAYER_CELL})
         new_groups: Dict[str, List[TileKey]] = {}
-        for key, piece in pieces.items():
-            if key[:2] == PLAYER_CELL:
-                continue
-            tile_hash = cell_key(piece)
-            if tile_hash in self._by_hash:
-                continue
-            new_groups.setdefault(tile_hash, []).append(key)
+        for key, tile in resolved.items():
+            if tile is None:
+                new_groups.setdefault(cell_key(pieces[key]), []).append(key)
         if not new_groups:
             return
         if self.vlm_call is None:
