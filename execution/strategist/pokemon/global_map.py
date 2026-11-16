@@ -1145,21 +1145,42 @@ def _movement(action, kwargs: Dict[str, Any], info: Dict[str, Any]) -> Tuple[Opt
     return None, 0, None
 
 
+@dataclass
+class StepEvent:
+    """One environment step, after the map has placed its frame: what listeners (such as the NPC registry) are told."""
+    action: Any
+    kwargs: Dict[str, Any]
+    info: Dict[str, Any]
+    was_free: bool
+    free: bool
+    frame: np.ndarray
+    identified: Dict[Any, Any]
+    status: str
+    direction: Optional[str] = None
+    max_steps: int = 0
+    reported: Optional[int] = None
+
+
 class MappingEnvironment:
     """
     Wraps the environment the supervisor and its executors are handed, so that every step they
     take — moves, button presses, menus, battles — updates the global map. Behaviour is otherwise
     unchanged: every call is passed straight through, and a failure inside the map is logged and
     swallowed rather than allowed to disturb the run.
+
+    ``listeners`` are called with a :class:`StepEvent` after every step the map accepted; one that fails is logged
+    and skipped.
     """
 
-    def __init__(self, env, global_map: GlobalMap, tile_recognizer, parameters: Optional[dict] = None) -> None:
+    def __init__(self, env, global_map: GlobalMap, tile_recognizer, parameters: Optional[dict] = None,
+                 listeners: Iterable[Callable[["StepEvent"], None]] = ()) -> None:
         self._env = env
         self._map = global_map
         self._tiles = tile_recognizer
         if tile_recognizer is not None and hasattr(tile_recognizer, "canonical_hash"):
             global_map.canonical_hash = tile_recognizer.canonical_hash
         self._parameters = parameters
+        self._listeners = list(listeners)
         self.marker = None
 
     def step_high_level_action(self, action, **kwargs):
@@ -1181,9 +1202,19 @@ class MappingEnvironment:
                 faded = passed is not None and any(not has_structure(f) for f in passed)
                 identified = self._tiles.identify_tiles(frame) if free else {}
                 queued = len(self._map.naming_queue)
-                self._map.on_step(frame, identified, free, direction, max_steps, reported, was_free, faded)
+                status = self._map.on_step(frame, identified, free, direction, max_steps, reported, was_free, faded)
                 for entry in self._map.naming_queue[queued:]:
                     entry["marker"] = self.marker() if self.marker is not None else None
+                if self._listeners:
+                    event = StepEvent(action, kwargs, info, was_free, free, frame, identified, status, direction,
+                                      max_steps, reported)
+                    for listener in self._listeners:
+                        try:
+                            listener(event)
+                        except Exception as e:               # a listener must never break the run either
+                            from utils import log_warn
+                            log_warn(f"A step listener failed and was skipped: {type(e).__name__}: {e}",
+                                     self._parameters)
         except Exception as e:                                   # the map must never break a run
             from utils import log_warn
             log_warn(f"Global map update failed and was skipped: {type(e).__name__}: {e}", self._parameters)
