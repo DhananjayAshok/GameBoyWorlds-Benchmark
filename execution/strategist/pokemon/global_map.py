@@ -144,16 +144,6 @@ def grid_offset(frame: np.ndarray) -> Optional[Cell]:
     return coarse[0][1]
 
 
-def frame_residual(frame: np.ndarray) -> Optional[Cell]:
-    """How far off the cell grid the frame itself is drawn (as a residual), when its tiles show it clearly and it is
-    within a scroll's reach; else None."""
-    shift = grid_offset(frame)
-    if shift is None:
-        return None
-    residual = grid_residual(shift)
-    return residual if max(abs(residual[0]), abs(residual[1])) <= PX_SLACK else None
-
-
 def _still_lit(piece: np.ndarray, prior: np.ndarray) -> np.ndarray:
     new, prior, half = np.squeeze(piece), np.squeeze(prior), GRID_SKIP // 2
     lit = np.zeros(new.shape, dtype=bool)
@@ -381,12 +371,6 @@ class MapCell:
 class GlobalMap(StrategistArtifact):
     """Segments of global grid, the player's place on them, and the bookkeeping to explain both."""
 
-    #: Opt-in, off by default (the strategist turns it on only with the NPC registry): when a placed frame shows its
-    #: own grid clearly, take the residual from it. Registration measures only the axis moved along and carries the
-    #: other over, so a frame caught mid-scroll left the map off the 16 px grid until the next warp, and the registry,
-    #: which reads people square by square, saw nobody meanwhile. A class attribute, so old pickles load as off.
-    trust_frame_grid = False
-
     def __init__(self) -> None:
         self.segments: List[Dict[Cell, MapCell]] = [{}]
         self.segment = 0
@@ -589,12 +573,6 @@ class GlobalMap(StrategistArtifact):
                                                   self.residual)
         if placed is not None:
             delta, residual, structural = placed
-            measured = None if structural or not self.trust_frame_grid else frame_residual(frame)
-            if measured is not None and measured != residual:
-                # opt-in (see ``trust_frame_grid``): a frame caught mid-scroll would leave the map off the grid
-                # after the player settled; when the frame shows its own grid, believe the frame
-                residual = measured
-                self.stats["residual_corrected"] += 1
             pos = (self.pos[0] + delta[0], self.pos[1] + delta[1])
             shift = tuple((-r) % GRID_SKIP for r in residual)
             if not structural and self._blacks_out(frame, self.segment, pos, shift):

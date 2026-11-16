@@ -27,7 +27,8 @@ import numpy as np
 from execution.artifact import StrategistArtifact, update
 from execution.perception.pokemon import sprites as S
 from execution.perception.pokemon.grid import LEFT_COL, TOP_ROW, cell_box
-from execution.strategist.pokemon.global_map import DIRECTIONS, OCCUPIED, GlobalMap, StepEvent
+from execution.strategist.pokemon.global_map import (DIRECTIONS, OCCUPIED, PX_SLACK, GlobalMap, StepEvent,
+                                                     grid_offset, grid_residual)
 from execution.strategist.pokemon import npc_model
 from execution.strategist.pokemon.npc_model import display_name
 from execution.strategist.pokemon.npc_names import draw_name
@@ -188,6 +189,16 @@ class PersonMark:
     spread: Optional[Tuple[int, int, int, int]]   # (min x, min y, max x, max y) of every square, for a walker
     stale: bool                        # may have moved: not seen for a while, or the square is on screen without them
     when: str                          # the freshness in words, for prompts
+
+
+def frame_residual(frame: np.ndarray) -> Optional[Cell]:
+    """How far off the cell grid the frame itself is drawn (as a residual), when its tiles show it clearly and it is
+    within a scroll's reach; else None."""
+    shift = grid_offset(frame)
+    if shift is None:
+        return None
+    residual = grid_residual(shift)
+    return residual if max(abs(residual[0]), abs(residual[1])) <= PX_SLACK else None
 
 
 def _manhattan(a: Cell, b: Cell) -> int:
@@ -433,7 +444,9 @@ class NPCRegistry(StrategistArtifact):
         self._frame = frame
         if status in ("relocalised", "new_segment"):
             self._tracks = {}
-        if gmap.residual != (0, 0):                      # off the 16 px grid: tags are for the unshifted grid
+        if gmap.residual != (0, 0) and frame_residual(frame) != (0, 0):
+            # off the 16 px grid: tags are for the unshifted grid. The map can keep a residual from a frame caught
+            # mid-scroll after the screen is back on the grid, so the frame's own grid decides
             self._forget_screen()
             return
         pos, segment, step = gmap.pos, gmap.segment, gmap.step

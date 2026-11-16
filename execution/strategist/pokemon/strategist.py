@@ -185,11 +185,6 @@ class PokemonStrategist:
                      if npc_registry else None)
         if self.npcs is not None:
             self.npcs.attach_model(self._vlm_caller)         # conversations are read and summarised as they end
-            # the registry reads people square by square, so the map must not stay off the grid after a frame
-            # caught mid-scroll (opt-in: without the registry the map behaves as before)
-            self.global_map.trust_frame_grid = True
-        else:
-            vars(self.global_map).pop("trust_frame_grid", None)   # a map resumed from a run with the registry
         self._map_placed = True                          # the map placed this episode's opening screen
 
         if not resume:
