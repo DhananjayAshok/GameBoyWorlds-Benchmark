@@ -737,8 +737,13 @@ class NPCRegistry(StrategistArtifact):
                 return None
         else:
             if not det["full"]:
-                self.stats["ignored_partial"] += 1
-                return None
+                npc = self._static_at(segment, square, busy)
+                if npc is None or not npc.hidden or not S.sprite_like(self._frame, det["cell"], p["y_offset"]):
+                    self.stats["ignored_partial"] += 1
+                    return None
+                # someone already found but never seen whole (in tall grass), still there: a partial picture
+                view_index = self._partial_view(npc, det, step)
+                return self._begin_track(npc, det, segment, step, view_index)
             npc = self._static_at(segment, square, busy)
             if npc is not None:
                 # a picture nobody has seen, on the square of someone who never moves: that person turned round
@@ -750,14 +755,31 @@ class NPCRegistry(StrategistArtifact):
                     candidates += [n.id for n in self.live_npcs()
                                    if self.look_of(n).id == best[1] and n.id not in busy and n.id not in candidates]
                 npc = self._new_npc(look, "card", candidates, step)
+        return self._begin_track(npc, det, segment, step, view_index)
+
+    def _begin_track(self, npc: NPC, det: Dict[str, Any], segment: int, step: int, view_index: int) -> Track:
         if npc.context is None and self._frame is not None:
             npc.context, npc.context_cell = np.array(self._frame, copy=True), det["cell"]
         self.stats["tracks_started"] += 1
         self.next_ids["track"] += 1
-        track = Track(id=self.next_ids["track"], npc=npc.id, segment=segment, square=square, view=view_index,
+        track = Track(id=self.next_ids["track"], npc=npc.id, segment=segment, square=det["square"], view=view_index,
                       last_step=step)
         self._note_sighting(track, det, step)
         return track
+
+    def _partial_view(self, npc: NPC, det: Dict[str, Any], step: int) -> int:
+        """The partial view of a person never seen whole that this picture is (a new one if none is close). Partial
+        views are never matched against anyone else (``_view_stack``), so they cannot join two people."""
+        look = self.look_of(npc)
+        partial = [(S.mask_distance(det["mask"], v.key)[0], i) for i, v in enumerate(look.views) if v.partial]
+        if partial and min(partial)[0] <= self._p["auto"]:
+            look.views[min(partial)[1]].n_seen += 1
+            return min(partial)[1]
+        look.views.append(View(det["window"].copy(), det["mask"].copy(), None, None, (self._episode, step),
+                               partial=True))
+        look.links.append((0, len(look.views) - 1, "partial"))
+        self.stats["partial_views"] += 1
+        return len(look.views) - 1
 
     def _turned(self, npc: NPC, det: Dict[str, Any], step: int) -> int:
         """A person who stands still, seen in a new picture on their square: add it as a view of their look (only a whole
