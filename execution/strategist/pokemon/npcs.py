@@ -119,8 +119,9 @@ class Conversation:
     name_type: Optional[str] = None    # "personal" | "class" for ``speaker_name``
     tries: int = 0
     how: str = "seen"                  # "seen" (on screen next to the player), "remembered" (the registry had them on
-                                       # the square in front), "nearest" (the closest known person, a guess) or "none"
-    confidence: str = "high"           # "low" when a person who walks about was attributed from memory
+                                       # the square in front), "nearest" (they spoke first and were the only known
+                                       # person near, a guess) or "none"
+    confidence: str = "high"           # "low" for a "nearest" guess, or a person who walks about attributed from memory
 
 
 @dataclass
@@ -665,8 +666,9 @@ class NPCRegistry(StrategistArtifact):
                 self._facing = None                              # moved some way we cannot read a direction from
         elif ev.status in ("relocalised", "new_segment"):
             self._facing = None
-        if self._open is None and ev.was_free and state in (AgentState.IN_DIALOGUE, AgentState.IN_MENU,
-                                                            AgentState.IN_BATTLE):
+        # only text opens a conversation: a menu or a battle straight from free roam is not one (a trainer's
+        # challenge starts with dialogue, so it still opens here and closes on the battle)
+        if self._open is None and ev.was_free and state == AgentState.IN_DIALOGUE:
             self._open_conversation(ev)
         if self._open is not None:
             self._collect_crops(ev)
@@ -697,9 +699,11 @@ class NPCRegistry(StrategistArtifact):
             speaker = neighbours[0]
         how, confidence = "seen", "high"
         if speaker is None and sign_square is None:              # not on this frame: use what the registry remembers
-            speaker, how = self._nearest_person(a_press), "nearest"
-            if speaker is not None and a_press and self._facing is not None and self._remembered_at(DIRECTIONS[self._facing]) == speaker:
-                how = "remembered"
+            if a_press and self._facing is not None:
+                # only the square in front counts: an item or a sign beside a person is not that person
+                speaker, how = self._remembered_at(DIRECTIONS[self._facing]), "remembered"
+            elif not a_press:
+                speaker, how, confidence = self._nearest_person(), "nearest", "low"
             if speaker is not None:
                 # people move: memory of someone seen on several squares is weak, and gone once they roamed
                 squares = self.squares_in(g, self.get(speaker), g.resolve(g.segment, g.pos)[0])
@@ -751,24 +755,11 @@ class NPCRegistry(StrategistArtifact):
                 return npc.id
         return None
 
-    def _nearest_person(self, a_press: bool) -> Optional[str]:
-        """Who spoke when no person was seen next to the player on this frame: the registry's person on the square
-        in front, else the closest known person (within 2 squares if the player pressed A, 5 if someone started
-        talking). Ties go to whoever is in the direction the player faces."""
-        if a_press and self._facing is not None:
-            there = self._remembered_at(DIRECTIONS[self._facing])
-            if there is not None:
-                return there
-        people = [p for p in self._people_nearby() if 0 < p[0] <= (2 if a_press else 5)]
-        if not people:
-            return None
-        front = DIRECTIONS.get(self._facing, (0, 0)) if self._facing else (0, 0)
-
-        def key(p):
-            ahead = p[1][0] * front[0] + p[1][1] * front[1]
-            return (p[0], -ahead, -p[2].sightings[-1].map_step if p[2].sightings else 0)
-
-        return min(people, key=key)[2].id
+    def _nearest_person(self) -> Optional[str]:
+        """Who spoke when someone started talking and nobody was seen next to the player on this frame: the one known
+        person within 5 squares, a guess. Two or more within reach: nobody (we cannot tell which)."""
+        people = [p for p in self._people_nearby() if 0 < p[0] <= 5]
+        return people[0][2].id if len(people) == 1 else None
 
     def _sign_for(self, segment: int, square: Cell) -> Sign:
         g = self._gmap
