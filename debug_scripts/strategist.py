@@ -209,8 +209,7 @@ def view_notepad(notepad: ThoughtNotepad, report: Report, episode: int) -> Tuple
 
 MAP_DIRECTION = re.compile(r"MUST be to walk to the unexplored edge at \((-?\d+), (-?\d+)\), (\d+) steps ([a-z-]+)")
 MAP_LEGEND = "Green: unexplored edge. Blue: trail. Red: the player."
-DOOR_LEGEND = ("Boxes labelled D0, D1... are doors and stairs: cyan once the area behind is known, orange if not "
-               "entered yet.")
+DOOR_LEGEND = "Numbered boxes are doors and stairs: cyan once the area behind is known, orange if not entered yet."
 
 
 def doors_table(gmap, doors) -> str:
@@ -265,7 +264,7 @@ def map_replay(report: Report, gmap: GlobalMap, episode: int, n_frames: int = 12
     seg = gmap.segments[si]
     frames = []
     for t in sorted(set(range(steps[0], steps[-1] + 1, max(1, (steps[-1] - steps[0]) // n_frames))) | {steps[-1]}):
-        canvas = render_segment(gmap, si, upto_step=t, bounds=bounds, doors=True,
+        canvas = render_segment(gmap, si, upto_step=t, bounds=bounds,
                                 people=people.map_people(gmap, si, upto_step=t) if people is not None else ())
         if canvas is None:
             continue

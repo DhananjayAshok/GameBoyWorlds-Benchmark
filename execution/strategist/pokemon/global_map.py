@@ -1324,10 +1324,11 @@ def render_segment(gmap: GlobalMap, segment: Optional[int] = None, trail: bool =
         for i, door in enumerate(gmap.door_list(si)):
             colour = (255, 255, 0) if door["leads_to"] is not None else (0, 200, 255)
             for g in door["cells"]:
-                if inside(g):
+                if x0 <= g[0] <= x1 and y0 <= g[1] <= y1:
                     outline(g, colour, 2)
             gx, gy = box(door["cells"][0])
-            _label(canvas, f"D{i}", gx, gy + size - 2, colour, scale)
+            cv2.putText(canvas, str(i), (gx + scale, gy + 11 * scale), cv2.FONT_HERSHEY_SIMPLEX, 0.35 * scale,
+                        colour, 1)
     steps = [(t, p) for t, s, p in gmap.trail
              if s == si and (upto_step is None or t <= upto_step) and (trail_from is None or t > trail_from)]
     if trail:
@@ -1511,8 +1512,7 @@ def _parse_segment_name(review: bool):
 
 
 def name_segment(gmap: GlobalMap, segment: int, mark: Optional[Cell], left: bool, tasks: str, steps: str, vlm_call,
-                 game: str, episode: int, parameters: Optional[dict] = None,
-                 people: Iterable[Any] = ()) -> Optional[Tuple[bool, str, str]]:
+                 game: str, episode: int, parameters: Optional[dict] = None) -> Optional[Tuple[bool, str, str]]:
     import cv2
     from PIL import Image
 
@@ -1546,8 +1546,7 @@ def name_segment(gmap: GlobalMap, segment: int, mark: Optional[Cell], left: bool
                        else "<a short name>")
               .replace("[DESCRIPTION_FORMAT]", f"<one to three sentences, or {UNCHANGED} to keep the current one>"
                        if review else "<one to three sentences>"))
-    canvas = render_segment(gmap, segment, highlight=[mark] if mark is not None else [], doors=True, people=people,
-                            legend=True)
+    canvas = render_segment(gmap, segment, highlight=[mark] if mark is not None else [], doors=True)
     images = [Image.fromarray(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))] if canvas is not None else []
     answer = ask(vlm_call, prompt, _parse_segment_name(review), "Segment naming", NAME_ATTEMPTS, parameters,
                  images=images)
@@ -1606,8 +1605,7 @@ def _parse_merge_decision(output: str) -> Tuple[Any, Optional[str]]:
 
 
 def judge_merge(gmap: GlobalMap, source: int, target: int, overlap: Dict[str, Any], vlm_call, game: str,
-                parameters: Optional[dict] = None,
-                people: Optional[Callable[[int], List[Any]]] = None) -> Optional[bool]:
+                parameters: Optional[dict] = None) -> Optional[bool]:
     import cv2
     from PIL import Image
 
@@ -1618,9 +1616,8 @@ def judge_merge(gmap: GlobalMap, source: int, target: int, overlap: Dict[str, An
               .replace("[NAME_B]", b.name or "").replace("[DESCRIPTION_B]", b.description or "")
               .replace("[DOORS_B]", _door_text(gmap, source))
               .replace("[SHARED]", str(overlap["shared"])).replace("[MATCHES]", str(overlap["matches"])))
-    marks = people or (lambda si: [])
-    canvases = [render_segment(gmap, target, trail=False, doors=True, people=marks(target), legend=True),
-                render_segment(gmap, source, trail=False, doors=True, people=marks(source), legend=True),
+    canvases = [render_segment(gmap, target, trail=False, doors=True),
+                render_segment(gmap, source, trail=False, doors=True),
                 render_overlay(gmap, source, target, overlap["offset"])]
     images = [Image.fromarray(cv2.cvtColor(c, cv2.COLOR_BGR2RGB)) for c in canvases if c is not None]
     return ask(vlm_call, prompt, _parse_merge_decision, "Merge judgement", MERGE_JUDGE_ATTEMPTS, parameters,

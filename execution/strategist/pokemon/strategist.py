@@ -487,7 +487,7 @@ class PokemonStrategist:
         gmap = self.global_map
         names = (gmap.info(source).name, gmap.info(target).name)
         same = judge_merge(gmap, source, target, overlap, self._vlm_caller("merge_judge"), self._game,
-                           self._parameters, people=self._people_on_map)
+                           self._parameters)
         verdict = "unanswered" if same is None else "the same place" if same else "different places"
         log_info(f"Global map: judged segments {source} '{names[0]}' and {target} '{names[1]}' {verdict}.",
                  self._parameters)
@@ -519,8 +519,7 @@ class PokemonStrategist:
             marker = entry["marker"] if left else (len(report.narrative), len(report.event_log))
             before = gmap.info(segment).name
             answer = name_segment(gmap, segment, mark, left, tasks, self._supervisor_steps(report, marker, left),
-                                  self._vlm_caller("segment_name"), self._game, n, self._parameters,
-                                  people=self._people_on_map(segment))
+                                  self._vlm_caller("segment_name"), self._game, n, self._parameters)
             if answer is None:
                 continue
             changed, name, description = answer
