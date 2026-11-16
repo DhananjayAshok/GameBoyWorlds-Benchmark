@@ -234,7 +234,7 @@ class NPCRegistry(StrategistArtifact):
     """Every person the player has seen in one run. See the module docstring."""
 
     _TRANSIENT = ("_gmap", "_episode", "_tracks", "_last_people", "_last_people_at", "_stack", "_stack_ref",
-                  "_look_merges", "_weak", "_facing", "_open", "_frame", "_free_frame", "_live")
+                  "_look_merges", "_weak", "_facing", "_open", "_frame", "_free_frame", "_live", "_a_step", "_resume")
 
     def __init__(self, game: str, run_name: str) -> None:
         self.game = game
@@ -253,6 +253,8 @@ class NPCRegistry(StrategistArtifact):
         self.tagged_squares: Dict[Tuple[int, Cell], bool] = {}
         #: (raw segment, square) drawn like a sprite, tagged as a person, nobody recognised there (see MaybeSquare)
         self.maybe_squares: Dict[Tuple[int, Cell], MaybeSquare] = {}
+        #: the conversation the last episode ended in the middle of: the next one may open in its text box
+        self.interrupted: Optional[str] = None
         self.version = 1
         self._reset_transient()
 
@@ -272,6 +274,7 @@ class NPCRegistry(StrategistArtifact):
         self._free_frame: Optional[np.ndarray] = None           # the last free-roam frame (a conversation's context)
         self._live: Optional[Callable[[str], Callable[..., Any]]] = None   # model caller by stage, for live summaries
         self._a_step: Optional[int] = None                      # map step of an A press that left the player in free roam
+        self._resume: Optional[str] = None                      # ``interrupted``, for this episode's first step
 
     def __setstate__(self, state: dict) -> None:
         super().__setstate__(state)
@@ -279,7 +282,7 @@ class NPCRegistry(StrategistArtifact):
         for name, default in (("look_aliases", dict), ("covisible", set), ("unattributed", list),
                               ("signs", dict), ("conversations", dict), ("stats", Counter),
                               ("next_ids", Counter), ("version", lambda: 1), ("tagged_squares", dict),
-                              ("maybe_squares", dict)):
+                              ("maybe_squares", dict), ("interrupted", lambda: None)):
             self.__dict__.setdefault(name, default())
 
     @property
@@ -363,6 +366,7 @@ class NPCRegistry(StrategistArtifact):
         self._tracks = {}
         self._forget_screen()
         self._facing, self._open = None, None
+        self._resume, self.interrupted = self.interrupted, None
 
     def on_opening_screen(self, frame: np.ndarray, identified: Dict[Any, Any], free: bool) -> None:
         """``free``: the screen is free roam and the map placed it (else it is not read for people)."""
@@ -830,6 +834,8 @@ class NPCRegistry(StrategistArtifact):
         from gameboy_worlds.emulation.pokemon import AgentState
 
         state = ev.info.get("pokemon_core", {}).get("agent_state") if ev.info else None
+        if self._resume is not None:
+            self._continue_conversation(ev)
         a_press = self._is_a_press(ev.action, ev.kwargs)
         # the text box can open a step after the A press that called it (seen on Crystal): that press still counts
         pressed = a_press or (self._a_step is not None and self._a_step == self._gmap.step - 1)
@@ -851,6 +857,21 @@ class NPCRegistry(StrategistArtifact):
                 self._close_conversation("free_roam", True)
             elif state == AgentState.IN_BATTLE:
                 self._close_conversation("battle", True)
+
+    def _continue_conversation(self, ev: StepEvent) -> None:
+        """The episode's first step: if the last episode ended in the middle of a conversation and this one opens in
+        its text box (or a menu or battle it led to), it goes on: same speaker, more crops, read and summarised again
+        once it ends."""
+        conv = self.conversations.get(self._resume)
+        self._resume = None
+        g = self._gmap
+        if (conv is None or self._open is not None or ev.was_free
+                or g.resolve(g.segment, g.pos) != g.resolve(conv.segment, conv.square)):
+            return
+        conv.complete, conv.led_to, conv.map_step_end = False, None, None
+        conv.text, conv.read, conv.summarised, conv.tries = "", False, False, 0
+        self._open = conv.id
+        self.stats["conversations_continued"] += 1
 
     def _sign_at(self, target: Cell) -> Optional[Cell]:
         g = self._gmap
@@ -965,6 +986,7 @@ class NPCRegistry(StrategistArtifact):
     def _close_conversation(self, led_to: str, complete: bool) -> None:
         conv = self.conversations[self._open]
         conv.led_to, conv.complete, conv.map_step_end = led_to, complete, self._gmap.step
+        self.interrupted = conv.id if led_to == "episode_end" else None
         if led_to == "battle" and conv.npc in self.npcs and self.get(conv.npc).kind == "unknown":
             self.get(conv.npc).kind = "trainer"
         if led_to == "battle" and conv.npc is None and conv.trigger == "npc_started":
