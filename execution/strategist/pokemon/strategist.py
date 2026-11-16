@@ -411,6 +411,16 @@ class PokemonStrategist:
             log_warn(f"NPC registry: the people on the map were skipped: {type(e).__name__}: {e}", self._parameters)
             return []
 
+    def _maybe_on_map(self, segment: int) -> list:
+        """Squares of one area that may hold someone not seen whole yet (none without a registry)."""
+        if self.npcs is None:
+            return []
+        try:
+            return self.npcs.unconfirmed(self.global_map, segment)
+        except Exception as e:                                   # the registry must never break a run
+            log_warn(f"NPC registry: the unconfirmed people were skipped: {type(e).__name__}: {e}", self._parameters)
+            return []
+
     def _screen_people(self) -> Optional[Dict[Tuple[int, int], str]]:
         """The registry's words for the people on screen (None when there is no registry or no map yet)."""
         if self.npcs is None or not self.global_map.current:
@@ -543,16 +553,17 @@ class PokemonStrategist:
         self.global_map.prune_routes()
         _, failed = self._failure_streak()
         gmap = self.global_map
-        marks = None
+        marks, maybe = None, []
         if self.npcs is not None:                        # people not seen for very long are left out, as in [PEOPLE]
-            marks = [m for m in self._people_on_map(gmap.resolve(gmap.segment, gmap.pos)[0])
-                     if self.npcs._episode - m.last_seen[0] <= STALE_EPISODES]
+            here = gmap.resolve(gmap.segment, gmap.pos)[0]
+            marks = [m for m in self._people_on_map(here) if self.npcs._episode - m.last_seen[0] <= STALE_EPISODES]
+            maybe = self._maybe_on_map(here)
         block, override = prompt_block(self.global_map, list(self.global_map.new_cells_by_episode), local,
                                        explore=self._explore_now,
                                        episode=self.start_episode + self._episodes_run,
                                        failed_tasks=failed)
         if marks is not None:                            # the registry's people on the text map and under it
-            block = with_people(block, gmap, marks, self._people_where)
+            block = with_people(block, gmap, marks, self._people_where, maybe)
         if override is not None and override["kind"] == "edge":
             log_info(f"Global map: exploration overrides the task: head to ({override['dx']}, {override['dy']}) "
                      f"{override['sector']} in {self.global_map.area_label(override['area'])}.", self._parameters)

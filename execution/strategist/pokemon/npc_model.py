@@ -8,7 +8,8 @@ Code does everything it can first (see ``npcs.py``); the model is asked only wha
   and whether it is somebody already met seen from another side;
 * a **judge** for a person who looks exactly like one met elsewhere: usually another person, sometimes a rival or a
   professor who travels;
-* a **summary** of each conversation with its speaker's own name when the text gives one.
+* a **summary** of each conversation with its speaker's own name when the text gives one;
+* a **check** of a square that looked like a person nobody recognised (someone in tall grass): is anyone there.
 
 Every call is batched, every reply is parsed strictly, and an unusable reply is retried at the next episode end; after
 two unusable replies the person (or conversation) is left as it is. Nothing here can break a run: the caller wraps it.
@@ -23,7 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from execution.perception.pokemon.grid import cell_box, draw_box
+from execution.perception.pokemon.grid import BOX_COLOR, cell_box, draw_box
 from execution.strategist.pokemon.asking import field_values
 from utils import log_info, log_warn
 from utils.lm_inference import clean_value
@@ -70,6 +71,15 @@ Outcome: <info | gift | battle | choice | other>
 [STOP]
 
 Name type: class means a trainer class such as YOUNGSTER or LASS rather than a personal name."""
+
+NPC_CONFIRM_PROMPT = """You are looking at [GAME]. The image is part of the game screen, enlarged, with a red box on one square. Is a person (someone the player could talk to), a Pokemon standing on the map, or nothing (ground, grass, a tree, a sign, a statue or another object) in the red box? A person may be partly hidden, for example from the waist down behind tall grass.
+
+Respond in exactly this format:
+In box: <person | pokemon | nothing>
+Kind: <person | trainer | pokemon | None>
+Facing: <down | up | left | right | None>
+Description: <one sentence on appearance and likely role, or None>
+[STOP]"""
 
 KINDS = ("person", "trainer", "pokemon", "object")
 OUTCOMES = ("info", "gift", "battle", "choice", "other")
@@ -198,6 +208,17 @@ def parse_summary(output: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]
             "outcome": outcome if outcome in OUTCOMES else "other"}, None
 
 
+def parse_confirm(output: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    what, problem = _word(output, "In box", ("person", "pokemon", "nothing"))
+    if problem:
+        return None, problem
+    kind, _ = _word(output, "Kind", ("person", "trainer", "pokemon"))
+    facing, _ = _word(output, "Facing", ("down", "up", "left", "right"))
+    description = clean_value((field_values(output, "Description") or [""])[0])
+    kind = "pokemon" if what == "pokemon" else kind if kind in ("person", "trainer") else "person"
+    return {"what": what, "kind": kind, "facing": facing, "description": (description or "")[:200]}, None
+
+
 def _replies(out: Any, n: int) -> List[str]:
     """One reply per prompt. A thinking model answers ``Reasoning: ...  Response:  Kind: person``: only what follows
     the last ``Response:`` is the answer (the parsers look for lines that start with their key)."""
@@ -323,6 +344,50 @@ def _judges(reg, people, vlm_call, game: str, gmap) -> None:
             best = Counter((p.kind, p.description) for p in peers).most_common(1)[0][0]
             npc.kind, npc.description = best
         npc.needs = None
+
+
+def confirm_picture(entry) -> np.ndarray:
+    """The kept picture of a square (``MaybeSquare.crop``), enlarged 4x, with a red box on the square."""
+    crop = cv2.imdecode(np.frombuffer(entry.crop, np.uint8), cv2.IMREAD_GRAYSCALE)
+    big = cv2.cvtColor(cv2.resize(crop, None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST), cv2.COLOR_GRAY2RGB)
+    x, y = entry.box[0] * 4, entry.box[1] * 4
+    cv2.rectangle(big, (x, y), (x + 63, y + 63), BOX_COLOR, 2)
+    return big
+
+
+def _crop_window(entry, y_offset: int) -> Tuple[Optional[np.ndarray], int]:
+    """The sprite window of the square from the kept picture (None if cut off), and the picture's black level."""
+    crop = cv2.imdecode(np.frombuffer(entry.crop, np.uint8), cv2.IMREAD_GRAYSCALE)
+    x, top = entry.box[0], entry.box[1] - y_offset
+    if top < 0 or top + 16 > crop.shape[0] or x + 16 > crop.shape[1]:
+        return None, int(crop.min())
+    return crop[top:top + 16, x:x + 16].copy(), int(crop.min())
+
+
+def run_confirm(reg, vlm_call: Callable[..., Any], game: str, gmap, y_offset: int = 4) -> None:
+    """One batched call: for each square that looked like a person nobody recognised (``confirm_candidates``), is
+    someone there? A person or a Pokemon becomes a person never seen whole; nothing makes the square background."""
+    todo = reg.confirm_candidates(gmap)
+    if not todo:
+        return
+    out = _replies(vlm_call(texts=[NPC_CONFIRM_PROMPT.replace("[GAME]", game)] * len(todo),
+                            images=[[confirm_picture(m)] for _, m in todo], max_new_tokens=1500), len(todo))
+    for (key, m), reply in zip(todo, out):
+        parsed, problem = parse_confirm(reply)
+        if parsed is None:
+            log_warn(f"NPC check of square {key} unusable: {problem}")
+            m.tries += 1
+            if m.tries >= MAX_TRIES:
+                m.verdict, m.crop = "unclear", None
+                reg.stats["model_gave_up"] += 1
+            continue
+        reg.stats["squares_checked"] += 1
+        if parsed["what"] != "nothing":
+            window, level = _crop_window(m, y_offset)
+            npc = reg.hidden_person(key[0], key[1], "model", m.seen, window, level, needs=None)
+            npc.kind, npc.description = parsed["kind"], parsed["description"]
+            reg.look_of(npc).views[0].facing = parsed["facing"]
+        m.verdict, m.crop = parsed["what"], None
 
 
 def _same_text(text: str) -> str:

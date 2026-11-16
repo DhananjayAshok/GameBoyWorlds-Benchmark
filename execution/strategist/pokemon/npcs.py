@@ -30,7 +30,7 @@ from execution.perception.pokemon.grid import LEFT_COL, TOP_ROW, cell_box
 from execution.strategist.pokemon.global_map import (DIRECTIONS, OCCUPIED, PX_SLACK, GlobalMap, StepEvent,
                                                      grid_offset, grid_residual)
 from execution.strategist.pokemon import npc_model
-from execution.strategist.pokemon.npc_map import LABEL_NOTE, WHERE_NOTES
+from execution.strategist.pokemon.npc_map import LABEL_NOTE, WHERE_NOTES, maybe_lines
 from execution.strategist.pokemon.npc_model import display_name
 from execution.strategist.pokemon.npc_names import draw_name
 from utils import log_info, log_warn
@@ -64,6 +64,12 @@ WEAK_BLACK = 60
 WEAK_FRAMES = 2
 #: On the map, a person not seen for more than this many episodes may have moved: drawn grey, listed as such.
 STALE_MARK_EPISODES = 3
+#: A square drawn like a sprite and tagged as a person where nobody was recognised (someone in tall grass, or cut off)
+#: is shown to a model once it was seen like that in this many map steps; at most ``MAX_CONFIRM`` squares per episode.
+CONFIRM_FRAMES = 2
+MAX_CONFIRM = 6
+#: The picture kept of such a square: the squares around it, this many in every direction.
+CONFIRM_REACH = 2
 
 
 @dataclass
@@ -74,6 +80,7 @@ class View:
     mirrored_of: Optional[int]         # the view this is a left/right mirror of, if known
     first_seen: Tuple[int, int]        # (episode, map step)
     n_seen: int = 1
+    partial: bool = False              # a person seen only in part (in tall grass): never matched against others
 
 
 @dataclass
@@ -122,7 +129,8 @@ class Conversation:
     tries: int = 0
     how: str = "seen"                  # "seen" (on screen next to the player), "remembered" (the registry had them on
                                        # the square in front), "nearest" (they spoke first and were the only known
-                                       # person near, a guess) or "none"
+                                       # person near, a guess), "hidden" (a person never seen whole on the square in
+                                       # front, found by this conversation) or "none"
     confidence: str = "high"           # "low" for a "nearest" guess, or a person who walks about attributed from memory
 
 
@@ -145,6 +153,8 @@ class NPC:
     context: Optional[np.ndarray] = None   # the screen (greys) on which this person was first seen
     context_cell: Optional[Cell] = None    # and the square the person stood on in it
     tries: int = 0                         # model answers that could not be used
+    hidden: Optional[str] = None           # never seen whole when found: "conversation" (talked to on that square) or
+                                           # "model" (a model saw someone in the picture of that square)
 
 
 @dataclass
@@ -154,6 +164,20 @@ class Sign:
     square: Cell
     conversations: List[str] = field(default_factory=list)
     text: str = ""
+
+
+@dataclass
+class MaybeSquare:
+    """A square drawn like a sprite and tagged as a person where nobody was recognised: someone hidden (in tall grass)
+    or cut off, not seen whole yet. Kept until a conversation or a model says who, or what, is there."""
+    frames: int = 0                        # map steps it was seen like that
+    last_step: int = -1
+    crop: Optional[bytes] = None           # PNG of the squares around it, from the frame where it was nearest the player
+    box: Cell = (0, 0)                     # the square's top-left pixel in the crop
+    distance: int = 99                     # its distance from the player in that frame
+    seen: Tuple[int, int] = (0, 0)         # (episode, map step) of that frame
+    verdict: Optional[str] = None          # "person" | "pokemon" | "nothing", or "unclear" once a model gave up
+    tries: int = 0
 
 
 @dataclass
@@ -227,6 +251,8 @@ class NPCRegistry(StrategistArtifact):
         #: (raw segment, square) the tile table tagged as a person -> whether it was ever drawn like a sprite there
         #: (False: only ever like background, such as a statue or a bush)
         self.tagged_squares: Dict[Tuple[int, Cell], bool] = {}
+        #: (raw segment, square) drawn like a sprite, tagged as a person, nobody recognised there (see MaybeSquare)
+        self.maybe_squares: Dict[Tuple[int, Cell], MaybeSquare] = {}
         self.version = 1
         self._reset_transient()
 
@@ -245,13 +271,15 @@ class NPCRegistry(StrategistArtifact):
         self._frame: Optional[np.ndarray] = None                # the frame being read for people
         self._free_frame: Optional[np.ndarray] = None           # the last free-roam frame (a conversation's context)
         self._live: Optional[Callable[[str], Callable[..., Any]]] = None   # model caller by stage, for live summaries
+        self._a_step: Optional[int] = None                      # map step of an A press that left the player in free roam
 
     def __setstate__(self, state: dict) -> None:
         super().__setstate__(state)
         self._reset_transient()
         for name, default in (("look_aliases", dict), ("covisible", set), ("unattributed", list),
                               ("signs", dict), ("conversations", dict), ("stats", Counter),
-                              ("next_ids", Counter), ("version", lambda: 1), ("tagged_squares", dict)):
+                              ("next_ids", Counter), ("version", lambda: 1), ("tagged_squares", dict),
+                              ("maybe_squares", dict)):
             self.__dict__.setdefault(name, default())
 
     @property
@@ -276,6 +304,10 @@ class NPCRegistry(StrategistArtifact):
 
     def live_npcs(self) -> List[NPC]:
         return [n for n in self.npcs.values() if n.merged_into is None]
+
+    def seen_whole(self, npc: NPC) -> bool:
+        """False for a person only ever seen in part (in tall grass): not recognising them on screen says nothing."""
+        return any(not v.partial for v in self.look_of(npc).views)
 
     def look_of(self, npc: NPC) -> Look:
         look_id = npc.look
@@ -361,8 +393,9 @@ class NPCRegistry(StrategistArtifact):
             keys, ref = [], []
             for look in self.looks.values():
                 for i, view in enumerate(look.views):
-                    keys.append(view.key)
-                    ref.append((look.id, i))
+                    if not view.partial:                  # a picture of part of a person never matches anyone
+                        keys.append(view.key)
+                        ref.append((look.id, i))
             self._stack = np.stack(keys) if keys else np.zeros((0, 16, 16), dtype=bool)
             self._stack_ref = ref
         return self._stack, self._stack_ref
@@ -451,7 +484,7 @@ class NPCRegistry(StrategistArtifact):
             self._forget_screen()
             return
         pos, segment, step = gmap.pos, gmap.segment, gmap.step
-        self._judge_tagged(frame, identified, segment, pos)
+        like = self._judge_tagged(frame, identified, segment, pos)
         detections = self._detect(frame, identified)
         for det in detections:
             det["square"] = (pos[0] + det["cell"][0], pos[1] + det["cell"][1])
@@ -499,19 +532,129 @@ class NPCRegistry(StrategistArtifact):
         self._last_people = {t.square: t.npc for t in now.values() if t.square in squares}
         self._last_people_at = (segment, step)
         self.stats["frames_with_people"] += bool(now)
+        self._note_maybe(frame, like, {t.square for t in now.values()}, segment, pos, step)
 
-    def _judge_tagged(self, frame: np.ndarray, identified: Dict[Any, Any], segment: int, pos: Cell) -> None:
-        """Note, for every square the tile table tags (even in part) as a person, whether it is drawn like a sprite."""
+    def _judge_tagged(self, frame: np.ndarray, identified: Dict[Any, Any], segment: int, pos: Cell) -> List[Cell]:
+        """Note, for every square the tile table tags (even in part) as a person, whether it is drawn like a sprite;
+        returns the screen cells that are."""
+        like = []
         for cell in {(x, y) for (x, y, _), tile in identified.items() if tile.tag == "npc" and (x, y) != (0, 0)}:
             key = (segment, (pos[0] + cell[0], pos[1] + cell[1]))
             if S.sprite_like(frame, cell, self._p["y_offset"]):
                 self.tagged_squares[key] = True
+                like.append(cell)
             else:
                 self.tagged_squares.setdefault(key, False)
+        return like
+
+    def _known_squares(self, segment: int) -> List[Cell]:
+        """Every (resolved) square of the (resolved) segment a known person was seen on."""
+        out = []
+        for npc in self.live_npcs():
+            for sighting in npc.sightings:
+                seg, square = self.place(self._gmap, sighting)
+                if seg == segment:
+                    out.append(square)
+        return out
+
+    def _note_maybe(self, frame: np.ndarray, like: List[Cell], tracked: Set[Cell], segment: int, pos: Cell,
+                    step: int) -> None:
+        """Squares drawn like a sprite and tagged as a person where nobody is recognised (someone in tall grass, or cut
+        off): count them and keep a small picture of each, from the frame where it was nearest the player, for the
+        model check at the end of the episode."""
+        import cv2
+
+        if not like:
+            return
+        resolved_segment = self._gmap.resolve(segment, pos)[0]
+        known = None
+        screen = S._screen(frame)
+        for cell in like:
+            square = (pos[0] + cell[0], pos[1] + cell[1])
+            if any(_manhattan(square, t) <= 1 for t in tracked):
+                continue
+            entry = self.maybe_squares.get((segment, square))
+            if entry is not None and entry.verdict is not None:
+                continue
+            if known is None:
+                known = self._known_squares(resolved_segment)
+            if any(_manhattan(self._gmap.resolve(segment, square)[1], k) <= 1 for k in known):
+                continue
+            entry = self.maybe_squares.setdefault((segment, square), MaybeSquare())
+            if entry.last_step != step:
+                entry.frames, entry.last_step = entry.frames + 1, step
+            distance = abs(cell[0]) + abs(cell[1])
+            if entry.crop is None or distance < entry.distance:
+                x0, y0, _, _ = cell_box(*cell)
+                reach = CONFIRM_REACH * 16
+                left, top = max(0, x0 - reach), max(0, y0 - reach)
+                crop = screen[top:min(screen.shape[0], y0 + 16 + reach), left:min(screen.shape[1], x0 + 16 + reach)]
+                entry.crop = cv2.imencode(".png", np.ascontiguousarray(crop, dtype=np.uint8))[1].tobytes()
+                entry.box, entry.distance, entry.seen = (x0 - left, y0 - top), distance, (self._episode, step)
 
     def background_squares(self, gmap: GlobalMap) -> Set[Tuple[int, Cell]]:
-        """(Resolved) squares the tile table calls a person that were only ever drawn like background."""
-        return {gmap.resolve(*key) for key, sprite in self.tagged_squares.items() if not sprite}
+        """(Resolved) squares the tile table calls a person that were only ever drawn like background, or where a
+        model saw nobody."""
+        return ({gmap.resolve(*key) for key, sprite in self.tagged_squares.items() if not sprite}
+                | {gmap.resolve(*key) for key, m in self.maybe_squares.items() if m.verdict == "nothing"})
+
+    def hidden_person(self, segment: int, square: Cell, why: str, when: Tuple[int, int],
+                      window: Optional[np.ndarray] = None, level: int = 0, needs: Optional[str] = "card") -> NPC:
+        """A person never seen whole, found on (raw) ``square``: talked to there, or seen there by a model. Their look
+        is the part of the sprite that shows, marked partial so it never matches anyone; a whole sprite later seen on
+        that square joins them as a person who stands still (``_static_at``)."""
+        if window is None or window.shape != (16, 16):
+            window = np.full((16, 16), 255, np.uint8)
+        look = Look(id=self._next("look"), views=[View(np.array(window, copy=True), S.black_mask(window, level), None,
+                                                       None, when, partial=True)])
+        self.looks[look.id] = look
+        npc = self._new_npc(look, needs, [], when[1])
+        npc.created, npc.hidden = when, why
+        npc.sightings.append(Sighting(when[0], when[1], segment, square, 0))
+        self.stats[f"hidden_by_{why}"] += 1
+        return npc
+
+    def _hidden_at(self, offset: Cell) -> Optional[str]:
+        """The person talked to on the square at ``offset`` from the player when nobody known is there: a square drawn
+        like a sprite (or held by the map as a person) that no model said was empty. A new person, never seen whole."""
+        g = self._gmap
+        square = (g.pos[0] + offset[0], g.pos[1] + offset[1])
+        segment, resolved = g.resolve(g.segment, square)
+        entry = self.maybe_squares.get((g.segment, square))
+        if entry is not None and entry.verdict == "nothing":
+            return None
+        if not (self.tagged_squares.get((g.segment, square)) or resolved in self.unconfirmed(g, segment)):
+            return None
+        if any(_manhattan(resolved, k) <= 1 for k in self._known_squares(segment)):
+            return None
+        window, level = None, 0
+        if self._free_frame is not None:
+            window = S.sprite_window(self._free_frame, offset, (0, 0), self._p["y_offset"])
+            level = S.black_level(self._free_frame)
+        npc = self.hidden_person(g.segment, square, "conversation", (self._episode, g.step), window, level)
+        if self._free_frame is not None:
+            npc.context, npc.context_cell = np.array(self._free_frame, copy=True), offset
+        if entry is not None:
+            entry.verdict, entry.crop = "person", None
+        return npc.id
+
+    def confirm_candidates(self, gmap: GlobalMap) -> List[Tuple[Tuple[int, Cell], MaybeSquare]]:
+        """The squares to show a model: seen like a person in ``CONFIRM_FRAMES`` map steps, or held by the map as a
+        person, nobody known on or next to them, not yet looked at; one per (resolved) square, most often seen first."""
+        out, done = [], set()
+        for key, m in sorted(self.maybe_squares.items(), key=lambda kv: -kv[1].frames):
+            if m.verdict is not None or m.crop is None:
+                continue
+            segment, square = gmap.resolve(*key)
+            if (segment, square) in done:
+                continue
+            if m.frames < CONFIRM_FRAMES and square not in self.unconfirmed(gmap, segment):
+                continue
+            if any(_manhattan(square, k) <= 1 for k in self._known_squares(segment)):
+                continue
+            done.add((segment, square))
+            out.append((key, m))
+        return out[:MAX_CONFIRM]
 
     def _new_look(self, det: Dict[str, Any], step: int) -> Look:
         look = Look(id=self._next("look"), views=[View(det["window"].copy(), det["mask"].copy(), None, None,
@@ -673,6 +816,10 @@ class NPCRegistry(StrategistArtifact):
         from gameboy_worlds.emulation.pokemon import AgentState
 
         state = ev.info.get("pokemon_core", {}).get("agent_state") if ev.info else None
+        a_press = self._is_a_press(ev.action, ev.kwargs)
+        # the text box can open a step after the A press that called it (seen on Crystal): that press still counts
+        pressed = a_press or (self._a_step is not None and self._a_step == self._gmap.step - 1)
+        self._a_step = self._gmap.step if a_press and ev.was_free and ev.free else None
         if ev.was_free and ev.free:
             if ev.direction is not None:
                 self._facing = ev.direction
@@ -683,7 +830,7 @@ class NPCRegistry(StrategistArtifact):
         # only text opens a conversation: a menu or a battle straight from free roam is not one (a trainer's
         # challenge starts with dialogue, so it still opens here and closes on the battle)
         if self._open is None and ev.was_free and state == AgentState.IN_DIALOGUE:
-            self._open_conversation(ev)
+            self._open_conversation(ev, pressed)
         if self._open is not None:
             self._collect_crops(ev)
             if state == AgentState.FREE_ROAM:
@@ -697,9 +844,8 @@ class NPCRegistry(StrategistArtifact):
         cell = g.segments[g.segment].get(square)
         return square if cell is not None and set(cell.tags) & SIGN_TAGS else None
 
-    def _open_conversation(self, ev: StepEvent) -> None:
+    def _open_conversation(self, ev: StepEvent, a_press: bool) -> None:
         g = self._gmap
-        a_press = self._is_a_press(ev.action, ev.kwargs)
         speaker: Optional[str] = None
         sign_square: Optional[Cell] = None
         on_screen = self.on_screen(g)
@@ -725,6 +871,11 @@ class NPCRegistry(StrategistArtifact):
                     speaker = None
                 elif len(squares) > 1:
                     confidence = "low"
+            elif a_press and self._facing is not None:
+                # nobody known on the square in front, but something like a person was: someone never seen whole
+                speaker = self._hidden_at(DIRECTIONS[self._facing])
+                if speaker is not None:
+                    how, confidence = "hidden", "low"
         if speaker is None and sign_square is None:
             how = "none"
         conv = Conversation(
@@ -926,8 +1077,9 @@ class NPCRegistry(StrategistArtifact):
     def end_episode(self, gmap: GlobalMap, vlm_caller: Optional[Callable[[str], Callable[..., Any]]] = None) -> None:
         """Close the episode's bookkeeping; decorated so the registry is saved every episode.
 
-        ``vlm_caller(stage)`` gives the model caller for a stage (``npc_card``, ``npc_judge``, ``npc_summary``); without
-        it only the code-only steps run. Each model step is guarded: a failure is logged and the run goes on.
+        ``vlm_caller(stage)`` gives the model caller for a stage (``npc_card``, ``npc_judge``, ``npc_confirm``,
+        ``npc_summary``); without it only the code-only steps run. Each model step is guarded: a failure is logged and
+        the run goes on.
         """
         self._gmap = gmap
         self.finish_conversations()
@@ -940,6 +1092,8 @@ class NPCRegistry(StrategistArtifact):
     def _model_steps(self, vlm_caller: Callable[[str], Callable[..., Any]], gmap: GlobalMap) -> None:
         for label, step in (("cards and judges", lambda: self.run_model(vlm_caller("npc_card"),
                                                                        vlm_caller("npc_judge"), gmap)),
+                            ("hidden people", lambda: npc_model.run_confirm(self, vlm_caller("npc_confirm"), self.game,
+                                                                            gmap, self._p["y_offset"])),
                             ("summaries", lambda: self.run_summaries(vlm_caller("npc_summary"), gmap)),
                             ("real names", self.apply_real_names)):
             try:
@@ -1007,7 +1161,8 @@ class NPCRegistry(StrategistArtifact):
         if len(squares) > 1:
             when += f", seen on {len(squares)} different squares (walks about)"
         if self.in_view(gmap, square):
-            when += "; not recognised on that square, which is on screen now: may have moved"
+            when += ("; not recognised on that square, which is on screen now: may have moved" if self.seen_whole(npc)
+                     else "; only ever seen in part (hidden, for example in tall grass)")
         return when
 
     def people_block(self, gmap: GlobalMap, max_people: int = 8, max_chars: int = 1800, where: str = "here") -> str:
@@ -1018,7 +1173,8 @@ class NPCRegistry(StrategistArtifact):
         here = [(npc, square) for npc, square in self.people_here(gmap)
                 if self._episode - self.last_seen(gmap, npc)[2].episode <= STALE_EPISODES
                 and self.look_of(npc).kind_hint != "object"]
-        if not here:
+        maybe = [] if where == "away" else self.unconfirmed(gmap, gmap.resolve(gmap.segment, gmap.pos)[0])
+        if not here and not maybe:
             return ""
         px, py = gmap.pos
         here.sort(key=lambda r: abs(r[1][0] - px) + abs(r[1][1] - py))
@@ -1041,6 +1197,7 @@ class NPCRegistry(StrategistArtifact):
             lines.append(f'- "{display_name(npc)}"{f" ({what})" if what else ""}{at}, {when}: {status}.')
         if len(here) > max_people:
             lines.append(f"...and {len(here) - max_people} more.")
+        lines += maybe_lines(gmap, maybe)
         note = WHERE_NOTES[where] + "\n" if where in WHERE_NOTES else ""
         block = ("PEOPLE YOU HAVE SEEN IN THIS AREA (positions are steps from you: x right, y up). The quoted names are "
                  "labels for this list (unless one is a real name the person gave): the player does not know the labels, "
@@ -1092,7 +1249,8 @@ class NPCRegistry(StrategistArtifact):
                 if elsewhere:
                     status += "; met before in another area"
             if cell in remembered:
-                status = "remembered here, not recognised on this frame: may have moved; " + status
+                status = ("remembered here, not recognised on this frame: may have moved; " if self.seen_whole(npc)
+                          else "seen only in part (hidden, for example in tall grass); ") + status
             kind = npc.kind if npc.kind != "unknown" else "person"
             name = (f'who gave the name "{npc.real_name}"' if npc.real_name
                     else f'labelled "{npc.name}" (the label is {LABEL_NOTE})')
@@ -1125,7 +1283,7 @@ class NPCRegistry(StrategistArtifact):
             stale = now - newest.episode > STALE_MARK_EPISODES
             if upto_step is None:
                 when = self.when_seen(gmap, npc, square)
-                stale = stale or (npc.id not in on_screen and self.in_view(gmap, square))
+                stale = stale or (npc.id not in on_screen and self.in_view(gmap, square) and self.seen_whole(npc))
             else:
                 when = f"last seen in episode {newest.episode}"
             xs, ys = [q[0] for q in squares], [q[1] for q in squares]

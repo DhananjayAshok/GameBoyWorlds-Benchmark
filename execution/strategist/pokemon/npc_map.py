@@ -27,9 +27,11 @@ MAYBE_COLOUR = (255, 0, 255)
 #: Map pictures for the report and the people legend: text this size per unit of ``scale``.
 LABEL_FONT = 0.33
 #: The legend when the NPC registry's people are on the map: they get numbers, so the tile table's guesses get o.
-PEOPLE_LEGEND = (LEGEND.replace("n person", "o maybe a person, not confirmed")
+PEOPLE_LEGEND = (LEGEND.replace("n person", "o maybe a person, not confirmed (listed if never seen whole)")
                  + "   1-9 a person (listed under the map)   + a person who may have moved")
 MAX_PEOPLE_LINES = 8
+#: At most this many squares that may hold someone not seen whole yet are listed, nearest first.
+MAX_MAYBE_LINES = 4
 #: Wherever a model reads a person's label: the game does not know it, so it must never become a target (in the
 #: Crystal run the supervisor wrote "Interact(Quartz Heron)" and found nobody).
 LABEL_NOTE = "not a name the game knows: refer to a person by where they stand, never by this label"
@@ -223,10 +225,24 @@ def people_window(gmap: GlobalMap, grid: Dict[Cell, str], rx: int = 12, ry: int 
     return "\n".join(rows)
 
 
-def people_lines(gmap: GlobalMap, ordered: List[Any], where: str = "here") -> List[str]:
+def maybe_lines(gmap: GlobalMap, maybe: Iterable[Cell]) -> List[str]:
+    """One line for each square that may hold someone not seen whole yet (``NPCRegistry.unconfirmed``), nearest
+    first."""
+    px, py = gmap.pos
+    lines = []
+    for x, y in sorted(maybe, key=lambda q: (abs(q[0] - px) + abs(q[1] - py), q))[:MAX_MAYBE_LINES]:
+        dx, dy = x - px, y - py
+        lines.append(f"- someone may be at ({dx}, {dy}), {abs(dx) + abs(dy)} steps {sector(dx, dy)}, not seen whole "
+                     f"yet (in tall grass or cut off): go look and talk.")
+    return lines
+
+
+def people_lines(gmap: GlobalMap, ordered: List[Any], where: str = "here", maybe: Iterable[Cell] = ()) -> List[str]:
     """The people list under the text map, in the words of ``door_lines``; ``ordered`` from ``people_marks``.
-    ``where``: "here" (the screen now was placed), else a key of ``WHERE_NOTES``."""
-    if not ordered:
+    ``where``: "here" (the screen now was placed), else a key of ``WHERE_NOTES``. ``maybe``: squares that may hold
+    someone not seen whole yet (listed unless "away", and counted as not talked to)."""
+    maybe = [] if where == "away" else list(maybe)
+    if not ordered and not maybe:
         return []
     px, py = gmap.pos
     lines = ["People in this area (x = steps to the right, y = steps up, measured from you; each quoted name is a "
@@ -247,16 +263,19 @@ def people_lines(gmap: GlobalMap, ordered: List[Any], where: str = "here") -> Li
         lines.append(f'- {i + 1} "{m.name}"{f" ({what})" if what else ""}{at}, {m.when}: {talked}.')
     if len(ordered) > MAX_PEOPLE_LINES:
         lines.append(f"...and {len(ordered) - MAX_PEOPLE_LINES} more.")
-    lines.append(f"Not yet talked to here: {sum(m.talked == 'no' for m in ordered)} of {len(ordered)}.")
+    lines += maybe_lines(gmap, maybe)
+    lines.append(f"Not yet talked to here: {sum(m.talked == 'no' for m in ordered) + len(maybe)} of "
+                 f"{len(ordered) + len(maybe)}.")
     return lines
 
 
-def with_people(text: str, gmap: GlobalMap, people: Iterable[Any], where: str = "here") -> str:
+def with_people(text: str, gmap: GlobalMap, people: Iterable[Any], where: str = "here",
+                maybe: Iterable[Cell] = ()) -> str:
     """
     The map section ``prompt_block`` wrote (``text``, for ``gmap`` as it is now) with the registry's people of this
     area (``NPCRegistry.map_people``): numbered on the text map, the people legend, and the people list after the
     doors. A part of ``text`` that is not where it is looked for is left as it is; the list then goes at the end.
-    ``where`` as in ``people_lines``.
+    ``where`` and ``maybe`` as in ``people_lines``.
     """
     ordered, grid = people_marks(gmap, people)
     lines = text.split("\n")
@@ -267,7 +286,7 @@ def with_people(text: str, gmap: GlobalMap, people: Iterable[Any], where: str = 
             lines[at:at + len(plain)] = people_window(gmap, grid).split("\n")
     if "Legend: " + LEGEND in lines:
         lines[lines.index("Legend: " + LEGEND)] = "Legend: " + PEOPLE_LEGEND
-    added = people_lines(gmap, ordered, where)
+    added = people_lines(gmap, ordered, where, maybe)
     if added:
         doors = door_lines(gmap)
         squares = next((i for i, line in enumerate(lines) if line.startswith("Squares mapped here: ")), None)
