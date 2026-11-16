@@ -17,11 +17,15 @@ Cell = Tuple[int, int]
 
 #: ``auto``: the largest mask distance (out of 256 px) for an automatic same-look match. ``maybe``: the top of the
 #: band that is left to a model; a distance above it is a different look. Measured on Red: the same picture and frame
-#: differ by a median of 0, different pictures never come closer than 34.
+#: differ by a median of 0, different pictures never come closer than 34. Measured on Crystal against RAM (303 saved
+#: states, 30 frames each, 16.5k people drawn on their square): the same picture repeats exactly (median 0), and with dark
+#: ground showing through it differs by up to about 12, as on Red; but two different sprites come as close as 8 (a boy and
+#: another boy seen in Violet Mart), others 16 and 22. No value keeps both apart, so Crystal keeps Red's numbers: such
+#: look-alikes share a look, and code takes them for one person only within a few squares of where one was last seen.
 SPRITE_PARAMS: Dict[str, Dict[str, Any]] = {
     "default": dict(y_offset=4, auto=12, maybe=33, min_quarters=3, scan_step=2, scan_range=8, min_black=24),
     "pokemon_red": dict(),
-    "pokemon_crystal": dict(),      # not measured: re-check the thresholds before enabling there
+    "pokemon_crystal": dict(),      # measured (see above): Red's numbers kept
 }
 
 
