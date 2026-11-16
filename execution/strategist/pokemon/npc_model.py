@@ -348,7 +348,9 @@ def run_summaries(reg, vlm_call: Callable[..., Any], game: str, gmap, only=None)
         return
     prompts = []
     for c in todo:
-        with_whom = (f"with {display_name(reg.get(c.npc))}" if c.npc in reg.npcs
+        # a label is not a name the game knows: only a name the person gave is passed on
+        real = reg.get(c.npc).real_name if c.npc in reg.npcs else None
+        with_whom = (f"with {real}" if real else "with a person" if c.npc in reg.npcs
                      else "with a sign" if c.sign else "with someone")
         tag = TAG.match(c.text)
         hint = f'The text shows the tag "{tag.group(1)}:" before the speech.\n' if tag else ""

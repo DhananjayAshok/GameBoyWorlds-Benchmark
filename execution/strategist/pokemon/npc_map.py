@@ -30,6 +30,9 @@ LABEL_FONT = 0.33
 PEOPLE_LEGEND = (LEGEND.replace("n person", "o maybe a person, not confirmed")
                  + "   1-9 a person (listed under the map)   + a person who may have moved")
 MAX_PEOPLE_LINES = 8
+#: Wherever a model reads a person's label: the game does not know it, so it must never become a target (in the
+#: Crystal run the supervisor wrote "Interact(Quartz Heron)" and found nobody).
+LABEL_NOTE = "not a name the game knows: refer to a person by where they stand, never by this label"
 #: When the map did not place the episode's opening screen, the people are told as remembered: "held" (a text box or
 #: a menu, no fade: the player stands where the map last placed them, so positions still hold) or "away" (a fade, or
 #: the map lost the player: they may be somewhere else, so no positions).
@@ -226,8 +229,8 @@ def people_lines(gmap: GlobalMap, ordered: List[Any], where: str = "here") -> Li
     if not ordered:
         return []
     px, py = gmap.pos
-    lines = ["People in this area (x = steps to the right, y = steps up, measured from you; the quoted names are "
-             "labels the player does not know):"]
+    lines = ["People in this area (x = steps to the right, y = steps up, measured from you; each quoted name is a "
+             f"label for this list, {LABEL_NOTE}):"]
     if where in WHERE_NOTES:
         lines.append(WHERE_NOTES[where])
     for i, m in enumerate(ordered[:MAX_PEOPLE_LINES]):

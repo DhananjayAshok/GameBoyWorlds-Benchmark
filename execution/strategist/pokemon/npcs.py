@@ -30,7 +30,7 @@ from execution.perception.pokemon.grid import LEFT_COL, TOP_ROW, cell_box
 from execution.strategist.pokemon.global_map import (DIRECTIONS, OCCUPIED, PX_SLACK, GlobalMap, StepEvent,
                                                      grid_offset, grid_residual)
 from execution.strategist.pokemon import npc_model
-from execution.strategist.pokemon.npc_map import WHERE_NOTES
+from execution.strategist.pokemon.npc_map import LABEL_NOTE, WHERE_NOTES
 from execution.strategist.pokemon.npc_model import display_name
 from execution.strategist.pokemon.npc_names import draw_name
 from utils import log_info, log_warn
@@ -1044,8 +1044,8 @@ class NPCRegistry(StrategistArtifact):
         note = WHERE_NOTES[where] + "\n" if where in WHERE_NOTES else ""
         block = ("PEOPLE YOU HAVE SEEN IN THIS AREA (positions are steps from you: x right, y up). The quoted names are "
                  "labels for this list (unless one is a real name the person gave): the player does not know the labels, "
-                 "so describe a person by where they stand, not by name. Talking to someone you have not talked to "
-                 "yet can give information or items.\n" + note
+                 "so describe a person by where they stand, not by name, and never write a label into a task. Talking "
+                 "to someone you have not talked to yet can give information or items.\n" + note
                  + "\n".join(lines))
         return "\n\n" + block[:max_chars]
 
@@ -1093,7 +1093,10 @@ class NPCRegistry(StrategistArtifact):
                     status += "; met before in another area"
             if cell in remembered:
                 status = "remembered here, not recognised on this frame: may have moved; " + status
-            out[cell] = f'"{display_name(npc)}" ({npc.kind if npc.kind != "unknown" else "person"}; {status})'[:160]
+            kind = npc.kind if npc.kind != "unknown" else "person"
+            name = (f'who gave the name "{npc.real_name}"' if npc.real_name
+                    else f'labelled "{npc.name}" (the label is {LABEL_NOTE})')
+            out[cell] = f'{kind} {name} ({status})'[:320]
         return out
 
     def map_people(self, gmap: GlobalMap, segment: int, upto_step: Optional[int] = None) -> List[PersonMark]:
@@ -1164,7 +1167,8 @@ class NPCRegistry(StrategistArtifact):
                          f'"{c.text[:400].strip()}"')
         if not lines:
             return ""
-        return "\n\nConversations this episode (name the person by the quoted name):\n" + "\n".join(lines)
+        return ("\n\nConversations this episode (the quoted names are labels for a list, not names the game knows: "
+                "to say who spoke, describe the person and where they stood):\n" + "\n".join(lines))
 
     def markers(self, gmap: GlobalMap, segment: int) -> List[Tuple[Cell, str, bool]]:
         """``(square, number, talked_to_here)`` for every person last seen in ``segment`` (see ``map_people``)."""
