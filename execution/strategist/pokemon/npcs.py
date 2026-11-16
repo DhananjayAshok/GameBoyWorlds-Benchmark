@@ -714,8 +714,15 @@ class NPCRegistry(StrategistArtifact):
                 return None
             same = [n for n in self.live_npcs() if self.look_of(n).id == look.id and n.id not in busy]
             near = self._near(segment, square, busy, look.id)
+            static = None if near else self._static_at(segment, square, busy)
             if near:
                 npc, view_index = near[0], best[2]
+            elif static is not None:
+                # someone who never moves was last seen on exactly this square: they turned, even if the new picture
+                # is a look-alike's (the Crystal officer facing left matched another officer's side view): one sprite
+                npc, view_index = static, self._turned(static, det, step)
+                if det["full"] and self.look_of(static).id != look.id:
+                    self._look_merges.add((self.look_of(static).id, look.id))
             elif det["full"] or int(det["mask"].sum()) >= p["min_black"]:
                 # the same look, but nobody of that look was last seen here: a look-alike elsewhere is another
                 # person until a model (or a conversation) says otherwise
@@ -731,14 +738,7 @@ class NPCRegistry(StrategistArtifact):
             npc = self._static_at(segment, square, busy)
             if npc is not None:
                 # a picture nobody has seen, on the square of someone who never moves: that person turned round
-                look = self.look_of(npc)
-                last = self.last_seen(self._gmap, npc)[2]
-                look.views.append(View(det["window"].copy(), det["mask"].copy(), None, None, (self._episode, step)))
-                look.links.append((last.view, len(look.views) - 1, "same_square"))
-                view_index = len(look.views) - 1
-                self._stack = None
-                self.stats["views_added"] += 1
-                self.stats["same_square"] += 1
+                view_index = self._turned(npc, det, step)
             else:
                 look = self._new_look(det, step)
                 candidates = [n.id for n in self._near(segment, square, busy)]
@@ -754,6 +754,20 @@ class NPCRegistry(StrategistArtifact):
                       last_step=step)
         self._note_sighting(track, det, step)
         return track
+
+    def _turned(self, npc: NPC, det: Dict[str, Any], step: int) -> int:
+        """A person who stands still, seen in a new picture on their square: add it as a view of their look (only a whole
+        sprite is stored) and return the view to note the sighting with."""
+        look = self.look_of(npc)
+        last = self.last_seen(self._gmap, npc)[2]
+        if not det["full"]:
+            return last.view
+        look.views.append(View(det["window"].copy(), det["mask"].copy(), None, None, (self._episode, step)))
+        look.links.append((last.view, len(look.views) - 1, "same_square"))
+        self._stack = None
+        self.stats["views_added"] += 1
+        self.stats["same_square"] += 1
+        return len(look.views) - 1
 
     def _update_track(self, track: Track, det: Dict[str, Any], crowded: bool, step: int) -> None:
         p = self._p
