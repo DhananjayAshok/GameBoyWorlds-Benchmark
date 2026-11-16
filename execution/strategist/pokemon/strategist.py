@@ -32,6 +32,7 @@ from execution.strategist.pokemon.guide import (StrategyGuide, battle_tips, guid
                                                 record_new_town, reflect_on_defeat, town_question, update_guide)
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree, remember
 from execution.strategist.pokemon.notepad import ThoughtNotepad
+from execution.strategist.pokemon.npc_map import with_people
 from execution.strategist.pokemon.npcs import PLACED_STATUS, STALE_EPISODES, NPCRegistry
 from execution.strategist.pokemon.global_map import (FAILURE_EPISODES, GlobalMap, MappingEnvironment, explore_text,
                                                      exploring, judge_merge, judge_stuck, name_segment, navigate_map,
@@ -545,7 +546,9 @@ class PokemonStrategist:
         block, override = prompt_block(self.global_map, list(self.global_map.new_cells_by_episode), local,
                                        explore=self._explore_now,
                                        episode=self.start_episode + self._episodes_run,
-                                       failed_tasks=failed, people=marks)
+                                       failed_tasks=failed)
+        if marks is not None:                            # the registry's people on the text map and under it
+            block = with_people(block, gmap, marks)
         if override is not None and override["kind"] == "edge":
             log_info(f"Global map: exploration overrides the task: head to ({override['dx']}, {override['dy']}) "
                      f"{override['sector']} in {self.global_map.area_label(override['area'])}.", self._parameters)

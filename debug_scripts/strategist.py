@@ -14,11 +14,12 @@ from debug_scripts import markdown as md
 from debug_scripts.benchmark import _storage_link
 from debug_scripts.frames import _FONT, to_pil
 from execution.perception.pokemon.tiles import TileRecognizer
-from execution.strategist.pokemon.global_map import GlobalMap, person_tag, render_segment, segment_bounds
+from execution.strategist.pokemon.global_map import GlobalMap, render_segment, segment_bounds
 from execution.strategist.pokemon.goals import PokemonGoalTree
 from execution.strategist.pokemon.guide import StrategyGuide
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree
 from execution.strategist.pokemon.notepad import ThoughtNotepad
+from execution.strategist.pokemon.npc_map import person_tag, render_with_people
 from execution.strategist.pokemon.npc_model import display_name
 from execution.strategist.pokemon.npcs import NPCRegistry
 from execution.strategist.report import episode_report_path, load_episode_report
@@ -241,14 +242,14 @@ def registry_at(run_dir: str, episode: int) -> Optional[NPCRegistry]:
 
 
 def people_drawing(marks: list, maybe: list = ()) -> dict:
-    """``render_segment`` arguments that draw the registry's people, at twice the size so their labels can be read,
-    with a strip naming them; nothing (the picture as without a registry) when there is nobody to draw."""
+    """``render_with_people`` arguments that draw the registry's people, at twice the size so their labels can be
+    read, with a strip naming them; nothing (the picture as without a registry) when there is nobody to draw."""
     return dict(people=marks, maybe=maybe, scale=2, legend=True) if marks or maybe else {}
 
 
 def map_image(report: Report, gmap: GlobalMap, segment: int, path: str, **kwargs) -> Optional[str]:
     if report.fresh(path):
-        canvas = render_segment(gmap, segment, **kwargs)
+        canvas = (render_with_people if "people" in kwargs else render_segment)(gmap, segment, **kwargs)
         if canvas is None:
             return None
         cv2.imwrite(path, canvas)
@@ -270,8 +271,9 @@ def map_replay(report: Report, gmap: GlobalMap, episode: int, n_frames: int = 12
     seg = gmap.segments[si]
     frames = []
     for t in sorted(set(range(steps[0], steps[-1] + 1, max(1, (steps[-1] - steps[0]) // n_frames))) | {steps[-1]}):
-        canvas = render_segment(gmap, si, upto_step=t, bounds=bounds,
-                                people=people.map_people(gmap, si, upto_step=t) if people is not None else ())
+        marks = people.map_people(gmap, si, upto_step=t) if people is not None else []
+        canvas = (render_with_people(gmap, si, people=marks, upto_step=t, bounds=bounds) if marks
+                  else render_segment(gmap, si, upto_step=t, bounds=bounds))
         if canvas is None:
             continue
         ep = next((n for end, n in ends if t <= end), episode)
