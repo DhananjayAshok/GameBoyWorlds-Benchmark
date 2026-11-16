@@ -1011,14 +1011,17 @@ class NPCRegistry(StrategistArtifact):
         self.interrupted = conv.id if led_to == "episode_end" else None
         if led_to == "battle" and conv.npc in self.npcs and self.get(conv.npc).kind == "unknown":
             self.get(conv.npc).kind = "trainer"
-        if led_to == "battle" and conv.npc is None and conv.trigger == "npc_started":
-            # nobody next to the player spoke: a wild encounter or a trainer calling from afar, not a conversation
-            conv.trigger = "battle_start"
+        if led_to == "battle" and conv.npc is None and conv.sign is None:
+            # nobody known spoke and a battle followed straight away ("Wild X appeared!", or a trainer calling from
+            # afar): the start of a battle, not a conversation, so it is never read, summarised or counted
+            conv.trigger, conv.read, conv.summarised = "battle_start", True, True
             if conv.id in self.unattributed:
                 self.unattributed.remove(conv.id)
             self.stats["battle_starts"] += 1
+            self.stats["conversations"] -= 1
         self._open = None
-        self._summarise_now(conv)
+        if conv.trigger != "battle_start":
+            self._summarise_now(conv)
 
     def attach_model(self, vlm_caller: Optional[Callable[[str], Callable[..., Any]]]) -> None:
         """Let the registry call the model while a run goes on: each conversation is read and summarised the moment
