@@ -30,6 +30,15 @@ LABEL_FONT = 0.33
 PEOPLE_LEGEND = (LEGEND.replace("n person", "o maybe a person, not confirmed")
                  + "   1-9 a person (listed under the map)   + a person who may have moved")
 MAX_PEOPLE_LINES = 8
+#: When the map did not place the episode's opening screen, the people are told as remembered: "held" (a text box or
+#: a menu, no fade: the player stands where the map last placed them, so positions still hold) or "away" (a fade, or
+#: the map lost the player: they may be somewhere else, so no positions).
+WHERE_NOTES = {
+    "held": "Nobody can be recognised on the screen now (it is not free roam): this is the list as remembered, "
+            "measured from where you stand.",
+    "away": "The screen now could not be placed on the map (you may have gone through a door): this is the list as "
+            "remembered for the area the map last had you in, without positions.",
+}
 #: The text map's first line, as ``prompt_block`` writes it: the window follows it.
 MAP_HEADER = "MAP OF EVERYTHING YOU HAVE SEEN IN THIS AREA (north is up, one character per step):"
 
@@ -211,13 +220,16 @@ def people_window(gmap: GlobalMap, grid: Dict[Cell, str], rx: int = 12, ry: int 
     return "\n".join(rows)
 
 
-def people_lines(gmap: GlobalMap, ordered: List[Any]) -> List[str]:
-    """The people list under the text map, in the words of ``door_lines``; ``ordered`` from ``people_marks``."""
+def people_lines(gmap: GlobalMap, ordered: List[Any], where: str = "here") -> List[str]:
+    """The people list under the text map, in the words of ``door_lines``; ``ordered`` from ``people_marks``.
+    ``where``: "here" (the screen now was placed), else a key of ``WHERE_NOTES``."""
     if not ordered:
         return []
     px, py = gmap.pos
     lines = ["People in this area (x = steps to the right, y = steps up, measured from you; the quoted names are "
              "labels the player does not know):"]
+    if where in WHERE_NOTES:
+        lines.append(WHERE_NOTES[where])
     for i, m in enumerate(ordered[:MAX_PEOPLE_LINES]):
         dx, dy = m.square[0] - px, m.square[1] - py
         steps = abs(dx) + abs(dy)
@@ -228,19 +240,20 @@ def people_lines(gmap: GlobalMap, ordered: List[Any]) -> List[str]:
         else:
             talked = (f"{'probably ' if m.talked == 'probably' else ''}talked to here {m.times_talked} time(s)"
                       + (", the same words each time: nothing new to hear" if m.same_words else ""))
-        lines.append(f'- {i + 1} "{m.name}"{f" ({what})" if what else ""} at ({dx}, {dy}), {steps} steps '
-                     f'{sector(dx, dy) if steps else "here"}, {m.when}: {talked}.')
+        at = "" if where == "away" else f' at ({dx}, {dy}), {steps} steps {sector(dx, dy) if steps else "here"}'
+        lines.append(f'- {i + 1} "{m.name}"{f" ({what})" if what else ""}{at}, {m.when}: {talked}.')
     if len(ordered) > MAX_PEOPLE_LINES:
         lines.append(f"...and {len(ordered) - MAX_PEOPLE_LINES} more.")
     lines.append(f"Not yet talked to here: {sum(m.talked == 'no' for m in ordered)} of {len(ordered)}.")
     return lines
 
 
-def with_people(text: str, gmap: GlobalMap, people: Iterable[Any]) -> str:
+def with_people(text: str, gmap: GlobalMap, people: Iterable[Any], where: str = "here") -> str:
     """
     The map section ``prompt_block`` wrote (``text``, for ``gmap`` as it is now) with the registry's people of this
     area (``NPCRegistry.map_people``): numbered on the text map, the people legend, and the people list after the
     doors. A part of ``text`` that is not where it is looked for is left as it is; the list then goes at the end.
+    ``where`` as in ``people_lines``.
     """
     ordered, grid = people_marks(gmap, people)
     lines = text.split("\n")
@@ -251,7 +264,7 @@ def with_people(text: str, gmap: GlobalMap, people: Iterable[Any]) -> str:
             lines[at:at + len(plain)] = people_window(gmap, grid).split("\n")
     if "Legend: " + LEGEND in lines:
         lines[lines.index("Legend: " + LEGEND)] = "Legend: " + PEOPLE_LEGEND
-    added = people_lines(gmap, ordered)
+    added = people_lines(gmap, ordered, where)
     if added:
         doors = door_lines(gmap)
         squares = next((i for i, line in enumerate(lines) if line.startswith("Squares mapped here: ")), None)

@@ -30,6 +30,7 @@ from execution.perception.pokemon.grid import LEFT_COL, TOP_ROW, cell_box
 from execution.strategist.pokemon.global_map import (DIRECTIONS, OCCUPIED, PX_SLACK, GlobalMap, StepEvent,
                                                      grid_offset, grid_residual)
 from execution.strategist.pokemon import npc_model
+from execution.strategist.pokemon.npc_map import WHERE_NOTES
 from execution.strategist.pokemon.npc_model import display_name
 from execution.strategist.pokemon.npc_names import draw_name
 from utils import log_info, log_warn
@@ -1009,9 +1010,11 @@ class NPCRegistry(StrategistArtifact):
             when += "; not recognised on that square, which is on screen now: may have moved"
         return when
 
-    def people_block(self, gmap: GlobalMap, max_people: int = 8, max_chars: int = 1800) -> str:
+    def people_block(self, gmap: GlobalMap, max_people: int = 8, max_chars: int = 1800, where: str = "here") -> str:
         """The block the strategist reads before writing a task: who has been seen in the area it is in, where they
-        are from the player, and whether it has already talked to them (with what they said). Empty if nobody."""
+        are from the player, and whether it has already talked to them (with what they said). Empty if nobody.
+        ``where``: "here" (the screen now was placed), else a key of ``npc_map.WHERE_NOTES`` (told as remembered;
+        "away" without positions)."""
         here = [(npc, square) for npc, square in self.people_here(gmap)
                 if self._episode - self.last_seen(gmap, npc)[2].episode <= STALE_EPISODES
                 and self.look_of(npc).kind_hint != "object"]
@@ -1034,13 +1037,15 @@ class NPCRegistry(StrategistArtifact):
             else:
                 status = "not talked to yet"
             what = ", ".join(x for x in (npc.kind if npc.kind != "unknown" else "", npc.description[:70]) if x)
-            lines.append(f'- "{display_name(npc)}"{f" ({what})" if what else ""} at ({dx}, {dy}), {when}: {status}.')
+            at = "" if where == "away" else f" at ({dx}, {dy})"
+            lines.append(f'- "{display_name(npc)}"{f" ({what})" if what else ""}{at}, {when}: {status}.')
         if len(here) > max_people:
             lines.append(f"...and {len(here) - max_people} more.")
+        note = WHERE_NOTES[where] + "\n" if where in WHERE_NOTES else ""
         block = ("PEOPLE YOU HAVE SEEN IN THIS AREA (positions are steps from you: x right, y up). The quoted names are "
                  "labels for this list (unless one is a real name the person gave): the player does not know the labels, "
                  "so describe a person by where they stand, not by name. Talking to someone you have not talked to "
-                 "yet can give information or items.\n"
+                 "yet can give information or items.\n" + note
                  + "\n".join(lines))
         return "\n\n" + block[:max_chars]
 

@@ -187,6 +187,7 @@ class PokemonStrategist:
         if self.npcs is not None:
             self.npcs.attach_model(self._vlm_caller)         # conversations are read and summarised as they end
         self._map_placed = True                          # the map placed this episode's opening screen
+        self._people_where = "here"                      # how people are told: see npc_map.WHERE_NOTES
 
         if not resume:
             self.start_episode = 0
@@ -389,8 +390,11 @@ class PokemonStrategist:
     def _map_opening_screen(self, frame: np.ndarray) -> None:
         free = self._env.get_info()["pokemon_core"]["agent_state"] == AgentState.FREE_ROAM
         status = self.global_map.on_step(frame, self._identified if free else {}, free)
-        # people are told only where the map placed the screen: else they could belong to the area the map last knew
+        # the screen is read for people only where the map placed it; else people are told as remembered, with
+        # positions only if the player cannot have moved since the map last placed them (a text box, no fade)
         self._map_placed = status in PLACED_STATUS
+        self._people_where = ("here" if self._map_placed
+                              else "held" if not free and not self.global_map.faded else "away")
         if self.npcs is not None:
             try:
                 self.npcs.on_opening_screen(frame, self._identified if free else {}, free and self._map_placed)
@@ -542,13 +546,13 @@ class PokemonStrategist:
         marks = None
         if self.npcs is not None:                        # people not seen for very long are left out, as in [PEOPLE]
             marks = [m for m in self._people_on_map(gmap.resolve(gmap.segment, gmap.pos)[0])
-                     if self._map_placed and self.npcs._episode - m.last_seen[0] <= STALE_EPISODES]
+                     if self.npcs._episode - m.last_seen[0] <= STALE_EPISODES]
         block, override = prompt_block(self.global_map, list(self.global_map.new_cells_by_episode), local,
                                        explore=self._explore_now,
                                        episode=self.start_episode + self._episodes_run,
                                        failed_tasks=failed)
         if marks is not None:                            # the registry's people on the text map and under it
-            block = with_people(block, gmap, marks)
+            block = with_people(block, gmap, marks, self._people_where)
         if override is not None and override["kind"] == "edge":
             log_info(f"Global map: exploration overrides the task: head to ({override['dx']}, {override['dy']}) "
                      f"{override['sector']} in {self.global_map.area_label(override['area'])}.", self._parameters)
@@ -581,10 +585,10 @@ class PokemonStrategist:
         return bool(stuck)
 
     def _people_block(self) -> str:
-        if self.npcs is None or not self.global_map.current or not self._map_placed:
+        if self.npcs is None or not self.global_map.current:
             return ""
         try:
-            return self.npcs.people_block(self.global_map)
+            return self.npcs.people_block(self.global_map, where=self._people_where)
         except Exception as e:
             log_warn(f"NPC registry: the people block was skipped: {type(e).__name__}: {e}", self._parameters)
             return ""
