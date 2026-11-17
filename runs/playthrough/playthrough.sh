@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# One long-horizon playthrough. The invocation the slurm/playthrough_*.sh files wrap, so
-# they stop each carrying their own copy.
-#
-# Does NOT start a vLLM server. For --vlm_kind vllm, bring one up first.
+# One playthrough, then its debug reports. Does not start a vLLM server.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 source configs/config.env || { echo "Could not source configs/config.env"; exit 1; }
@@ -13,18 +10,19 @@ REQUIRED_ARGS=("name" "model")
 ARGS["game"]="pokemon_red"
 ARGS["init_state"]="initial"
 ARGS["vlm_kind"]="openrouter"
-ARGS["max_episodes"]=75
+ARGS["max_episodes"]=400
 ARGS["supervisor_max_steps"]=10
 ARGS["subgoal_every"]=5
 ARGS["report_detail"]="strategist"
 ARGS["controller_variant"]="state_wise"
-ARGS["resume"]=true
-# Render the debug view/diff reports once the playthrough returns. On by default: they are
-# cheap markdown over artifacts already on disk, and every per-run slurm job wanted them.
+ARGS["save_video"]=true
 ARGS["debug_reports"]=true
-# Which artifact those reports cover. "all" passes no --artifact, so debug.py reports on
-# every artifact the run saved.
 ARGS["debug_artifact"]="all"
+OPTIONAL_FLAGS=(override_goal resume_run
+    strategist_vlm_model strategist_vlm_kind
+    supervisor_vlm_model supervisor_vlm_kind
+    executor_vlm_model executor_vlm_kind)
+for flag in "${OPTIONAL_FLAGS[@]}"; do ARGS["$flag"]="none"; done
 
 # --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
@@ -68,12 +66,12 @@ for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"
 done
 
-# --resume/--fresh is a click flag pair, not a --flag value option.
-if [[ "${ARGS["resume"]}" == "true" || "${ARGS["resume"]}" == "yes" || "${ARGS["resume"]}" == "y" ]]; then
-    resume_flag="--resume"
-else
-    resume_flag="--fresh"
-fi
+optional_flags=()
+for flag in "${OPTIONAL_FLAGS[@]}"; do
+    if [[ "${ARGS[$flag]}" != "none" ]]; then
+        optional_flags+=("--$flag" "${ARGS[$flag]}")
+    fi
+done
 
 python run_playthrough.py \
     --game "${ARGS["game"]}" \
@@ -86,12 +84,11 @@ python run_playthrough.py \
     --subgoal_every "${ARGS["subgoal_every"]}" \
     --report_detail "${ARGS["report_detail"]}" \
     --controller_variant "${ARGS["controller_variant"]}" \
-    $resume_flag
+    --save_video "${ARGS["save_video"]}" \
+    "${optional_flags[@]}"
 run_status=$?
 
-# Reports are rendered even when the playthrough exited non-zero: a run killed by the wall
-# clock has written every episode up to that point, and that is exactly when the reports are
-# wanted. The run's own status is what this script exits with.
+# Reports are rendered even when the playthrough failed; this script exits with its status.
 if [[ "${ARGS["debug_reports"]}" == "true" || "${ARGS["debug_reports"]}" == "yes" ]]; then
     artifact_flag=()
     if [[ "${ARGS["debug_artifact"]}" != "all" ]]; then

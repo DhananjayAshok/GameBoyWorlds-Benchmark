@@ -1,14 +1,3 @@
-"""
-Every prompt used by a supervisor.
-
-Supervisor prompts live here, not on the classes that send them: none is ever overridden,
-and each belongs to exactly one supervisor.
-
-Executor prompts stay as class attributes, since they are assembled per arm —
-:class:`~execution.executors.executor.PolicyExecutor` owns one step template and the action
-and history policies fill its named slots.
-"""
-
 CRITIQUE_SLICE_PROMPT = """You are analysing a segment of a failed attempt to complete a task in a game of [GAME].
 
 Task: "[TASK]"
@@ -37,15 +26,6 @@ Respond in exactly this format:
 Critique: <what went wrong overall>
 Hint: <one or two sentence hint for a better approach>
 [STOP]"""
-
-# --- Plan arm (InfoSubgoalSupervisor) -----------------------------------------------------
-# Defined in utils.parsing alongside parse_steps and re-exported here, so the token the
-# planner prompt asks for and the token the code splits on cannot drift apart.
-
-
-# The planner writes for an executor that will be handed each step in isolation, with no
-# sight of the steps around it, and that must decide for itself when its step is finished.
-# Both constraints are unusual enough that the prompt states them outright.
 
 PLAN_PROMPT = """You are planning how a player should complete a task in a game of [GAME].
 
@@ -236,10 +216,6 @@ Flawed: <yes or no>
 Plan: <the replacement steps separated by [STEP], or NONE if not flawed>
 [STOP]"""
 
-
-
-# --- Checker arm (AttemptCheckerSupervisor) --------------------------------------------
-
 DESCRIBE_SLICE_PROMPT = """You are watching frames [START_IDX]-[END_IDX] of [TOTAL] total frames from a game of [GAME].
 
 Describe what the player does and what changes visually in this segment. Focus on actions taken and their outcomes. Do not assume any particular goal.
@@ -276,11 +252,7 @@ Success: <yes or no>
 Safe success point: <frame number, or N/A if never completed or unknown>
 [STOP]"""
 
-# Fills [GOAL_CONDITION_NOTE] when the caller supplied a goal condition. When it did not,
-# the slot is replaced with the empty string instead: the judge must never be told to treat
-# "the goal condition" as a strict guide while none is shown, which is what the prompt did
-# before this slot existed. Carries its own surrounding blank lines so the paragraph spacing
-# is right in both cases.
+# Carries its own surrounding blank lines so the spacing is right when the slot is left empty.
 JUDGE_GOAL_CONDITION_NOTE = """
 The goal condition for this task is: "[GOAL_CONDITION]"
 
@@ -288,13 +260,7 @@ The goal condition is a strict guide, and only if the player has basically achie
 """
 
 
-# --- Knowledge selection (InfoSubgoalSupervisor) ------------------------------------------
-# [FRAME_NOTE] and [EVIDENCE_NOTE] vary with whether the entry carries a representative
-# frame. A document distilled from trajectories has one per entry; a parametric document
-# (written from the model's priors, never having seen a screen) has none. The two slots are
-# filled by _judge_relevance so the prompt never claims an image that was not sent — a
-# mismatch there is invisible in the reply and silently degrades every verdict.
-
+# [FRAME_NOTE] and [EVIDENCE_NOTE] must match whether an entry frame is actually sent.
 RELEVANCE_PROMPT = """You are deciding whether a piece of recorded knowledge about [GAME] is relevant to the situation a player is in right now.
 
 The player's current task is: "[TASK]"

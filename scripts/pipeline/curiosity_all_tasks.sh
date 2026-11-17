@@ -15,7 +15,6 @@ REQUIRED_ARGS+=("run_name")
 populate_dict CURIOSITY_TASKS_DEFAULTS ARGS
 ARGS["overwrite_annotation"]=false
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -50,7 +49,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 if [[ "${ARGS["run_name"]}" == "none" ]]; then
     echo "Error: --run_name cannot be 'none'."; usage
@@ -78,11 +76,9 @@ for init_state in "${init_states_arr[@]}"; do
                               --init_state "${init_state_group}")")
 done
 
-# Combine every init_state's grouped trajectories into one pkl, then annotate them in a
-# single infer_tasks call. infer_tasks keys its output only on run_name (no init_state),
-# so a per-init_state infer loop would let only the first state's annotation survive —
-# combining first is what makes all states contribute. The combined dir is "all", which
-# collides if a game ever has a real init_state named "all" (see combine_grouped_trajectories.py).
+# Combine every init_state's grouped trajectories before a single infer_tasks call:
+# infer_tasks keys its output only on run_name, so a per-init_state loop would overwrite.
+# The combined dir is "all", which collides with a real init_state named "all".
 combined_dir="$(path_of grouped_dir --game "$game" --run_name "${ARGS["run_name"]}")/all"
 input_paths=$(IFS=,; echo "${grouped_pkls[*]}")
 python "$PROJECT_ROOT/python_funcs.py" combine_trajectories \
@@ -98,8 +94,6 @@ ARGS["overwrite"]="$saved_overwrite"
 bash scripts/vlm/infer_tasks.sh $infer_flags || exit 1
 
 model_save_name=$(model_save_name "${ARGS["model_name"]}")
-# Terminal artifact of the curiosity vertical: <stem>.json + <stem>.pkl. build_info.sh
-# consumes this stem.
 echo "curiosity trajectory stem: $(path_of info_source_stem --game "$game" \
         --model_name "${ARGS["model_name"]}" --run_name "${ARGS["run_name"]}" \
         --executor single_actions --controller_variant low_level --source curiosity)"

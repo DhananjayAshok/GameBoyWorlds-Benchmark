@@ -84,3 +84,66 @@ Read-only diagnostics over saved artifacts via `debug.py`; reports land under `<
 | `llm-utils.sh` | Runs a command inside the `llm-utils` venv. |
 | `clean_cache.sh` | Clears CleanRL artifacts and temporary emulator sessions. |
 | `unsafe_clean_all.sh` | Wipes all storage; guarded by an exit you must remove first. |
+
+---
+
+## Playthrough (`run_playthrough.py`, `execution/strategist/`)
+
+| File | What it does |
+|------|-------------|
+| `run_playthrough.py` | Builds one emulator session and runs `PokemonStrategist` on it. |
+| `execution/strategist/pokemon/strategist.py` | The episode loop: perceive, stuck check, plan, dispatch, run a supervisor, review. |
+| `execution/strategist/pokemon/goals.py` | The goal tree, subgoal planning and the completion check. |
+| `execution/strategist/pokemon/knowledge.py` | The knowledge tree; `remember` files a fact, `recall` looks one up. |
+| `execution/strategist/pokemon/guide.py` | Event-triggered rules and battle tips; defeat reflection. |
+| `execution/strategist/pokemon/notepad.py` | Free-text working memory. |
+| `execution/strategist/pokemon/global_map/` | The map built from frames. `registration` aligns consecutive frames, `model` stores cells and areas and merges them, `env` wraps the environment so every step updates the map, `routes` plans paths, `text` and `render` draw it for prompts and reports, `judges` holds its model calls, `exploration` decides when to explore. |
+| `execution/strategist/pokemon/asking.py` | One model question with retries that tell the model what was wrong with its reply. |
+| `execution/strategist/pokemon/prompts.py` | Every strategist prompt. |
+| `execution/strategist/report.py` | The per-episode archive (`report.pkl.gz`). |
+| `execution/artifact.py` | Base class for the saved artifacts: one pickle per episode in which it changed. |
+| `runs/playthrough/playthrough.sh` | One playthrough, then `debug.py playthrough view` and `diff`. |
+| `runs/playthrough/all.sh` | Every Pokémon game in `runs/games.sh`, one after another, on one model. |
+
+A run writes to three places:
+
+1. **State**: `<storage_dir>/playthrough_artifacts/<game>/strategist/<name>/`, holding `episode_<n>/*.pkl`, `episode_<n>/report.pkl.gz` and `provenance_<stamp>.json`.
+2. **Video**: under GameBoyWorlds' storage. The provenance file's `session_dir` is relative to `paths.playthrough_sessions_root(game=...)`; `paths.playthrough_video(session_dir, game=...)` resolves it.
+3. **Emulator save states**: under GameBoyWorlds' `rom_data/.../states/`, one per episode, named `custom_strategist<name><n>.state`.
+
+`python sync_data.py pull --set playthrough` (and `playthrough_videos`, `playthrough_states`) fetches published runs.
+
+---
+
+## Environment server and sandbox (`env_server/`, `containers/`, `agent_workspace/`)
+
+| File | What it does |
+|------|-------------|
+| `run_env_server.py` | CLI: `serve`, `check`, `generate_splits`, `open_session`, `session_info`. |
+| `env_server/server.py` | The HTTP handler and bearer-token checks. |
+| `env_server/sessions.py` | One emulator per session; applies the policy to reset, step, save and load. |
+| `env_server/policy.py` | The `dev` and `test` policies. |
+| `env_server/splits.py` | Generates, loads and verifies `configs/splits/benchmark_splits.json`. |
+| `env_server/codec.py` | What a response may contain: the frame as PNG, and full or scored-only state. |
+| `env_server/recorder.py` | Host-side record of every step when `--record_dir` is set. |
+| `env_server/model_gateway.py` | The sandbox's model endpoint; holds the API key on the host. |
+| `env_server/check.py` | Asserts the policies and the HTTP layer against live sessions. |
+| `containers/sandbox.def` | The image. Everything it pins is in `containers/versions.env`. |
+| `containers/run_sandbox.sh` | Starts the server and gateway, runs a command in the sandbox, cleans up. |
+| `containers/verify_sandbox.sh` | Checks a built image's contents and isolation. |
+| `containers/sandbox_run.sh`, `netbridge.py` | Inside the image: expose the two Unix sockets as loopback ports, then run the command. |
+| `containers/prime_agent_*.sh`, `kernel_*`, `seed_kernel_skills.py` | prime-agent specifics: the vendored installer, and the pinned Python environment it runs tools in. |
+| `agent_workspace/envctl`, `envclient.py` | The client the agent is given. |
+
+Routes, all JSON with `Authorization: Bearer <token>`. The server token reaches everything; a session's own token reaches only that session.
+
+| Route | What it does |
+|-------|-------------|
+| `GET /tasks` | Tasks the policy lists. |
+| `GET /scenes` | Free-play start states, `{game: [init_state]}`. |
+| `POST /sessions` | Open a session: `{"task_id": ...}` or `{"game": ..., "init_state": ...}`, optional `"state": true`. Returns the session and its token. |
+| `GET /sessions/<id>` | Status: steps, `episode_over`, `success`. |
+| `POST /sessions/<id>/reset`, `step`, `observe`, `save`, `load` | `step` takes `{"action": ...}`, `load` takes `{"handle": ...}`. |
+| `DELETE /sessions/<id>` | Close it. |
+
+To use a different agent, add its install to `sandbox.def` and pass its command after `--` to `run_sandbox.sh`. It needs to speak the OpenAI chat-completions API at `http://127.0.0.1:8720/v1`.

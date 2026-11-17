@@ -1,39 +1,3 @@
-"""
-Benchmark diagnostics: per-episode frame-by-frame trajectories, and a paired
-base-vs-fine-tuned diff.
-
-Input
------
-<results_dir>/benchmark/<game>/<executor>_<model>.csv
-    game, task, success, n_steps, n_invalid, subgoals_reached, all_subgoals, report,
-    session_dirs
-`success` is the environment's own verdict (termination_reason == "terminated"), not a
-VLM judge — this is the only ground-truth success signal in the pipeline.
-
-<session_dir>/report.pkl.gz    (session_dir from the row's `session_dirs`)
-    The archived :class:`~execution.report.SupervisorReport`. **This is what the report is
-    built from.** Its ``event_log`` interleaves the supervisor's own calls with the full
-    report of every executor leg, and each call record carries the images it saw, its
-    prompt, the raw response and the steps it produced.
-
-The CSV's rendered `report` column is still written and useful for grepping; nothing here
-parses it.
-
-Episode identity
-----------------
-**A task string is not an episode key.** The benchmark anchors the same task to more than
-one init_state, so several rows of one CSV can carry the same `task`. Episodes are keyed on
-**row position** (see :func:`_paired_index`) and their artifacts located through the row's
-own `session_dirs`.
-
-Output
-------
-<results_dir>/debug/<game>/benchmark/<arm>/episodes_<model>.md   (one per model)
-<results_dir>/debug/<game>/benchmark/<arm>/comparison.md
-where <arm> is the --supervisor, suffixed with --extra_name when the run used one.
-Frames go to <storage_dir>/tmp/debug_frames/<game>/benchmark/<model>/<task>/.
-"""
-
 import ast
 import gzip
 import json
@@ -53,7 +17,7 @@ from python_scripts.paths import BENCHMARK_SUPERVISORS, REPORT_FILENAME, Paths
 
 
 def _as_list(value):
-    """subgoals_reached / all_subgoals are stringified python lists in the CSV."""
+    # subgoals_reached and all_subgoals are stringified python lists in the CSV.
     if isinstance(value, list):
         return value
     if not isinstance(value, str) or not value.strip():
@@ -66,8 +30,7 @@ def _as_list(value):
 
 
 def _load(path: str) -> pd.DataFrame:
-    # Row position is the episode's identity, so the index must stay the positional one
-    # read_csv assigns — see _paired_index.
+    # Row position is the episode's identity, so the index must stay positional.
     frame = pd.read_csv(path).reset_index(drop=True)
     frame["success"] = frame["success"].astype(bool)
     frame["subgoals_reached_n"] = frame["subgoals_reached"].map(lambda v: len(_as_list(v)))
@@ -81,15 +44,7 @@ def _load(path: str) -> pd.DataFrame:
 
 def _paired_index(a: pd.DataFrame, label_a: str, b: pd.DataFrame, label_b: str,
                   parameters: dict) -> list[int]:
-    """Row positions pairing each episode in *a* with the same episode in *b*.
-
-    Paired on position, not task string: CSV row *i* is benchmark row *i*, and a short CSV is
-    a prefix of a long one. The task strings are checked at every shared position and a
-    mismatch is fatal.
-
-    :return: The shared row positions.
-    :rtype: list
-    """
+    # Paired on row position, not task string: the same task can anchor to more than one init_state.
     n = min(len(a), len(b))
     if n == 0:
         log_error(
@@ -109,13 +64,7 @@ def _paired_index(a: pd.DataFrame, label_a: str, b: pd.DataFrame, label_b: str,
     return list(range(n))
 
 
-# ---------------------------------------------------------------------------
-# The archive
-# ---------------------------------------------------------------------------
-
-
 def _session_dir(row):
-    """The emulator session directory recorded on one CSV row, or None."""
     raw = row.get("session_dirs")
     if not isinstance(raw, str) or not raw.strip():
         return None
@@ -127,7 +76,6 @@ def _session_dir(row):
 
 
 def _load_report(row):
-    """The archived SupervisorReport for one episode, or None if it has none."""
     session = _session_dir(row)
     if session is None:
         return None
@@ -139,20 +87,12 @@ def _load_report(row):
 
 
 def _require_archives(frame: pd.DataFrame, csv_path: str, parameters: dict) -> dict:
-    """Load every episode's report, refusing a CSV that predates the archive. A few missing
-    archives are tolerated with a warning.
-
-    :return: Reports keyed by row position.
-    :rtype: dict
-    """
     if "session_dirs" not in frame.columns:
         log_error(
             f"{csv_path} has no session_dirs column, so its episodes cannot be located. It "
             "was written before the report archive existed — re-run the benchmark to get one.",
             parameters,
         )
-    # Keyed on row position, not task: two rows can share a task string and would otherwise
-    # collapse onto one archive.
     reports = {}
     for index, row in frame.iterrows():
         report = _load_report(row)
@@ -171,27 +111,12 @@ def _require_archives(frame: pd.DataFrame, csv_path: str, parameters: dict) -> d
     return reports
 
 
-# ---------------------------------------------------------------------------
-# Rendering
-# ---------------------------------------------------------------------------
-
-
 def _slug(text: str) -> str:
     return "".join(c if c.isalnum() else "_" for c in str(text).lower()).strip("_")[:60]
 
 
 def _storage_link(report_dir: str, name: str, target: str, parameters: dict) -> str:
-    """A symlink inside the report dir pointing at *target* on storage.
-
-    Frames and videos live on ``/project2`` while the markdown lives under ``results/`` on
-    the home filesystem — eight ``../`` levels apart. That relative path resolves fine on
-    disk, but every markdown renderer refuses to load an image from outside the workspace
-    root, so the images silently do not appear. One symlink per report keeps the links short
-    and inside the tree while the bytes stay on storage.
-
-    Refuses to replace a real directory: that would be deleting whatever a previous run or a
-    person put there. A stale symlink pointing somewhere else is just repointed.
-    """
+    # Markdown renderers refuse images outside the workspace root, so storage is symlinked into the report dir.
     link = os.path.join(report_dir, name)
     if os.path.islink(link):
         if os.path.realpath(link) == os.path.realpath(target):
@@ -208,17 +133,10 @@ def _storage_link(report_dir: str, name: str, target: str, parameters: dict) -> 
 
 
 def _via_link(path: str, target_root: str, link_root: str) -> str:
-    """Rewrite a storage path to go through the report's symlink instead."""
     return os.path.join(link_root, os.path.relpath(path, target_root))
 
 
 def _video_path(row) -> str | None:
-    """The video recorded for one episode, read from the row's own ``session_dirs``, which is
-    also where ``save_report`` writes the archive.
-
-    :return: Path to the video, or ``None``.
-    :rtype: str | None
-    """
     session = _session_dir(row)
     if session is None:
         return None
@@ -227,11 +145,6 @@ def _video_path(row) -> str | None:
 
 
 def _video_markdown(row, video_roots, report_dir: str) -> str | None:
-    """Markdown link to this episode's video, or None when it has none.
-
-    Links through the report's ``videos`` symlink when the session sits under it, and falls
-    back to a literal path when it does not — a CSV can name sessions for another game.
-    """
     video = _video_path(row)
     if video is None:
         return None
@@ -244,7 +157,6 @@ def _video_markdown(row, video_roots, report_dir: str) -> str | None:
 
 
 def _save_frame(frame, directory: str, name: str, overwrite: bool):
-    """One numpy frame to PNG, returning its path (or None if it could not be rendered)."""
     path = os.path.join(directory, f"{name}.png")
     if os.path.exists(path) and not overwrite:
         return path
@@ -258,11 +170,8 @@ def _save_frame(frame, directory: str, name: str, overwrite: bool):
 
 def _executor_call_blocks(call, index: int, frames_dir: str, report_dir: str,
                           prefix: str, overwrite: bool) -> list:
-    """One executor VLM call: what it saw, what it was asked, what it said, what it did."""
     lines = [md.para(f"**call {index}** · tag `{call.tag}`")]
-    # A world-model call shows the current screen plus one prediction per action and answers
-    # with an image number, not an Action: line. Its record says which image is which.
-    # Read defensively: a ScriptedActionRecord shares this log and has no such field.
+    # getattr: a ScriptedActionRecord shares this log and has no world_model field.
     decision = getattr(call, "world_model", None)
 
     for i, image in enumerate(call.images):
@@ -285,8 +194,7 @@ def _executor_call_blocks(call, index: int, frames_dir: str, report_dir: str,
         action = parse_action_line(call.response)
         lines.append(md.para(f"parsed action: `{action if action else 'none'}`"))
 
-    # Every step, not just the last: one call can own several (the sequence policy), and
-    # the old text parser kept only the final one.
+    # Every step, not just the last: one call can own several.
     if call.steps:
         lines.append(md.code("\n".join(
             f"{i + 1:>3}  {_step_summary(step)}" for i, step in enumerate(call.steps)
@@ -304,7 +212,6 @@ def _executor_call_blocks(call, index: int, frames_dir: str, report_dir: str,
 
 
 def _event_blocks(report, frames_dir: str, report_dir: str, overwrite: bool) -> list:
-    """The whole event log in order: supervisor calls and executor legs, interleaved."""
     lines = []
     leg = 0
     for position, event in enumerate(report.event_log):
@@ -335,14 +242,11 @@ def _event_blocks(report, frames_dir: str, report_dir: str, overwrite: bool) -> 
 
 def _episode_section(index: int, row, report, model, report_dir,
                      frames_root: str, video_roots, overwrite: bool) -> str:
-    """One episode: its outcome, its video, then every call frame by frame."""
     subgoals = _as_list(row["subgoals_reached"])
     all_subgoals = _as_list(row["all_subgoals"])
     task = row["task"]
 
     blocks = [
-        # The row number disambiguates the episodes that share a task string; it is also the
-        # benchmark table's own row.
         md.h2(f"[{index}] {task}"),
         md.bullets([
             f"success: **{row['success']}**",
@@ -368,9 +272,7 @@ def _episode_section(index: int, row, report, model, report_dir,
     world_model_summary = summarize_world_model(report.world_model_decisions)
     if world_model_summary:
         blocks.append(md.code(world_model_summary))
-    # Prefixed with the row number: without it two episodes sharing a task string write into
-    # one directory, and the second silently reuses the first's PNGs whenever --overwrite is
-    # not set — a report showing the wrong screens, with nothing to indicate it.
+    # Prefixed with the row number: episodes sharing a task string must not share a frames directory.
     frames_dir = os.path.join(frames_root, _slug(model), f"{index:03d}_{_slug(task)}")
     os.makedirs(frames_dir, exist_ok=True)
     blocks += _event_blocks(report, frames_dir, report_dir, overwrite)
@@ -404,16 +306,11 @@ def debug_benchmark(obj, model_name, compare_model, bench_game, max_episodes, su
         model_name=model_name, output_dir=obj["output_dir"],
         mode=obj["mode"],
     )
-    # Keyed on the arm being read: every supervisor writes its own CSV for the same game,
-    # executor and model, and --extra_name splits one supervisor further (the retrieval arm's
-    # docs_mode). Without both in the path, two arms overwrite each other's episodes_<model>.md.
     arm = supervisor if obj["extra_name"] is None else f"{supervisor}_{obj['extra_name']}"
     report_dir = paths.debug_dir("benchmark", arm)
     overwrite = obj["overwrite"]
     game = paths.game if bench_game == "none" else bench_game
 
-    # Frames and videos are on storage; the markdown is not. Link both into the report dir so
-    # the image and video targets stay inside the tree — see _storage_link.
     frames_root = _storage_link(
         report_dir, "frames", paths.debug_frames_dir("benchmark"), paths.parameters)
     gbw = paths.gameboy_worlds_storage()
@@ -446,7 +343,6 @@ def debug_benchmark(obj, model_name, compare_model, bench_game, max_episodes, su
 
     written = []
 
-    # ---------------- (a) per-episode trajectories ----------------
     for model, frame, reports in [(base_model, base, base_reports),
                                   (ft_model, finetuned, ft_reports)]:
         if frame is None:
@@ -479,12 +375,9 @@ def debug_benchmark(obj, model_name, compare_model, bench_game, max_episodes, su
         log_info(f"[benchmark] wrote {path}")
         written.append(path)
 
-    # ---------------- (b) paired comparison ----------------
     if finetuned is not None:
         paired = _paired_index(base, base_path, finetuned, ft_path, paths.parameters)
         b, f = base.loc[paired], finetuned.loc[paired]
-        # Whatever the longer CSV has past the common prefix — a full sweep paired against a
-        # --n_tasks run, which results_path keeps in its own _first<n> file.
         dropped_base = [i for i in base.index if i >= len(paired)]
         dropped_ft = [i for i in finetuned.index if i >= len(paired)]
 
@@ -508,7 +401,6 @@ def debug_benchmark(obj, model_name, compare_model, bench_game, max_episodes, su
         ])
 
         def _step_lines(report) -> str:
-            """Every step the episode took, in order, from its archive."""
             if report is None:
                 return "_(no archive)_"
             steps = [_step_summary(step)

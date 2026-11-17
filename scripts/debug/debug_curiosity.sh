@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Summarises the curiosity/grouping stage from the saved grouped-trajectory pickles:
-# per-init_state group and trajectory counts, group-size inequality (Gini + Lorenz),
-# curiosity reward distributions, and per-group frame strips. Writes
-# <results_dir>/debug/<game>/curiosity/report.md. Read-only; needs no model.
+# Summarises the curiosity/grouping stage from the saved grouped-trajectory pickles: group
+# and trajectory counts, reward distributions, and per-group frame strips. Writes
+# <results_dir>/debug/<game>/curiosity/report.md. Needs no model.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -18,7 +17,6 @@ ARGS["max_groups"]=0
 ARGS["max_traj_per_group"]=3
 ARGS["max_gb"]=8.0
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -53,9 +51,7 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"

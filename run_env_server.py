@@ -1,14 +1,5 @@
-"""
-The environment server: one policy (dev or test), on host:port or on a Unix socket.
+import json
 
-    python run_env_server.py generate_splits
-    python run_env_server.py serve --kind dev --port 8710 --token_file <file>
-    python run_env_server.py serve --kind test --unix_socket <dir>/envserver.sock --token_file <file>
-
-dev lists and opens train + val tasks, allows free play, the full tracker state and save/load. test opens test +
-test_env only, lists nothing, and returns only task success and subgoal progress. The policy is this flag; no request
-can change it. Serve an isolated sandbox over --unix_socket: on TCP, anything on the node can reach the server.
-"""
 import click
 
 from utils import load_parameters
@@ -16,12 +7,13 @@ from utils import load_parameters
 
 @click.group()
 def main():
-    pass
+    """The environment server: emulator sessions over HTTP, under a dev or test policy."""
 
 
 @main.command("generate_splits")
 @click.option("--show", is_flag=True, help="Print the per-game counts.")
 def generate_splits(show):
+    """Write configs/splits/benchmark_splits.json from split_config.yaml."""
     from env_server import splits
     parameters = load_parameters()
     table = splits.generate(parameters=parameters)
@@ -54,24 +46,57 @@ def check():
 @click.option("--max_sessions", default=4, show_default=True)
 @click.option("--idle_seconds", default=1800, show_default=True, help="Close a session after this long unused.")
 @click.option("--max_steps", default=200, show_default=True, type=int,
-              help="The per-episode step budget. 200 is run_benchmark.py's budget, which is what a task is scored "
-                   "against; gameboy_worlds' own default is 10000, which is not a benchmark budget at all.")
+              help="The per-episode step budget; 200 is what run_benchmark.py scores a task against.")
 @click.option("--record_dir", default=None, help="Record every session's full state here. Off by default.")
 def serve(kind, host, port, unix_socket, token_file, max_sessions, idle_seconds, max_steps, record_dir):
+    """Serve one policy on host:port or on a Unix socket."""
     from env_server.policy import Policy
     from env_server.server import serve as serve_forever
     from env_server.sessions import Sessions
     if (port is None) == (unix_socket is None):
         raise click.ClickException("give exactly one of --port or --unix_socket")
     parameters = load_parameters()
+    sessions = Sessions(policy=Policy.of(kind=kind), max_sessions=max_sessions, idle_seconds=idle_seconds,
+                        record_dir=record_dir, max_steps=max_steps, parameters=parameters)
+    serve_forever(sessions=sessions, host=host, port=port, token=_read_token(token_file),
+                  parameters=parameters, unix_socket=unix_socket)
+
+
+def _read_token(token_file: str) -> str:
     with open(token_file) as f:
         token = f.read().strip()
     if not token:
         raise click.ClickException(f"{token_file} is empty")
-    sessions = Sessions(policy=Policy.of(kind=kind), max_sessions=max_sessions, idle_seconds=idle_seconds,
-                        record_dir=record_dir, max_steps=max_steps, parameters=parameters)
-    serve_forever(sessions=sessions, host=host, port=port, token=token, parameters=parameters,
-                  unix_socket=unix_socket)
+    return token
+
+
+def _request(*, unix_socket: str, token_file: str, method: str, path: str, body=None) -> dict:
+    from env_server.unix_http import unix_request
+    status, reply = unix_request(socket_path=unix_socket, method=method, path=path,
+                                 token=_read_token(token_file), body=body)
+    if status != 200:
+        raise click.ClickException(f"{method} {path} returned {status}: {reply.get('error', reply)}")
+    return reply
+
+
+@main.command("open_session")
+@click.option("--unix_socket", required=True)
+@click.option("--token_file", required=True)
+@click.option("--task_id", required=True)
+def open_session(unix_socket, token_file, task_id):
+    """Open a task session on a running server and print it, with its session token, as JSON."""
+    click.echo(json.dumps(_request(unix_socket=unix_socket, token_file=token_file, method="POST",
+                                   path="/sessions", body={"task_id": task_id})))
+
+
+@main.command("session_info")
+@click.option("--unix_socket", required=True)
+@click.option("--token_file", required=True)
+@click.option("--session", required=True)
+def session_info(unix_socket, token_file, session):
+    """Print a session's status (steps, episode_over, success) as JSON."""
+    click.echo(json.dumps(_request(unix_socket=unix_socket, token_file=token_file, method="GET",
+                                   path=f"/sessions/{session}")))
 
 
 if __name__ == "__main__":

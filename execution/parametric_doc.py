@@ -1,24 +1,3 @@
-"""
-The parametric document: what the model already believes about a game, in document form.
-
-The second way an :class:`~execution.info_doc.InfoDocument` can come into existence. The
-first is ``vlm_scripts/build_info.py``, which distils one out of real trajectories. This
-module asks the model to write one from its own weights, given nothing but the game's name —
-no frames, no playthroughs, no retrieval of any kind.
-
-It is the control for the plan arm: same document schema, same relevance pass, same planner,
-same budgets, differing only in where the entries came from.
-
-**Nothing here is verified against the game.** The model will confabulate as confidently as
-it recalls, which is why the document is written to disk and kept — a run whose plans came
-from invented level geometry has to remain auditable.
-
-**Task entries only.** The image section is left empty, so
-``InfoSubgoalSupervisor._candidates`` yields nothing for it. Every entry has ``frame=None``,
-which :func:`~execution.info_doc.resolve_frame` maps to ``None`` and the relevance call
-handles with its no-frame prompt wording.
-"""
-
 from __future__ import annotations
 
 import json
@@ -69,11 +48,6 @@ Respond with ONLY a JSON array, no prose before or after it, in exactly this sha
 
 
 def _extract_json_array(output: str) -> Optional[list]:
-    """Pull the JSON array out of a reply, tolerating fenced or prefaced output.
-
-
-    :return: The decoded list, or ``None`` if nothing parseable was found.
-    """
     fenced = re.search(r"```(?:json)?\s*(.*?)```", output, re.DOTALL)
     candidate = fenced.group(1) if fenced else output
 
@@ -89,10 +63,6 @@ def _extract_json_array(output: str) -> Optional[list]:
 
 
 def _entries_from_payload(payload: list, parameters: Optional[dict]) -> List[Entry]:
-    """Turn the decoded JSON into entries, dropping items that carry no usable knowledge.
-
-    An item needs a category and at least one insight to be worth keeping
-    """
     entries = []
     for item in payload:
         if not isinstance(item, dict):
@@ -106,7 +76,6 @@ def _entries_from_payload(payload: list, parameters: Optional[dict]) -> List[Ent
             description=str(item.get("description") or "").strip(),
             examples=[str(e).strip() for e in (item.get("examples") or []) if str(e).strip()],
             insights=insights,
-            # No frame, no init_states: this document never saw the game run.
             frame=None,
         ))
 
@@ -124,17 +93,6 @@ def generate_parametric_document(
     max_new_tokens: int = 4000,
     parameters: Optional[dict] = None,
 ) -> InfoDocument:
-    """
-    Ask *vlm* to write a document for *game* from its own knowledge.
-
-
-    :param game: The game identifier, as the benchmark names it.
-    :param vlm: The model to ask. Not a supervisor call — no episode is running yet, so
-        there is no :class:`~execution.report.SupervisorReport` for it to land on.
-    :param n_categories: Upper bound on task categories requested.
-    :param max_new_tokens: Token budget for the single generation call.
-    :return: A document with ``provenance.source == "parametric"`` and an empty image section.
-    """
     result = vlm.infer(
         texts=PARAMETRIC_PROMPT
             .replace("[GAME]", game)
@@ -154,12 +112,10 @@ def generate_parametric_document(
     document.set_entries(TASK_SECTION, entries)
     document.provenance = Provenance(
         source=PARAMETRIC_SOURCE,
-        # Neither exists for a document that was not distilled from a run.
         executor=None,
         model=getattr(vlm, "_model_name", None),
         trajectory_stem=None,
         built_at=datetime.now(timezone.utc).isoformat(),
-        # What writing this document cost. Must be serialised: callers get a reloaded copy.
         input_tokens=meta["input_tokens"],
         output_tokens=meta["output_tokens"],
     )
@@ -168,9 +124,6 @@ def generate_parametric_document(
 
 def _warn_if_empty(document: InfoDocument, game: str, path: str, cached: bool,
                    parameters: Optional[dict]) -> None:
-    """
-    Say loudly that the parametric document carries no task entries.
-    """
     if document.task_entries:
         return
     source = "the cached document" if cached else "the model's reply"
@@ -196,10 +149,6 @@ def load_or_generate_parametric_document(
     max_new_tokens: int = 4000,
     parameters: Optional[dict] = None,
 ) -> InfoDocument:
-    """Return the cached document at *path*, generating and writing it if absent.
-
-    :param path: Where the document is cached, from ``Paths.parametric_doc()``.
-    """
     if os.path.exists(path):
         document = load_document(path, parameters=parameters)
         log_info(f"[parametric] reusing cached document for '{game}' — "
@@ -213,9 +162,7 @@ def load_or_generate_parametric_document(
         parameters=parameters,
     )
 
-    # Written even when empty: the reply is the evidence for why a run planned without
-    # insights, and regenerating it to look at would cost another call and might not
-    # reproduce.
+    # Written even when empty: the reply is the evidence for why a run planned without insights.
     dump_document(document, path)
     log_info(f"[parametric] wrote {len(document.task_entries)} task entries to {path}")
 

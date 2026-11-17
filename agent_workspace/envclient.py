@@ -6,7 +6,8 @@ Configure it with env.json next to this file (or $ENVCLIENT_CONFIG):
     {"url": "http://127.0.0.1:8710", "token_file": "..."}
 
 or with $ENV_SERVER_URL and $ENV_SERVER_TOKEN, which win over the file. During an evaluation $ENVCTL_SESSION names a
-session already opened for you and $ENVCTL_DEADLINE is the unix time your wall-clock limit ends.
+session already opened for you (attach to it with Client.attach) and $ENVCTL_DEADLINE is the unix time your
+wall-clock limit ends.
 
     from envclient import Client
     c = Client.from_config()
@@ -42,14 +43,6 @@ def decode(value):
     if isinstance(value, list):
         return [decode(v) for v in value]
     return value
-
-
-def to_array(png):
-    """PNG bytes to a numpy array, if numpy and Pillow are installed."""
-    import io
-    import numpy as np
-    from PIL import Image
-    return np.asarray(Image.open(io.BytesIO(png)))
 
 
 class Server:

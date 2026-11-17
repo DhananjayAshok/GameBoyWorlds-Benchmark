@@ -1,8 +1,3 @@
-"""
-How one decision produces action(s).
-
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,15 +8,6 @@ from utils import parse_action_line, parse_int, parse_key_value
 
 @dataclass(frozen=True)
 class Decision:
-    """What one VLM call decided.
-
-    :param actions: Action strings to dispatch in order. Empty is not a valid decision —
-        return ``None`` from :meth:`ActionPolicy.parse` instead, which the loop reads as a
-        parse failure.
-    :param reasoning: What the model said it was doing, for the completion check. ``None``
-        when the policy's format asks for none.
-    """
-
     actions: List[str]
     reasoning: Optional[str] = None
 
@@ -29,33 +15,30 @@ class Decision:
 class ActionPolicy(Protocol):
     """The action-selection half of an executor."""
 
-    #: Report tag for the deciding call. Must be in :data:`~execution.report.ACTION_TAGS`.
+    # Must be in ``execution.report.ACTION_TAGS``.
     tag: str
-    #: Registry name, and half of the arm's ``<action>_<history>`` identity.
     name: str
-    #: Token budget for the deciding call, or ``None`` for the executor's default.
+    # ``None`` means the executor's default budget.
     max_new_tokens: Optional[int]
-    #: How :attr:`Decision.reasoning` is introduced to the completion check. A policy that
-    #: reasons once per plan must not have that sentence presented as step-level reasoning.
     done_check_reasoning_label: str
 
     def instruction(self) -> str:
-        """The line(s) telling the model what kind of answer to give."""
+        pass
 
     def response_format(self) -> str:
-        """The exact reply format, appended after the instruction."""
+        pass
 
     def action_format(self) -> str:
-        """The ``Action:`` line spliced in for ``[ACTION_FORMAT]``."""
+        pass
 
     def parse(self, response: str) -> Optional[Decision]:
-        """Read the reply, or ``None`` if nothing usable came back."""
+        pass
 
     def parse_error(self) -> str:
-        """What to tell the model when :meth:`parse` returned ``None``."""
+        pass
 
     def unknown_action_error(self, action: str) -> str:
-        """What to tell the model when a parsed action is not a real action."""
+        pass
 
 
 def _one_action_format() -> str:
@@ -63,7 +46,6 @@ def _one_action_format() -> str:
 
 
 def _split_top_level(body: str) -> List[str]:
-    """Split on commas that are not inside brackets, so ``f(a=1, b=2)`` stays whole."""
     parts, current, depth = [], "", 0
     for char in body:
         if char in "([{":
@@ -80,8 +62,6 @@ def _split_top_level(body: str) -> List[str]:
 
 
 class SingleActionPolicy:
-    """Reason, then name one action. The reference behaviour."""
-
     tag = "action"
     name = "single"
     max_new_tokens = None
@@ -117,14 +97,9 @@ class SingleActionPolicy:
 
 
 class ScoredActionPolicy:
-    """Justify and score every available action, then take the highest. Ties go to the first
-    in the list.
-    """
-
     tag = "score"
     name = "scored"
-    # One scored line per available action. Truncation here is silent — the parser just maxes over whatever lines arrived —
-    # so the budget is set well clear of what the longest action list needs.
+    # Truncation is silent (the parser maxes over whatever lines arrived), so keep this generous.
     max_new_tokens = 700
     done_check_reasoning_label = "The justification given for scoring that action highest was:"
 
@@ -141,18 +116,13 @@ class ScoredActionPolicy:
         return _one_action_format()
 
     def parse_score_line(self, line: str) -> Optional[Tuple[str, str, int]]:
-        """
-        Split one ``<action>: <reasoning>: <score>`` line into its three fields.
-        """
         stripped = line.strip()
         first, last = stripped.find(":"), stripped.rfind(":")
         if first == -1:
             return None
         action = stripped[:first].strip()
         reasoning = stripped[first + 1:last].strip() if last > first else ""
-        # Scored through a synthetic keyed line so parse_int only ever sees the score
-        # field. Handing it the whole line would search the justification for digits too,
-        # and "reach route 1, best odds: 4" would score 1.
+        # Synthetic keyed line so parse_int never sees digits in the justification.
         score = parse_int(f"score: {stripped[last + 1:]}", "score", 1, 5)
         if not action or score is None:
             return None
@@ -169,8 +139,6 @@ class ScoredActionPolicy:
                 best_score, best_action, best_reasoning = score, action, reasoning or None
         if best_action is None:
             return None
-        # Only the winner's justification: the losing lines explain a choice that was not
-        # made, so folding them in would misdescribe the step to the completion check.
         return Decision(actions=[best_action], reasoning=best_reasoning)
 
     def parse_error(self) -> str:
@@ -184,13 +152,9 @@ class ScoredActionPolicy:
 
 
 class SequenceActionPolicy:
-    """Commit to a short sequence of actions, executed until exhausted or one fails."""
-
     tag = "action"
     name = "sequence"
     max_new_tokens = None
-    # This policy reasons once per plan, so the completion check sees the plan's reasoning,
-    # not the step's.
     done_check_reasoning_label = ("The reasoning given for the planned sequence this "
                                   "action came from was:")
 

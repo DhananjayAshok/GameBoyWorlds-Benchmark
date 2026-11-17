@@ -1,16 +1,3 @@
-"""
-The one executor.
-
-:class:`PolicyExecutor` owns the loop, the budget, the prompt assembly and the environment
-plumbing. What varies between arms lives in two collaborators:
-
-- an :class:`~execution.executors.policies.action.ActionPolicy` — how a decision is made
-- a :class:`~execution.executors.policies.history.HistoryPolicy` — what is remembered
-
-Nine arms, three plus three plus one class. A decision yields a *list* of actions, so a
-sequence planner needs no loop of its own.
-"""
-
 from __future__ import annotations
 
 from typing import List, Optional, Type
@@ -24,9 +11,7 @@ from execution.report import EnvironmentStepRecord, StepRecord
 
 
 class PolicyExecutor(Executor):
-    """
-    An executor assembled from an action policy and a history policy.
-    """
+    """An executor assembled from an action policy and a history policy."""
 
     ACTION_POLICY = "single"
     HISTORY_POLICY = "none"
@@ -52,9 +37,7 @@ You are playing a GameBoy game. The current screen is shown in the image.
             action_policy = AVAILABLE_ACTION_POLICIES[action_policy]()
         if isinstance(history_policy, str):
             history_policy = AVAILABLE_HISTORY_POLICIES[history_policy](
-                # Bound late: `self._vlm_call` is the recording entry point, so a history
-                # policy's auxiliary calls land in the same log as everything else rather
-                # than going out unrecorded.
+                # `self._vlm_call` records, so the policy's auxiliary calls are logged too.
                 call=self._vlm_call, game=kwargs.get("game", ""), history_k=history_k,
             )
         self._action_policy = action_policy
@@ -64,25 +47,14 @@ You are playing a GameBoy game. The current screen is shown in the image.
 
     @property
     def DONE_CHECK_REASONING_LABEL(self) -> str:  # noqa: N802 - shadows a base constant
-        """
-        Deferred to the action policy — see the base class attribute it overrides.
-        """
         return self._action_policy.done_check_reasoning_label
 
     def _run_config(self, extra_kwargs):
-        """
-        The base configuration plus which pair of policies this arm actually is.
-        """
         return {**super()._run_config(extra_kwargs),
                 "action_policy": self._action_policy.name,
                 "history_policy": self._history_policy.name}
 
-    # ------------------------------------------------------------------
-    # Environment
-    # ------------------------------------------------------------------
-
     def _take_action(self, action_class: Type[HighLevelAction], **kwargs) -> EnvironmentStepRecord:
-        """Execute one high-level action and record it under the current call."""
         before_info = self._env.get_info()
         frame_before = before_info["core"]["current_frame"]
         obs, reward, terminated, truncated, info = self._env.step_high_level_action(
@@ -109,10 +81,6 @@ You are playing a GameBoy game. The current screen is shown in the image.
         self._last_frame_changed = record.frame_changed
         return record
 
-    # ------------------------------------------------------------------
-    # Prompt assembly
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _error_block(error_message: Optional[str]) -> str:
         return f"[ERROR] {error_message}\n\n" if error_message is not None else ""
@@ -133,10 +101,6 @@ You are playing a GameBoy game. The current screen is shown in the image.
             # Last: the response format may itself contain the placeholder.
             .replace("[ACTION_FORMAT]", self._action_policy.action_format())
         )
-
-    # ------------------------------------------------------------------
-    # The loop
-    # ------------------------------------------------------------------
 
     def _execute(self) -> int:
         self._last_terminated = False
@@ -167,7 +131,6 @@ You are playing a GameBoy game. The current screen is shown in the image.
                     return -1
                 continue
 
-            # One reasoning per decision, however many steps it covers.
             self._last_reasoning = decision.reasoning or self._last_reasoning
 
             outcome, n_env_steps, consecutive_invalid, error_message = self._run_decision(
@@ -179,11 +142,6 @@ You are playing a GameBoy game. The current screen is shown in the image.
         return 0
 
     def _run_decision(self, decision, n_env_steps: int, consecutive_invalid: int):
-        """Dispatch one decision's actions, then let the history see what happened.
-
-        :return: ``(outcome, n_env_steps, consecutive_invalid, error_message)`` where a
-            non-None outcome ends the episode.
-        """
         records: List[EnvironmentStepRecord] = []
         steps: List[StepRecord] = []
         error_message: Optional[str] = None
@@ -218,8 +176,7 @@ You are playing a GameBoy game. The current screen is shown in the image.
                 self.report.termination_reason = "truncated"
                 return 2, n_env_steps, consecutive_invalid, error_message
 
-            # A failed action ends the decision. Low-level actions report success=0 by
-            # convention, not as a failure, so they never trigger this.
+            # Low-level actions report success=0 by convention, not as a failure.
             if (len(decision.actions) > 1
                     and not _is_low_level(action_class)
                     and record.action_success == 0):
@@ -234,11 +191,7 @@ You are playing a GameBoy game. The current screen is shown in the image.
             self.report.termination_reason = "max_invalid"
             return -1, n_env_steps, consecutive_invalid, error_message
 
-        # The completion check runs at a decision boundary, and only when the decision ran
-        # to the end. One rule, two cadences: a single-action policy is checked after every
-        # step, a sequence once per committed plan — which is what each of them did
-        # separately before. A half-executed plan is a state its planner never intended to
-        # be judged in, so an aborted decision is not checked at all.
+        # Checked only at a decision boundary; an aborted decision is never checked.
         if records and not aborted:
             outcome = self._maybe_self_terminate(records[-1], n_env_steps)
             if outcome is not None:
@@ -247,8 +200,6 @@ You are playing a GameBoy game. The current screen is shown in the image.
         return None, n_env_steps, consecutive_invalid, error_message
 
     def _finish_decision(self, steps: List[StepRecord]) -> None:
-        """Show the history policy everything this decision did, once, batched at the
-        decision boundary."""
         if steps:
             self._history_policy.observe(steps)
 
@@ -259,12 +210,6 @@ def _is_low_level(action_class) -> bool:
 
 
 def make_executor_class(action_name: str, history_name: str) -> type:
-    """A named subclass for one ``<action>_<history>`` arm. The class name reaches the report
-    as ``executor_name`` and names the on-disk results directory.
-
-    :return: The arm's executor class.
-    :rtype: type
-    """
     name = f"{action_name}_{history_name}"
     return type(name, (PolicyExecutor,), {
         "ACTION_POLICY": action_name,

@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# Hyperparameter sweep over seeds, gammas, and algorithms using default_rl.sh.
-# After the first pass, prunes to the best-k models by test reward (via
-# keep_only_best_models.py), then re-runs only the winners to collect replay
-# buffers for downstream use. Called by iterative_training.sh when --sweep true.
+# Hyperparameter sweep over seeds, gammas and algorithms using default_rl.sh. Prunes to the
+# best-k models by test reward, then re-runs only the winners to collect replay buffers.
+# Called by iterative_training.sh when --sweep true.
 
-# first get the GameBoyWorlds $storage_dir variable to handle video deletion
+# GameBoyWorlds' own $storage_dir, needed for video deletion.
 source GameBoyWorlds/configs/config.env || { echo "GameBoyWorlds/configs/config.env not found"; exit 1; }
 gameboy_worlds_storage_dir="$storage_dir"
 
 source scripts/core/utils.sh
 
-# Define Defaults for default_rl.sh
 declare -A ARGS
 REQUIRED_ARGS=()
 populate_array SWEEP_ESSENTIALS REQUIRED_ARGS
@@ -22,14 +20,11 @@ ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 
 USAGE_STR="Usage: $0"
 
-# Add Required to string
 for req in "${REQUIRED_ARGS[@]}"; do
     USAGE_STR+=" --$req <value>"
 done
 
-# Add Optionals to string
 for opt in "${!ARGS[@]}"; do
-    # Only list if NOT in required (to avoid double listing)
     if [[ ! " ${REQUIRED_ARGS[*]} " =~ " ${opt} " ]]; then
         USAGE_STR+=" [--$opt <value> (default: ${ARGS[$opt]})]"
     fi
@@ -40,11 +35,9 @@ function usage() {
     exit 1
 }
 
-# 3. Parser
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --*)
-            # Extract the name (remove the leading --)
             FLAG=${1#--}
             VALID=false
             for allowed in "${ALLOWED_FLAGS[@]}"; do
@@ -70,7 +63,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 4. Strict Validation
 for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then
         echo "Error: Argument --$req is required."
@@ -89,7 +81,6 @@ fi
 
 video_session_dir="$gameboy_worlds_storage_dir/sessions/${ARGS["game"]}/"
 
-# Keep only the best
 keep_arg_str=""
 if [[ "${ARGS["replay_buffer_save_folder"]}" != "none" ]]; then
     keep_arg_str+="--replay_buffer_save_folder $storage_dir/replay_buffers/${ARGS["game"]}/${ARGS["replay_buffer_save_folder"]} "
@@ -104,7 +95,6 @@ if [[ "${ARGS["clear_loser_replay_buffer"]}" == "true" ]]; then
 fi
 
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"

@@ -1,7 +1,3 @@
-"""
-What the executor remembers between decisions, and how it reads in the prompt.
-"""
-
 from __future__ import annotations
 
 from typing import Callable, List, Protocol
@@ -10,34 +6,25 @@ from gameboy_worlds.interface.action import LowLevelAction
 
 from execution.report import EnvironmentStepRecord, StepRecord, action_name
 
-#: Recent steps rendered into the prompt. Applies to every policy that keeps a list: a
-#: visual description is much longer per entry than an action name, so an untruncated
-#: visual history blows the prompt long before an action history would.
 DEFAULT_HISTORY_K = 5
 
 
 class HistoryPolicy(Protocol):
     """The memory half of an executor."""
 
-    #: Registry name, and half of the arm's ``<action>_<history>`` identity.
     name: str
 
     def reset(self) -> None:
-        """Forget everything. Called once before the loop starts."""
+        pass
 
     def observe(self, steps: List[StepRecord]) -> None:
-        """Fold in the environment steps one decision produced, in order."""
+        pass
 
     def render(self) -> str:
-        """The block to splice into ``[CONTEXT_SECTION]``, or ``""`` for nothing.
-
-        Ends with a blank line when non-empty; it sits directly before the instruction.
-        """
+        pass
 
 
 class NoHistoryPolicy:
-    """Remember nothing. The reference behaviour."""
-
     name = "none"
 
     def __init__(self, **kwargs) -> None:
@@ -54,13 +41,10 @@ class NoHistoryPolicy:
 
 
 def _action_line(record: StepRecord) -> str:
-    """One past action, tagged with whether it did anything.
-    """
     action_str = action_name(record)
     changed = record.frame_changed
     if issubclass(record.action_class, LowLevelAction):
-        # LowLevelActions report success=0 by convention rather than as a failure signal,
-        # so their status is never rendered — only whether the screen moved.
+        # LowLevelActions report success=0 by convention, not as a failure signal.
         return f"  {action_str}{'' if changed else ' [no change]'}"
     status = ("ok" if record.action_success == 1
               else "failed" if record.action_success == 0 else "unknown")
@@ -76,8 +60,6 @@ If you are trying to interact with something, you likely have the incorrect orie
 
 
 class ActionHistoryPolicy:
-    """List the last *k* actions, tagged with whether the screen changed."""
-
     name = "actions"
 
     def __init__(self, history_k: int = DEFAULT_HISTORY_K, **kwargs) -> None:
@@ -102,10 +84,6 @@ class ActionHistoryPolicy:
 
 
 class VisualHistoryPolicy:
-    """
-    Describe what each action actually changed on screen, and remember that.
-    """
-
     name = "visual"
 
     DIFF_PROMPT = """
@@ -121,7 +99,6 @@ In one short sentence, say what changed between the two screens as a result of t
         self._call = call
         self._game = game
         self._history_k = history_k
-        # (action string, what it changed)
         self._entries: List[tuple] = []
 
     def reset(self) -> None:
@@ -131,13 +108,9 @@ In one short sentence, say what changed between the two screens as a result of t
         if not steps:
             return
 
-        # (action string, description) with description None for the entries still waiting
-        # on a frame diff.
         pending: List[list] = []
         prompts, images = [], []
         for record in steps:
-            # frame_after is the screen the *next* step starts from, so a pair is always
-            # (before, after) of one action rather than two consecutive observations.
             if (self._call is None or record.frame_before is None
                     or record.frame_after is None):
                 continue
@@ -170,9 +143,6 @@ In one short sentence, say what changed between the two screens as a result of t
 
 
 def _first_sentence(response: str) -> str:
-    """
-    The description, without the model's preamble.
-    """
     text = (response or "").strip()
     for line in text.splitlines():
         stripped = line.strip()

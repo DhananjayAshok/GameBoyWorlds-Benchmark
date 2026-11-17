@@ -1,7 +1,3 @@
-"""
-The info document: a game's distilled knowledge, as JSON.
-"""
-
 from __future__ import annotations
 
 import json
@@ -19,25 +15,6 @@ IMAGE_SECTION = "Image Understanding"
 
 @dataclass
 class Provenance:
-    """Where a document came from, recorded by its producer.
-
-    :param source: The vertical — ``"curiosity"`` or ``"zeroshot"`` for a document distilled
-        from trajectories, or ``"parametric"`` for one written from the model's own priors
-    :param executor: Executor whose trajectories were distilled for insights. ``None`` for a
-        parametric document.
-    :param controller_variant: Controller variant those trajectories were driven under, paired
-        with ``executor``. ``None`` for a parametric document, and for any document written
-        before this field existed.
-    :param model: Model that did the distilling, or the writing (the save name, not the
-        full path).
-    :param trajectory_stem: The input stem, relative to ``storage_dir``, with the curiosity
-        run name as a component. ``None`` for a parametric document.
-    :param built_at: ISO-8601 UTC timestamp.
-    :param input_tokens: Prompt tokens spent building this document. ``None`` for cases where the backend did not report
-        them — distinct from ``0``.
-    :param output_tokens: Generated tokens spent building this document. Same semantics.
-    """
-
     source: str = ""
     executor: Optional[str] = None
     controller_variant: Optional[str] = None
@@ -49,7 +26,6 @@ class Provenance:
 
     @property
     def label(self) -> str:
-        """The single string readers use to attribute an entry.        """
         return self.source
 
     def to_dict(self) -> Dict[str, Any]:
@@ -81,10 +57,6 @@ class Provenance:
 
 @dataclass
 class Entry:
-    """
-    One task or image category, with its evidence and its advice kept apart.
-    """
-
     category: str
     description: str = ""
     examples: List[str] = field(default_factory=list)
@@ -94,12 +66,10 @@ class Entry:
     init_states: List[str] = field(default_factory=list)
     source: Optional[str] = None
 
-    #: Absolute path to :attr:`frame`, resolved by :func:`load_document`. Not persisted.
-    #: ``None`` when the entry has no frame, or the document was built in memory.
+    # Absolute path to ``frame``, filled in by ``load_document``; not persisted.
     resolved_frame: Optional[str] = None
 
     def evidence_block(self, include_frame_note: bool = False) -> str:
-        """Description + Examples — the fields identity is judged from. Never Insights."""
         lines = [f"Category: {self.category}", f"Description: {self.description}"]
         if self.examples:
             lines.append("Examples:")
@@ -112,7 +82,6 @@ class Entry:
         return "\n".join(f"- {i}" for i in self.insights)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Persisted fields only — ``source`` and ``resolved_frame`` are load-time."""
         return {
             "category": self.category,
             "description": self.description,
@@ -143,14 +112,11 @@ class InfoDocument:
     image_entries: List[Entry] = field(default_factory=list)
     provenance: Provenance = field(default_factory=Provenance)
 
-    #: Directory the entries' frame paths are relative to, itself relative to
-    #: ``storage_dir``. Empty for a document built in memory that has not been written yet.
+    # Relative to ``storage_dir``; entry frame paths are relative to it.
     frames_root: str = ""
 
     @staticmethod
     def _check_section(section: str) -> None:
-        """Reject an unrecognised section name.
-        """
         if section not in (TASK_SECTION, IMAGE_SECTION):
             raise ValueError(
                 f"Unknown info-document section {section!r}. "
@@ -173,9 +139,6 @@ class InfoDocument:
         return len(self.task_entries) + len(self.image_entries)
 
     def copy(self) -> "InfoDocument":
-        """
-        Deep-ish copy: new Entry objects with their own list fields.
-        """
         def copied(entries: List[Entry]) -> List[Entry]:
             return [replace(e, examples=list(e.examples), insights=list(e.insights),
                             example_frames=list(e.example_frames),
@@ -191,10 +154,6 @@ class InfoDocument:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        """
-        The persisted shape. 
-        Inverse of :meth:`from_dict`.
-        """
         return {
             "game": self.game,
             "provenance": self.provenance.to_dict(),
@@ -205,9 +164,6 @@ class InfoDocument:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "InfoDocument":
-        """
-        Inverse of :meth:`to_dict`.
-        """
         return cls(
             game=data.get("game", ""),
             task_entries=[Entry.from_dict(e) for e in data.get("task_entries") or []],
@@ -216,10 +172,6 @@ class InfoDocument:
             frames_root=data.get("frames_root", ""),
         )
 
-
-# ---------------------------------------------------------------------------
-# Markdown view (one-way — for humans, never parsed back)
-# ---------------------------------------------------------------------------
 
 _TASK_HEADING = "Task category:"
 _IMAGE_HEADING = "Image category:"
@@ -241,8 +193,6 @@ def _render_entry(entry: Entry, heading: str) -> str:
 
 
 def render_document(doc: InfoDocument) -> str:
-    """Render a document as markdown, for reading.
-    """
     out = [f"# Info: {doc.game}", ""]
     if doc.provenance.source:
         out += [f"*Source: {doc.provenance.label}*", ""]
@@ -258,24 +208,8 @@ def render_document(doc: InfoDocument) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-# ---------------------------------------------------------------------------
-# Load / dump
-# ---------------------------------------------------------------------------
-
-
 def resolve_frame(doc: InfoDocument, frame: Optional[str],
                   parameters: Optional[dict] = None) -> Optional[str]:
-    """Turn one of ``doc``'s frame paths into an absolute path that can be opened.
-
-    Entry frame paths are relative to ``doc.frames_root``, which is relative to
-    ``storage_dir``. :func:`load_document` has already filled in
-    :attr:`Entry.resolved_frame`; a document built in memory has not.
-
-    :param doc: The document the path belongs to.
-    :param frame: A stored frame path, or ``None``.
-    :param parameters: Loaded parameters dict. If None, loads from config.
-    :return: An absolute path, or ``None`` if ``frame`` was ``None``.
-    """
     if not frame:
         return None
     if os.path.isabs(frame):
@@ -285,8 +219,6 @@ def resolve_frame(doc: InfoDocument, frame: Optional[str],
 
 
 def dump_document(doc: InfoDocument, path: str) -> None:
-    """Write a document to ``path`` as JSON, atomically, so a resume never reads a partial
-    file as a complete one."""
     file_makedir(path)
     tmp = f"{path}.tmp"
     with open(tmp, "w") as handle:
@@ -295,16 +227,6 @@ def dump_document(doc: InfoDocument, path: str) -> None:
 
 
 def load_document(path: str, parameters: Optional[dict] = None) -> InfoDocument:
-    """
-    Read a document and fill in the two load-time fields on every entry.
-
-    :param path: Path to the JSON file.
-    :type path: str
-    :param parameters: Loaded parameters dict. If None, loads from config.
-    :type parameters: dict or None
-    :return: The document, with :attr:`Entry.source` and :attr:`Entry.resolved_frame` filled in.
-    :rtype: InfoDocument
-    """
     with open(path, "r") as handle:
         doc = InfoDocument.from_dict(json.load(handle))
 

@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
 # Reports task inference: the task strings infer_tasks distilled from each curiosity group,
-# beside a frame strip of the trajectories each task was distilled from. Writes one
-# <results_dir>/debug/<game>/infer/report.md.
-#
-# Reads only the trajectory_annotation.json/.pkl that infer_tasks wrote — no emulator, no
-# GPU, no VLM. This is the curiosity vertical's *output*, distinct from the debug_curiosity
-# report which covers infer_tasks' grouped-trajectory *input*.
+# beside a frame strip of the trajectories each task was distilled from. Writes
+# <results_dir>/debug/<game>/infer/report.md. No emulator, GPU or VLM needed.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -19,7 +15,6 @@ ARGS["n_frames"]=5
 ARGS["max_tasks"]=0
 ARGS["max_traj_per_task"]=3
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -54,9 +49,7 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"

@@ -1,38 +1,3 @@
-"""
-What the retrieval arm actually retrieved, per episode, from one benchmark CSV.
-
-Input
------
-One CSV written by run_benchmark.py's ``info_subgoal_*`` arms, which record the selection
-alongside the outcome:
-    selected_entry_ids  the entries :meth:`InfoSubgoalSupervisor._select_entries` kept, as
-                        ``<source>#<category>`` (see ``entry_id``) — ``[]`` when nothing was
-                        selected
-    insights_block      the text the planner was actually given, after the per-entry
-                        relevance filter and the distillation pass
-    n_insights_candidate / n_insights_kept / n_insights_distilled
-                        the filter funnel for that episode
-
-Why this exists
----------------
-``debug.py benchmark`` renders every supervisor call with its literal prompt and response,
-which is the complete view — but it needs the archived ``report.pkl.gz`` beside each
-episode's video. When the run happened on another machine, those archives are not here and
-that command cannot run. These four columns are written into the CSV itself and therefore
-survive the trip, so the question "was the retrieval reasonable" stays answerable from the
-results alone: which entries were chosen for which task, and how often nothing was.
-
-The load-bearing fact this reports on: an episode that selects nothing is planned with an
-empty insights block, which is **exactly the subgoal arm** (see
-:meth:`InfoSubgoalSupervisor._resolve_targets`). Those episodes are not evidence about
-retrieval either way, and averaging them into the arm's success rate dilutes whatever effect
-the retrieved documents really have. The split is reported here.
-
-Output
-------
-<results_dir>/debug/<game>/retrieval/<csv stem>.md
-"""
-
 import ast
 import json
 import os
@@ -50,7 +15,6 @@ RETRIEVAL_COLUMNS = ["selected_entry_ids", "insights_block"]
 
 
 def _parse_ids(value) -> list:
-    """The CSV holds a JSON list of entry ids. Blank, NaN and malformed all mean 'none'."""
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return []
     text = str(value).strip()
@@ -71,7 +35,6 @@ def _mean(frame, column):
 
 
 def _split_table(frame, retrieved_mask) -> pd.DataFrame:
-    """Success/steps for episodes that retrieved something vs. those that retrieved nothing."""
     rows = []
     for label, subset in [("retrieved something", frame[retrieved_mask]),
                           ("retrieved nothing (== subgoal arm)", frame[~retrieved_mask])]:
@@ -118,7 +81,6 @@ def debug_retrieval(obj, csv_path, label, n_examples):
     log_info(f"[retrieval] {label}: {int(retrieved.sum())}/{len(frame)} episodes selected "
              f"at least one entry")
 
-    # --- Which entries get chosen, and how often they pay off ------------------
     counts = Counter(entry for ids in selections for entry in ids)
     per_entry = []
     for entry, count in counts.most_common():
@@ -137,9 +99,7 @@ def debug_retrieval(obj, csv_path, label, n_examples):
                "n_supervisor_calls")
               if column in frame.columns]
 
-    # --- Per-episode detail ----------------------------------------------------
     ordered = list(frame.index)
-    # Lead with the episodes that retrieved something — an empty selection has nothing to read.
     ordered.sort(key=lambda i: (frame.loc[i, "n_selected"] == 0, i))
     chosen = ordered[:n_examples] if n_examples else ordered
     episodes = []

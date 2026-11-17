@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # Builds train_dataset.csv + validation_dataset.csv from a cleaned practice dir
-# (run clean_practice.sh first so paraphrases.json and clean_decisions.csv exist).
-# Episodes are split per task (val_frac held out for validation); train is
-# paraphrase-augmented, validation uses each task's reserved last paraphrase.
-# No VLM is involved here.
+# (run clean_practice.sh first). Episodes are split per task, with --val_frac held out.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -13,7 +10,6 @@ REQUIRED_ARGS=()
 populate_array CREATE_DATASET_ESSENTIALS REQUIRED_ARGS
 populate_dict CREATE_DATASET_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -48,7 +44,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do

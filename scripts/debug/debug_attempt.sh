@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Reports the task-attempt stage: the proposed -> attempted -> succeeded funnel, how much
-# of that success needed escalating hints (n_tries), success by init_state, the tasks never
-# solved in five attempts, and frame strips for successful trajectories. Writes
+# Reports the task-attempt stage: the proposed -> attempted -> succeeded funnel, success by
+# init_state, unsolved tasks, and frame strips for successful trajectories. Writes
 # <results_dir>/debug/<game>/attempt/report.md.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
@@ -15,7 +14,6 @@ populate_dict DEBUG_MODEL_DEFAULTS ARGS
 ARGS["n_frames"]=8
 ARGS["max_trajectories"]=40
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -50,9 +48,7 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"

@@ -1,9 +1,3 @@
-"""
-Scaffolding check: resolve every artifact path for the given identity and report which
-exist. Run this first when pointing the debug tools at a new game/run — it tells you
-which stages have artifacts before any report tries to read them.
-"""
-
 import glob
 import os
 
@@ -18,7 +12,6 @@ def _mark(path: str) -> str:
 
 
 def _playthrough_lines(paths, name: str) -> list:
-    """The playthrough block: state directory, archived episodes, provenance, tile database."""
     from execution.artifact import episode_dirs
     from execution.strategist.report import saved_episode_reports
 
@@ -75,7 +68,6 @@ def check_paths(obj, model_name, playthrough_name):
         states = sorted(d for d in os.listdir(grouped) if os.path.exists(paths.grouped_file(d)))
         lines.append(f"         {len(states)} init_state(s) with grouped trajectories")
 
-    # Keyed on the playthrough's own --name, not on model_name, so it is reported either way.
     if playthrough_name is not None:
         lines += _playthrough_lines(paths, playthrough_name)
 
@@ -98,8 +90,6 @@ def check_paths(obj, model_name, playthrough_name):
         lines.append(f"     [{_mark(path)}] {label}: {path}")
 
     lines += ["", "-- benchmark --"]
-    # Every supervisor writes its own file for one (game, executor, model), so a single
-    # path here would report 'missing' for a game that has four of the five on disk.
     for model in [paths.model_save_name, paths.finetuned_model_name]:
         for supervisor in BENCHMARK_SUPERVISORS:
             path = paths.benchmark_csv(paths.game, model, supervisor=supervisor)

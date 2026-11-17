@@ -1,8 +1,3 @@
-"""
-The plan arm: plan from the info document, then supervise the executor through the plan
-step by step.
-"""
-
 from __future__ import annotations
 
 import json
@@ -22,14 +17,10 @@ from benchmark_scripts import common
 
 
 def _plan_summary(result: dict, report) -> dict:
-    """Flat counts for the CSV, from the supervisor's returned extras and its report.
-    """
     step_log = result["step_log"]
     attempts = [a for record in step_log for a in record["attempts"]]
     return {
-        # `n_plan_steps` is the CURRENT plan; `n_slots_attempted` is how many target slots
-        # the loop worked through, and is the denominator `n_steps_cleared` belongs over.
-        # They differ after a replan. `n_original_plan_steps` is the plan as first written.
+        # n_steps_cleared counts slots: its denominator is n_slots_attempted, not n_plan_steps.
         "planned": result["planned"],
         "n_plan_steps": len(result["plan"]),
         "n_original_plan_steps": len(result["original_plan"]),
@@ -37,8 +28,6 @@ def _plan_summary(result: dict, report) -> dict:
         "n_steps_cleared": sum(1 for r in step_log if r["cleared"]),
         "n_attempts": len(attempts),
         "n_replans": result["n_replans"],
-        # Without these an over-aggressive filter and a bad planner are indistinguishable
-        # from the outcome alone.
         "n_insights_candidate": result["n_insights_candidate"],
         "n_insights_kept": result["n_insights_kept"],
         "n_insights_distilled": result["n_insights_distilled"],
@@ -116,21 +105,17 @@ def _run(obj, *, mode, info_docs, parametric_categories,
     executor_class = obj["executor_class"]
     model_save_name = obj["model_save_name"]
 
-    # In-process only: the loaded dict is handed to every supervisor and executor below, and
-    # nothing writes it back to configs/, so the other arms keep the project-wide value.
     previous = parameters.get("executor_vlm_max_new_tokens")
     parameters["executor_vlm_max_new_tokens"] = executor_max_new_tokens
     log_info(f"Executor token budget: {previous} -> {executor_max_new_tokens} "
              f"(this run only). Supervisor calls: {obj['supervisor_max_new_tokens']}.")
 
-    # Keys both the parametric document's cache path and the supervisor's own VLM.
     knowledge_model = obj["supervisor_vlm_model"]
     knowledge_kind = obj["supervisor_vlm_kind"]
 
     if mode == "retrieval":
         documents = common.load_documents(info_docs, parameters)
     else:
-        # Generated once and cached, keyed on the supervisor's model. Delete to rebuild.
         doc_path = Paths(parameters=parameters, game=game,
                          model_name=knowledge_model).parametric_doc()
         documents = [load_or_generate_parametric_document(
@@ -142,8 +127,6 @@ def _run(obj, *, mode, info_docs, parametric_categories,
             parameters=parameters,
         )]
 
-    # The knowledge mode is part of the supervisor's identity: one real subclass per mode in
-    # AVAILABLE_SUPERVISORS, and the subcommand word too.
     supervisor_name = f"info_subgoal_{mode}"
     supervisor_class = AVAILABLE_SUPERVISORS[supervisor_name]
 
@@ -161,11 +144,6 @@ def _run(obj, *, mode, info_docs, parametric_categories,
         "original_plan",
         *SUMMARY_COLUMNS,
         "selected_entry_ids", "insights_block", "step_log",
-        # The supervisor's prompts and replies are NOT a column any more. They live on the
-        # archived SupervisorReport's event_log, interleaved with the executor legs they
-        # drove — which is both where the frames are and where the ordering is meaningful.
-        # As a JSON cell they were megabytes of text per row with numpy arrays degraded to
-        # str() by `default=str`.
         common.SESSION_COLUMN,
     ]
     tasks = common.select_tasks(get_benchmark_tasks(game=game), obj["n_tasks"])
@@ -209,9 +187,6 @@ def _run(obj, *, mode, info_docs, parametric_categories,
                                       if result["original_plan"] else None),
                     "selected_ids": result["selected_ids"],
                     "summary": _plan_summary(result, report),
-                    # The supervisor's decisions. The prompts and replies behind them are on
-                    # the report's event_log, interleaved with the executor legs they drove,
-                    # so they are no longer carried separately.
                     "step_log": result["step_log"],
                     "insights_block": result["insights_block"],
                 },
@@ -238,7 +213,6 @@ def _run(obj, *, mode, info_docs, parametric_categories,
             *[summary[key] for key in SUMMARY_COLUMNS],
             json.dumps(extras.get("selected_ids", [])),
             extras.get("insights_block"),
-            # default=str so anything non-serialisable degrades to text.
             json.dumps(extras.get("step_log", []), default=str),
             json.dumps(outcome.session_dirs),
         ]
@@ -272,7 +246,6 @@ def _run(obj, *, mode, info_docs, parametric_categories,
         on_episode=on_episode,
     )
 
-    # An episode that produced no plan ran as an unhinted baseline, so a low number here
-    # means the planner is failing, not that planning does not help.
+    # An episode with no plan ran as an unhinted baseline, so a low rate means the planner is failing.
     log_info(f"Produced a plan on {n_planned}/{max(n_run, 1)} episodes this run "
              f"({100.0 * n_planned / max(n_run, 1):.0f}%).")

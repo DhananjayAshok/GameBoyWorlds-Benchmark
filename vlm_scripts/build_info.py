@@ -1,28 +1,3 @@
-"""
-Called by scripts/vlm/build_info.sh (via vlm.py build_info). Use --help for CLI options.
-"""
-# Distils (task, example trajectory) pairs into one consolidated info document per game —
-# the build half of the context-engineering vertical. Two stages:
-#
-#   Stage A  one VLM call per pair -> the key NON-OBVIOUS insights, as a one-entry-per-section
-#            leaf document. Pairs with nothing non-obvious to say are dropped ("NONE").
-#   Stage B  a tournament reduce over those leaves. Each merge is a structured fold of doc2
-#            into doc1: per entry, one visual match call, then either an LM-driven combine of
-#            the Insights or a verbatim append. Never a wholesale rewrite of a document.
-#
-# Input files (derived from trajectory_path):
-#   <trajectory_path>.json  -> {group_idx: task_string}
-#   <trajectory_path>.pkl   -> {group_idx: trajectory | [trajectory, ...]}
-#
-# Output — everything under ONE directory beside the input stem, nothing in CWD:
-#   <dirname(trajectory_path)>/info_docs/
-#     insights.jsonl                                stage A leaves (one row per pair)
-#     frames/<group_idx>_{task,image}.png           representative frames, for visual matching
-#     merge/round_<r>/<i>.{json,matches.json,meta.json} every merge node, kept as the debug trail
-#     info.json                                     the final document
-#
-# The merge tree is NOT cleaned up on success — see debug.py info.
-
 import json
 import os
 import pickle
@@ -46,13 +21,7 @@ from execution.info_doc import (
 from utils import (HuggingFaceModel, VLM, log_error, log_info, log_warn, parse_key_value,
                    parse_list)
 from python_scripts import paths
-# Re-exported from paths, not redeclared: build_info writes these names and the debug
-# tools read them, and they drifted apart once already.
 from python_scripts.paths import INFO_DOC_FILENAME, INSIGHTS_FILENAME
-
-# ---------------------------------------------------------------------------
-# Prompts
-# ---------------------------------------------------------------------------
 
 EXTRACT_INSIGHTS_PROMPT = """You are analysing a gameplay trajectory from [GAME] to build a knowledge base for future players.
 
@@ -131,17 +100,11 @@ Insights:
 [STOP]"""
 
 
-# ---------------------------------------------------------------------------
-# Parse helpers
-# ---------------------------------------------------------------------------
-
-
 def _is_none(value: str | None) -> bool:
     return value is None or not value.strip() or value.strip().upper().startswith("NONE")
 
 
 def _parse_extraction(text: str) -> dict | None:
-    """Parse EXTRACT_INSIGHTS_PROMPT output into task/image entry fields."""
     body = text
     insights = parse_list(body, "Insights")
     if not insights:
@@ -167,7 +130,6 @@ def _parse_extraction(text: str) -> dict | None:
 
 
 def _parse_match(text: str, n_existing: int) -> tuple[int | None, str]:
-    """Parse MATCH_PROMPT output to a 0-based index into the existing entries, or None."""
     body = text
     reason = (parse_key_value(body, "Reasoning") or "").strip()
     raw = parse_key_value(body, "Match")
@@ -183,11 +145,6 @@ def _parse_match(text: str, n_existing: int) -> tuple[int | None, str]:
     return index, reason
 
 
-# ---------------------------------------------------------------------------
-# Stage A — per-pair insight extraction
-# ---------------------------------------------------------------------------
-
-
 def _action_summary(high_level_actions, limit: int = 40) -> str:
     from debug_scripts.frames import action_label
 
@@ -199,7 +156,6 @@ def _action_summary(high_level_actions, limit: int = 40) -> str:
 
 
 def extract_insights(trajectory, task, vlm, game, max_new_tokens, n_frames=8, verbose=False):
-    """One VLM call over a frame strip -> the parsed leaf-entry fields, or None."""
     observations, actions, high_level_actions, rewards, init_state = trajectory
     indices = sample_indices(len(observations), n_frames)
     frames = [observations[i] for i in indices]
@@ -223,11 +179,6 @@ def extract_insights(trajectory, task, vlm, game, max_new_tokens, n_frames=8, ve
 def _leaf_document(parsed: dict, game: str, group_idx: str, init_state: str,
                    task_frame_rel: str, image_frame_rel: str | None,
                    provenance: Provenance, frames_root: str) -> InfoDocument:
-    """Build the one-entry-per-section document that becomes a leaf of the merge tree.
-
-    ``provenance`` and ``frames_root`` are stamped on every leaf so the merge carries them
-    through to the final document without anything having to be re-derived from a path.
-    """
     doc = InfoDocument(game=game, provenance=provenance, frames_root=frames_root)
     doc.task_entries.append(Entry(
         category=parsed["task_category"],
@@ -251,7 +202,6 @@ def _leaf_document(parsed: dict, game: str, group_idx: str, init_state: str,
 
 def run_stage_a(task_map, traj_map, out_dir, vlm, game, max_new_tokens, n_frames,
                 max_concurrency, verbose, overwrite, parameters, provenance, frames_root):
-    """Extract insights for every pair, writing insights.jsonl and frames/. Resumable per pair."""
     insights_path = os.path.join(out_dir, INSIGHTS_FILENAME)
     frames_dir = os.path.join(out_dir, "frames")
     os.makedirs(frames_dir, exist_ok=True)
@@ -331,7 +281,6 @@ def run_stage_a(task_map, traj_map, out_dir, vlm, game, max_new_tokens, n_frames
                     "init_state": init_state,
                     "task": task,
                     "insights": parsed["insights"],
-                    # A nested object, not rendered text.
                     "document": doc.to_dict(),
                 }
                 sink.write(json.dumps(row) + "\n")
@@ -342,13 +291,7 @@ def run_stage_a(task_map, traj_map, out_dir, vlm, game, max_new_tokens, n_frames
     return done
 
 
-# ---------------------------------------------------------------------------
-# Stage B — the fold, and the tournament reduce over it
-# ---------------------------------------------------------------------------
-
-
 def _frame_image(root: str, entry: Entry):
-    """Load an entry's representative frame, or None if it has none / it is missing."""
     if not entry.frame:
         return None
     path = entry.frame if os.path.isabs(entry.frame) else os.path.join(root, entry.frame)
@@ -361,14 +304,6 @@ def _frame_image(root: str, entry: Entry):
 
 def fold_section(doc1: InfoDocument, doc2: InfoDocument, section: str, root: str,
                  vlm: VLM, game: str, max_new_tokens: int, verbose: bool) -> list[dict]:
-    """
-    Fold doc2's entries of one section into doc1's, in place. doc1 is the accumulator and is
-    never rewritten wholesale: an unmatched entry is appended verbatim, and the only text a
-    model regenerates is the Insights block of an entry that matched.
-
-    :return: The match log.
-    :rtype: list
-"""
     kind = "task" if section == TASK_SECTION else "kind of screen"
     accumulator = doc1.entries(section)
     log = []
@@ -435,7 +370,7 @@ def fold_section(doc1: InfoDocument, doc2: InfoDocument, section: str, root: str
             combined = target.insights + entry.insights
 
         target.insights = combined
-        target.examples = target.examples + entry.examples          # appended mechanically
+        target.examples = target.examples + entry.examples
         if entry.frame:
             target.example_frames = target.example_frames + [entry.frame]
         target.example_frames += entry.example_frames
@@ -451,7 +386,6 @@ def fold_section(doc1: InfoDocument, doc2: InfoDocument, section: str, root: str
 
 def merge_documents(doc1: InfoDocument, doc2: InfoDocument, root: str, vlm: VLM, game: str,
                     max_new_tokens: int, verbose: bool) -> tuple[InfoDocument, dict]:
-    """Fold doc2 into a copy of doc1, section by section."""
     merged = doc1.copy()
     matches = {}
     for section in (TASK_SECTION, IMAGE_SECTION):
@@ -468,7 +402,6 @@ def _node_paths(out_dir: str, round_idx: int, node_idx: int) -> tuple[str, str, 
 
 
 def _node_complete(doc_path: str, matches_path: str, meta_path: str) -> bool:
-    """All three files, or the node is redone — a run killed mid-merge is never trusted."""
     return all(os.path.exists(p) for p in (doc_path, matches_path, meta_path))
 
 
@@ -481,7 +414,6 @@ def _write_atomic(path: str, text: str) -> None:
 
 def run_stage_b(leaves, out_dir, vlm, game, max_new_tokens, max_concurrency, verbose,
                 overwrite_from_round, parameters):
-    """Tournament-reduce the leaf documents into one, checkpointing every node."""
     if not leaves:
         log_error("No stage-A leaves to merge — nothing to build.", parameters)
 
@@ -529,10 +461,9 @@ def run_stage_b(leaves, out_dir, vlm, game, max_new_tokens, max_concurrency, ver
                     }, indent=2))
                     next_docs[node_idx] = merged
 
-        # Labels track provenance so meta.json can name each node's two inputs.
         next_labels = [f"r{round_idx}n{i}" for i in range(len(pairs))]
         if odd_one is not None:
-            next_docs.append(odd_one)          # promoted untouched, never folded into a triple
+            next_docs.append(odd_one)
             next_labels.append(labels[-1])
 
         docs, labels = [d for d in next_docs if d is not None], next_labels
@@ -543,11 +474,6 @@ def run_stage_b(leaves, out_dir, vlm, game, max_new_tokens, max_concurrency, ver
     log_info(f"Saved info document → {final_path} "
              f"({len(docs[0].task_entries)} task / {len(docs[0].image_entries)} image entries)")
     return docs[0]
-
-
-# ---------------------------------------------------------------------------
-# Click command
-# ---------------------------------------------------------------------------
 
 
 @click.command(name="build_info")
@@ -593,9 +519,7 @@ def build_info_cmd(obj, trajectory_path, n_frames, max_concurrency, stage, overw
 
     vlm = VLM(model_name, vlm_kind)
     model_save_name = paths.model_save_name(model_name)
-    # Guard against pointing one model at another model's artifacts — this layout invites it.
-    # Matched case-insensitively: model_save_name is folded, but the stem was built by a
-    # producer that may predate the folding, so a cased directory on disk still matches.
+    # Guards against pointing one model at another model's artifacts; matched case-insensitively.
     if model_save_name not in trajectory_path.lower():
         log_error(
             f"Model name '{model_save_name}' not found in trajectory_path '{trajectory_path}'. "
@@ -609,8 +533,6 @@ def build_info_cmd(obj, trajectory_path, n_frames, max_concurrency, stage, overw
         if not os.path.exists(path):
             log_error(f"trajectory annotation {kind} not found at {path}.", parameters)
 
-    # Output goes next to the input stem — the script never reconstructs a path from
-    # --game/--run_name, exactly like the stages that produce its input.
     out_dir = paths.info_dir_from_stem(trajectory_path)
     os.makedirs(out_dir, exist_ok=True)
     final_path = os.path.join(out_dir, INFO_DOC_FILENAME)
@@ -632,8 +554,7 @@ def build_info_cmd(obj, trajectory_path, n_frames, max_concurrency, stage, overw
     with open(annotation_pkl, "rb") as handle:
         traj_map = {str(k): v for k, v in pickle.load(handle).items()}
 
-    # frames_root is out_dir relative to storage_dir, so a written document carries no
-    # machine-specific path.
+    # frames_root is relative to storage_dir, so a written document carries no machine-specific path.
     storage_dir = parameters["storage_dir"]
     frames_root = os.path.relpath(os.path.abspath(out_dir), os.path.abspath(storage_dir))
     provenance = Provenance(

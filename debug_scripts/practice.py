@@ -1,33 +1,3 @@
-"""
-Practice-stage diagnostics: is the `success` label a real signal or a rubber stamp?
-
-Input (produced by scripts/vlm/practice_tasks.sh and scripts/vlm/clean_practice.sh)
------------------------------------------------------------------------------------
-<practice_dir>/results.csv
-    group_idx, attempt, task_string, success, score, safe_success_point
-    `success` is a VLM judge's verdict (SimpleCheckerSupervisor), not ground truth.
-    `safe_success_point` is a **vlm_call_log index**, not a frame number — see
-    supervisor.py's note; create_dataset slices `[: safe_success_point + safety_margin]`.
-<practice_dir>/{group_idx}_{attempt}.pkl   List[ExecutorVLMCallRecord]
-<practice_dir>/clean_decisions.csv         group_idx, attempt, call_idx, accept, reason
-
-`practice_dir` is not stored anywhere; it is derived the same way the producers derive it.
-infer_guidance writes `<trajectory_path>_guidance.json`, and practice_tasks writes into
-`dirname(guidance_path)/practice_<executor>`. scripts/pipeline/guidance_and_practice.sh
-does exactly this in Bash. `_practice_dir` below is the Python half of that convention.
-
-Known blind spot
-----------------
-practice_tasks retries a failed episode and keeps the retry's result, but records nothing
-about which draw produced the retained episode. Nothing in results.csv distinguishes a
-first-draw success from a retry success, so this report cannot separate them and does not
-pretend to.
-
-Output
-------
-<results_dir>/debug/<game>/practice/report_<leg>.md plus a stratified judge-audit image pack.
-"""
-
 import os
 import pickle
 
@@ -43,30 +13,18 @@ from debug_scripts import markdown as md
 from debug_scripts.frames import strip
 from python_scripts.paths import Paths
 
-SAFETY_MARGIN = 2  # create_dataset.py default; the effective cutoff is point + margin
+SAFETY_MARGIN = 2  # must match create_dataset.py's --safety_margin default
 
-#: Supervisor the practice judge is compared against. The optimism gap is only meaningful
-#: against an environment-verified number, and `subgoal` is the arm that has no documents.
 BENCHMARK_SUPERVISOR = "subgoal"
 
 
 def _practice_dir(paths, leg: str) -> str:
-    """The practice output directory for one collection leg, mirroring practice_tasks.py:
-    `<trajectory_stem>_guidance.json` -> `dirname(...)/practice_<executor>`.
-
-    :return: The practice directory.
-    :rtype: str
-    """
+    # Must mirror how practice_tasks.py derives its output directory.
     guidance_path = paths.info_source_stem(leg) + "_guidance.json"
     return os.path.join(os.path.dirname(guidance_path), f"practice_{paths.executor}")
 
 
 def _call_log_strip(call_log, out_path: str, n: int, overwrite: bool):
-    """Render one episode's call log as a frame strip.
-
-    An ExecutorVLMCallRecord carries `images` as a list of numpy arrays (execution/report.py),
-    so a call log flattens to the frame sequence `strip` already knows how to draw.
-    """
     frames = [image for record in call_log for image in getattr(record, "images", [])]
     if not frames:
         return None
@@ -181,7 +139,6 @@ def _practice_report(paths, obj, leg, n_audit, n_frames, seed):
     n_episodes = len(frame)
     n_success = int(frame["success"].sum())
 
-    # The optimism gap: this judge's verdict vs the environment's, same model and game.
     bench_path = paths.benchmark_csv(paths.game, paths.model_save_name, BENCHMARK_SUPERVISOR)
     bench_line = "_(no benchmark CSV for the base model — run scripts/benchmark.sh)_"
     if os.path.exists(bench_path):
@@ -208,7 +165,6 @@ def _practice_report(paths, obj, leg, n_audit, n_frames, seed):
     always = per_task[(per_task["mean"] == 1.0) & (per_task["count"] >= 3)]
     never = per_task[per_task["mean"] == 0.0]
 
-    # Stratified audit pack: half judged-success, half judged-fail.
     rng = np.random.default_rng(seed)
     audit_rows = []
     for label, subset in [("success", frame[frame["success"]]), ("fail", frame[~frame["success"]])]:
@@ -239,9 +195,7 @@ def _practice_report(paths, obj, leg, n_audit, n_frames, seed):
             "n_calls": len(call_log),
             "actions": " ".join(actions[:20]),
             "image": out,
-            # TODO(legacy-cols): results.csv gained used_retry/derived_hint/judge_reasoning
-            # on 2026-07-20. .get keeps this report working on practice runs made before
-            # that; drop the fallbacks once every practice dir has been regenerated.
+            # TODO(legacy-cols): drop the .get fallbacks once every practice dir has these columns.
             "used_retry": row.get("used_retry"),
             "derived_hint": row.get("derived_hint", ""),
             "judge_reasoning": row.get("judge_reasoning", ""),
@@ -250,9 +204,7 @@ def _practice_report(paths, obj, leg, n_audit, n_frames, seed):
 
     audit_blocks = []
     for entry in audit_entries:
-        # TODO(legacy-cols): three-way on purpose — True/False are real verdicts, None
-        # means the column predates 2026-07-20. Collapse to a two-way check once no
-        # pre-2026-07-20 practice dirs remain.
+        # TODO(legacy-cols): None means the column is absent; collapse to a two-way check once every practice dir has it.
         retry = entry.get("used_retry")
         retry_note = ""
         if retry is True:
@@ -328,7 +280,7 @@ def _practice_report(paths, obj, leg, n_audit, n_frames, seed):
             "in this whole debug suite."
         ),
         md.note(
-            # TODO(legacy-cols): drop this caveat once no pre-2026-07-20 practice dirs remain.
+            # TODO(legacy-cols): drop this caveat once every practice dir has the column.
             "`used_retry` distinguishes a first-draw success from a hint-carried retry. It is "
             "absent from practice runs made before that column was added — those rows show "
             "neither annotation."

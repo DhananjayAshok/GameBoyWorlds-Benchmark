@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# Distils (task, example trajectory) pairs into a consolidated info document for the
-# context-engineering arm. Input is a trajectory stem (--trajectory_path, i.e. the
-# <stem>.json + <stem>.pkl pair the data-collection legs terminate in); all output lands
-# in <dirname(stem)>/info_docs/.
-# --stage a stops after extracting insights.jsonl, which is the merge tree's input and what
-# debug.py info reports on; --stage all also builds the merge tree and info.json. Only
-# info.json is readable by the benchmark, so --stage all is required before benchmarking.
+# Distils (task, example trajectory) pairs into an info document. Input is a trajectory stem
+# (--trajectory_path: <stem>.json + <stem>.pkl); output lands in <dirname(stem)>/info_docs/.
+# --stage a stops after insights.jsonl; --stage all also builds info.json, which the benchmark reads.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -15,7 +11,6 @@ REQUIRED_ARGS=()
 populate_array BUILD_INFO_ESSENTIALS REQUIRED_ARGS
 populate_dict BUILD_INFO_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -50,7 +45,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Runs the VLM agent through guided practice sessions using pre-inferred guidance
 # (--guidance_path from infer_guidance.sh). The agent is given n_attempts tries,
-# starting from n_random_actions random steps to vary the starting state. Use
-# The judge is binary: an episode either succeeded or it did not.
+# starting from n_random_actions random steps to vary the starting state.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -12,7 +11,6 @@ REQUIRED_ARGS=()
 populate_array PRACTICE_TASKS_ESSENTIALS REQUIRED_ARGS
 populate_dict PRACTICE_TASKS_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -47,7 +45,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do

@@ -1,22 +1,4 @@
-"""
-The single entry point Bash uses to ask Python for anything it used to derive itself.
-
-    python python_funcs.py <command> [--flag value ...]
-
-Most commands print exactly one line to stdout — the answer — and nothing else. Bash captures
-that with ``$(...)``, so **stdout is a data channel**: every diagnostic in every command
-reached from here must go to stderr (``python_scripts.common.log``, or ``utils.log_handling``).
-A stray ``print`` here silently corrupts a path at the call site.
-
-Use ``path_of`` in ``scripts/core/utils.sh`` rather than calling this directly: ``$(...)``
-swallows a non-zero exit, so an unchecked capture turns a failed lookup into an empty string.
-
-Kept cheap to import — ~0.1s, against ~15s if anything touches torch. Nothing on the import
-path may pull in the VLM stack; the commands that need heavy imports do them inside the
-function body.
-
-Project parameters are loaded LAZILY, through ``ctx.obj["parameters"]()``.
-"""
+# stdout is a data channel captured by Bash: every diagnostic must go to stderr.
 
 import functools
 
@@ -35,7 +17,6 @@ def main(ctx):
     """Path lookups and small helpers shared by the Python and Bash halves of the pipeline."""
     from utils.parameter_handling import load_parameters
 
-    # A callable, not the dict: commands that do not need parameters do not pay for them.
     ctx.obj = {"parameters": functools.cache(load_parameters)}
 
 

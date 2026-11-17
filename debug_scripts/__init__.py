@@ -1,16 +1,3 @@
-"""
-Debug/diagnostic commands for the GameBoyRL pipeline. Registered on the click group in
-debug.py, mirroring vlm.py / vlm_scripts.
-
-Every command is read-only over artifacts the pipeline is guaranteed to have written, and
-raises (naming the producing script) when a required artifact is absent. Nothing here
-reads logs/, wandb or slurm.
-
-Two commands need more than saved artifacts: `zeroshot` opens an emulator for each
-init_state's first frame, and `compare` opens one and *does* take steps, replaying each
-episode's recorded action sequence to reconstruct frames. Neither constructs a VLM.
-"""
-
 from debug_scripts.check_paths import check_paths
 from debug_scripts.curiosity import debug_curiosity
 from debug_scripts.infer import debug_infer

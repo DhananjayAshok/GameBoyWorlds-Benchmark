@@ -1,25 +1,3 @@
-"""
-Writes a manifest that references several grouped-trajectory pickle files.
-
-Each input pickle is a list[group], where each group is a list[trajectory], as written by
-cleanrl/cleanrl_utils/group_trajectories.py. Instead of concatenating them (tens of GB of
-frames), this writes a small manifest: a pickled list[str] of absolute paths to the input
-pkls. Group order is positional, so downstream infer_tasks sees the same flattened sequence a
-real concatenation would have produced. infer_tasks.load_grouped_trajectories understands
-both a manifest (list[str]) and a plain list[group].
-
-Used by scripts/pipeline/curiosity_all_tasks.sh to merge a game's per-init_state grouped
-trajectories into a single file, so one infer_tasks call annotates all states.
-
-The manifest points at the input pkls instead of copying them, so it breaks if those inputs
-are later moved or deleted.
-
-Output: <save_path>/grouped_<z_kind>_high_reward_trajectories.pkl — same naming as
-group_trajectories.py so the combined file is interchangeable with a per-state one.
-
-NOTE: curiosity_all_tasks.sh writes the combined file under an "all" init_state_group
-directory, which would collide with a real init_state literally named "all".
-"""
 import os
 import pickle
 
@@ -54,7 +32,7 @@ def combine_trajectories_cmd(input_paths, save_path, z_kind):
         if not os.path.exists(path):
             log(f"WARN: skipping missing grouped trajectory pkl: {path}")
             continue
-        manifest.append(os.path.abspath(path))  # abspath so it resolves from any cwd
+        manifest.append(os.path.abspath(path))
 
     if not manifest:
         log(
@@ -64,5 +42,5 @@ def combine_trajectories_cmd(input_paths, save_path, z_kind):
     os.makedirs(save_path, exist_ok=True)
     out_path = os.path.join(save_path, f"grouped_{z_kind}_high_reward_trajectories.pkl")
     with open(out_path, "wb") as f:
-        pickle.dump(manifest, f)  # list[str] of input pkl paths, not the trajectories
+        pickle.dump(manifest, f)  # the manifest holds input pkl paths, not the trajectories
     log(f"Wrote manifest of {len(manifest)} file(s) -> {out_path}")

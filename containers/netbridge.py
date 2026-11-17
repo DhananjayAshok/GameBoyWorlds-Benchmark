@@ -1,13 +1,7 @@
 """
-Runs inside the sandbox. Exposes bind-mounted Unix sockets as TCP ports on the sandbox's own
-loopback, which in an empty network namespace is private to the sandbox.
+Runs inside the sandbox: exposes bind-mounted Unix sockets as TCP ports on the sandbox's private loopback.
 
-    python netbridge.py 3128=/run/sandbox/egress.sock 8710=/run/sandbox/envserver.sock
-
-That is what lets unmodified clients -- prime-agent through HTTPS_PROXY, envctl through
-ENV_SERVER_URL -- reach the two channels the sandbox is allowed, and nothing else. It forwards
-bytes and decides nothing: what may pass is decided by the processes on the host side of each
-socket.
+    python netbridge.py 8710=/sandboxnet/envserver.sock 8720=/sandboxnet/model.sock
 """
 import asyncio
 import sys

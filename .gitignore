@@ -187,3 +187,13 @@ slurm/
 storage/
 paper/
 annotation/
+.claude/
+screenlog.*
+/*.mp4
+/*.zip
+runs/dump_assistant.py
+containers/smoke_e2e.sh
+*.sif
+obs/
+.envctl/
+agent_workspace/env.json

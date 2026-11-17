@@ -1,10 +1,3 @@
-"""
-The split file: the one place that says which tasks the agent may develop on.
-
-`train` and `val` are listed by a dev server. `test` is held-back tasks in the training games; `test_env` is every
-task of a game that is not a training game. A start state is kept whole: every task sharing an init_state lands in
-one split, so free play can never start the agent where a test task starts.
-"""
 import json
 import os
 import random
@@ -16,6 +9,7 @@ from gameboy_worlds import get_benchmark_tasks, get_benchmark_tasks_dfs
 from utils import load_parameters
 from utils.log_handling import log_error, log_info
 
+# test: held-back tasks of the training games. test_env: every task of a non-training game.
 SPLITS = ("train", "val", "test", "test_env")
 DEV_SPLITS = ("train", "val")
 TEST_SPLITS = ("test", "test_env")
@@ -41,7 +35,7 @@ def index_of(*, task_id: str) -> int:
 def load_config(*, parameters: dict) -> dict:
     with open(os.path.join(parameters["project_root"], CONFIG_PATH)) as f:
         config = yaml.safe_load(f)
-    known = benchmark_games(parameters=parameters)
+    known = benchmark_games()
     unknown = [g for g in config["train_games"] if g not in known]
     if unknown:
         log_error(f"split_config.yaml names games with no benchmark tasks: {unknown}. "
@@ -51,9 +45,8 @@ def load_config(*, parameters: dict) -> dict:
     return config
 
 
-def benchmark_games(*, parameters: dict, min_tasks: int = 2) -> list:
-    """Every game the benchmark tables actually carry tasks for. min_tasks drops the one-row placeholder
-    variants (pokemon_brown, pokemon_prism), which cannot be split."""
+def benchmark_games(*, min_tasks: int = 2) -> list:
+    # min_tasks drops one-row placeholder games, which cannot be split.
     counts = {}
     for df in get_benchmark_tasks_dfs().values():
         for game, n in df["game"].value_counts().items():
@@ -66,12 +59,13 @@ def generate(*, parameters: dict = None, write: bool = True) -> dict:
     config = load_config(parameters=parameters)
     rng = random.Random(config["seed"])
     splits = {}
-    for game in benchmark_games(parameters=parameters):
+    for game in benchmark_games():
         rows = get_benchmark_tasks(game=game).reset_index(drop=True)
         if game not in config["train_games"]:
             for i, row in rows.iterrows():
                 splits[task_id(game=game, index=i)] = {"split": "test_env", "text": row["task"]}
             continue
+        # Tasks sharing an init_state stay in one split, so free play never starts where a test task does.
         by_state = {}
         for i, row in rows.iterrows():
             by_state.setdefault(row["init_state"], []).append(i)
@@ -137,8 +131,7 @@ def verify(*, splits: dict, parameters: dict) -> None:
                           parameters=parameters)
 
 
-def row_of(*, task_id: str, parameters: dict = None):
-    parameters = load_parameters(parameters)
+def row_of(*, task_id: str):
     rows = get_benchmark_tasks(game=game_of(task_id=task_id)).reset_index(drop=True)
     return rows.iloc[index_of(task_id=task_id)]
 
@@ -151,8 +144,6 @@ def listed(*, splits_wanted: tuple, parameters: dict = None) -> list:
 
 
 def free_play_states(*, parameters: dict = None) -> dict:
-    """{game: [init_state]} a dev free-play session may start from: the train and val start states of the training
-    games, and only those the benchmark marks trainable."""
     parameters = load_parameters(parameters)
     splits = load_splits(parameters=parameters)
     config = load_config(parameters=parameters)

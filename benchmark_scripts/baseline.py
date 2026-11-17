@@ -1,8 +1,3 @@
-"""
-The no-knowledge arm: run the executor on each benchmark task with nothing but the task
-string.
-"""
-
 from __future__ import annotations
 
 import json
@@ -50,15 +45,12 @@ def baseline_cmd(obj):
 
     def run_one(row):
         def play(environment):
-            # Through DummySupervisor, which adds no reasoning, so every arm still produces
-            # a SupervisorReport.
             supervisor = supervisor_class(
                 task=row["task"],
                 executor_class=executor_class,
                 env=environment,
                 game=row["game"],
                 max_steps=obj["max_steps"],
-                # Passed like every other arm; info_subgoal overrides parameters in-process.
                 parameters=parameters,
                 vlm_model=obj["executor_vlm_model"],
                 vlm_kind=obj["executor_vlm_kind"],

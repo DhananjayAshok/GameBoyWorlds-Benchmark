@@ -1,71 +1,3 @@
-"""
-Called by scripts/vlm/practice_tasks.sh (via vlm.py practice_tasks). Use --help for CLI options.
-
-Input
------
-A trajectory_guidance.json produced by infer_guidance.py.
-Format: {group_idx: {task, init_state, goal_condition, guidance}}
-  guidance: {"summary": <str>, "steps": [<str>, ...]}
-
-Processing
-----------
-Each (group_idx, attempt) pair is an independent episode (no hint derivation
-between attempts), so all of them are flattened into one job pool:
-  1. Create a fresh environment for the group's init_state.
-  2. Reset with a deterministic per-episode seed (see _episode_seed).
-  3. Take n_random_actions random low-level steps to perturb the start state.
-  4. Run AttemptCheckerSupervisor with the task, the formatted guidance (passed as
-     the executor's hint), and the goal_condition (passed to the judge).
-  5. On failure, derive a hint, replay the perturbation, and retry once.
-  6. Save the executor's vlm_call_log to a per-episode pickle.
-
-Guidance and goal_condition go to different consumers: guidance rides the executor's hint
-channel, goal_condition reaches only the judge.
-
-Jobs run on a thread pool (--max_concurrency). Forced to 1 worker when
---verbose (so prints/breakpoints stay sequential) or when the VLM backend is
-a local HuggingFace model (not safe for concurrent generate() calls).
-
-CLI options
------------
-  --guidance_path     Path to trajectory_guidance.json (required)
-  --n_attempts        Number of independent attempts per task (default: 3)
-  --n_random_actions  Random env steps before each attempt (default: 5)
-  --max_steps         Env-step budget per attempt (default: 50)
-  --lookback          Frames passed to checker VLM (default: 8)
-  --executor          Executor class short name (default: single_actions)
-  --controller_variant  (default: low_level)
-  --max_concurrency   Max concurrent episodes (default: 16)
-
-Output
-------
-Directory: same directory as guidance_path, under a "practice/" subfolder.
-
-  practice/{group_idx}_{attempt}.pkl
-    List[ExecutorVLMCallRecord] — all executor VLM calls made during that episode.
-
-  practice/results.csv
-    Columns: group_idx, attempt, task_string, success, safe_success_point, seed, the
-    provenance fields (used_retry, derived_hint, guidance, goal_condition,
-    judge_description, judge_reasoning), and the run diagnostics the checker
-    reports (termination_reason, n_env_steps). Rows are sorted by (group_idx, attempt)
-    order from guidance_path, regardless of completion order.
-
-  practice/config.json
-    The settings this practice dir was produced under. Includes n_attempts_requested vs
-    n_attempts_effective, which differ when max_total_practice_runs truncated the run.
-
-Checkpointing
--------------
-  practice/checkpoint.json — list of completed result rows, written
-  atomically (tmp file + rename) after each completed episode.
-  On startup: load completed rows, skip already-done (group_idx, attempt) pairs.
-  On completion: write final CSV, delete checkpoint.
-
-  Episodes that raise an exception are logged and skipped (not added to the
-  checkpoint), so they are retried on the next run.
-"""
-
 import json
 import os
 import pickle
@@ -84,7 +16,6 @@ from utils import log_info, log_warn, log_error, VLM, HuggingFaceModel
 
 
 def _format_guidance(guidance_dict: dict) -> str:
-    """Format a guidance dict {summary, steps} into a readable string for the supervisor."""
     lines = []
     if guidance_dict.get("summary"):
         lines.append(f"Summary: {guidance_dict['summary']}")
@@ -97,14 +28,7 @@ def _format_guidance(guidance_dict: dict) -> str:
 
 
 def _episode_seed(base_seed: int, group_idx: str, attempt: int) -> int:
-    """Deterministic per-episode seed, laid out as decimal place values.
-
-    Injective per leg given task_index < 100 and attempt < 100. Never ``hash()``, which is
-    salted per process.
-
-    :return: The seed.
-    :rtype: int
-    """
+    # Injective given task_index < 100 and attempt < 100. Never hash(), which is salted per process.
     group_idx = str(group_idx)
     if "_" in group_idx:
         head, _, tail = group_idx.partition("_")
@@ -115,7 +39,6 @@ def _episode_seed(base_seed: int, group_idx: str, attempt: int) -> int:
 
 
 def _report_env_steps(report) -> list:
-    """Every EnvironmentStepRecord across the supervisor's executor legs, in order."""
     return [
         step
         for executor_report in report.executor_reports
@@ -125,11 +48,7 @@ def _report_env_steps(report) -> list:
 
 
 def _report_vlm_calls(report) -> list:
-    """Every ExecutorVLMCallRecord across the supervisor's executor legs, in order.
-
-    This is what gets pickled per episode and what clean_practice and create_dataset
-    index with call_idx, so the flattening order here defines that index.
-    """
+    # The flattening order defines the call_idx that clean_practice and create_dataset index with.
     return [
         call
         for executor_report in report.executor_reports
@@ -157,11 +76,6 @@ def _practice_episode(
     parameters: dict,
     verbose: bool,
 ):
-    """Run one independent (group_idx, attempt) practice episode in its own env.
-
-    Returns (row_dict, vlm_call_log) on success, or None if the episode raised
-    (logged, and left for retry on the next run).
-    """
     task_str = record["task"]
     init_state = record["init_state"]
     goal_condition = record.get("goal_condition", "") or None
@@ -220,13 +134,11 @@ def _practice_episode(
         derived_hint = ""
         if failed:
             env_steps = _report_env_steps(result["report"])
-            # (hint, input_tokens, output_tokens); this script does not account for tokens.
             derived_hint, _, _ = derive_critique_hint(
                 env_steps, task_str, game, critique_vlm, max_new_tokens
             )
             hint_str = f"{guidance_str}\nSpecific hint: {derived_hint}" if guidance_str else f"Specific hint: {derived_hint}"
-            # A fresh supervisor: evaluate() refuses to run twice on one instance, and the
-            # hint is frozen into _executor_kwargs at construction time.
+            # A fresh supervisor: evaluate() refuses to run twice on one instance.
             supervisor = _make_supervisor(hint_str)
             supervisor._env.reset()
             for action in random_actions:
@@ -246,7 +158,6 @@ def _practice_episode(
             "success": result["success"],
             "safe_success_point": result.get("safe_success_point"),
             "seed": seed,
-            # Everything below describes *how* this episode was produced.
             "used_retry": bool(failed),
             "derived_hint": derived_hint,
             "guidance": guidance_str or "",
@@ -256,9 +167,6 @@ def _practice_episode(
             "termination_reason": result.get("termination_reason"),
             "n_env_steps": result.get("n_env_steps"),
         }
-        # The call log comes off the FINAL result's executor leg, so it is the post-retry
-        # episode the row describes. clean_practice reads each record's own steps for the
-        # after-frame, so nothing needs backfilling onto it here.
         return row, _report_vlm_calls(result["report"])
     except Exception:
         log_info(f"[{group_idx}_{attempt}] episode failed:\n{traceback.format_exc()}", parameters)
@@ -356,8 +264,6 @@ def practice_tasks_cmd(
     max_new_tokens = obj["max_new_tokens"]
 
     executor_class = AVAILABLE_EXECUTORS[executor_name]
-    # Also the critique VLM handed to each episode for derive_critique_hint. One shared
-    # instance: VLM wraps a stateless client.
     vlm = VLM(model_name, vlm_kind)
 
     if not os.path.exists(guidance_path):
@@ -386,10 +292,6 @@ def practice_tasks_cmd(
 
     guidance_strs = {g: _format_guidance(rec.get("guidance", {})) for g, rec in guidance_data.items()}
 
-    # Cap the total practice loop so a run finishes in a bounded amount of wall-clock
-    # time (~5 days at current rates == ~4000 episodes). If tasks x n_attempts blows
-    # past the cap, shrink n_attempts to the largest value that keeps the total under
-    # max_total_practice_runs, keeping at least 1 attempt per task.
     n_tasks = len(guidance_data)
     n_attempts_requested = n_attempts
     if n_tasks > 0 and n_tasks * n_attempts > max_total_practice_runs:
@@ -407,11 +309,9 @@ def practice_tasks_cmd(
     jobs = [j for j in all_jobs if j not in done]
     log_info(f"{len(done)}/{len(all_jobs)} episodes already done — running {len(jobs)}.", parameters)
 
-    # Each (group_idx, attempt) episode owns its own env, so they can run concurrently.
-    # --verbose and HuggingFaceModel both fall back to one worker.
+    # HuggingFaceModel is not safe for concurrent generate() calls.
     effective_workers = 1 if (verbose or isinstance(vlm._vlm, HuggingFaceModel)) else max_concurrency
 
-    # Written before the run, and rewritten on every invocation including a resume.
     config = {
         "guidance_path": os.path.abspath(guidance_path),
         "game": game,

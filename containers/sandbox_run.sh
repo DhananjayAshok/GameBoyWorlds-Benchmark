@@ -1,19 +1,10 @@
 #!/bin/sh
-# Installed in the sandbox image as /opt/sandbox/bin/sandbox-run: the entry point for an isolated run.
-#
-#     apptainer exec --containall --cleanenv --net --network none \
-#         --bind <dir with the sockets>:/sandboxnet ... sandbox.sif \
-#         sandbox-run prime-agent -p "..."
-#
-# with SANDBOX_BRIDGE="8710=/sandboxnet/envserver.sock 8720=/sandboxnet/model.sock" in the environment.
-# Starts netbridge.py for those channels on the sandbox's private loopback, waits until it is
-# listening, then becomes the given command. Without SANDBOX_BRIDGE it only runs the command.
-#
-# Under --network none these are the only addresses that lead anywhere: the sandbox has no
-# interface but its own loopback, and no DNS.
-if [ -n "$SANDBOX_BRIDGE" ]; then
+# /opt/sandbox/bin/sandbox-run in the image. Starts netbridge.py for the port=socket pairs in
+# SANDBOX_BRIDGE, waits until it is listening, then becomes the given command.
+set -eu
+if [ -n "${SANDBOX_BRIDGE:-}" ]; then
     log=/tmp/netbridge.log
-    # shellcheck disable=SC2086  # SANDBOX_BRIDGE is a space-separated list of port=socket pairs.
+    # shellcheck disable=SC2086
     python /opt/sandbox/bin/netbridge.py $SANDBOX_BRIDGE > "$log" 2>&1 &
     tries=0
     until grep -q "netbridge ready" "$log" 2>/dev/null; do

@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# scripts/benchmark/run_benchmark.sh's info_subgoal_retrieval arm, with --info_docs resolved rather than
-# typed: --game is resolved to its train games (the titles that declare train states, so the
-# only ones with source data), paths.py is asked where each vertical --docs_mode names must
-# be, and those are comma-joined. Every one of them has to exist — see the error below.
-#
-# --docs_model / --docs_executor / --docs_controller_variant / --docs_run_name select WHICH
-# documents to read; they are inputs on disk and are independent of the model being
-# benchmarked (--executor_vlm_model).
+# run_benchmark.sh's info_subgoal_retrieval arm, with --info_docs resolved from the train games
+# of --game rather than typed. --docs_model / --docs_executor / --docs_controller_variant /
+# --docs_run_name / --docs_mode select which documents to read; all of them must exist.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -16,7 +11,6 @@ REQUIRED_ARGS=()
 populate_array RUN_BENCHMARK_INFO_RETRIEVAL_ESSENTIALS REQUIRED_ARGS
 populate_dict RUN_BENCHMARK_INFO_RETRIEVAL_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -51,7 +45,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
@@ -71,8 +64,7 @@ if [[ -z "$wanted_sources" ]]; then
 fi
 echo "docs_mode '${ARGS["docs_mode"]}' -> sources: $wanted_sources"
 
-# path_of's own exit only kills the subshell here, so an empty list is checked for below
-# rather than assumed to be impossible.
+# path_of's own exit only kills the subshell here, so an empty list is checked for below.
 mapfile -t docs_games < <(path_of train_games --game "$game")
 if [[ ${#docs_games[@]} -eq 0 ]]; then
     echo "Error: no train games for $game (path_of train_games returned nothing)."
@@ -80,11 +72,6 @@ if [[ ${#docs_games[@]} -eq 0 ]]; then
 fi
 echo "Train games for $game: ${docs_games[*]}"
 
-# --docs_mode is a requirement, not a wish: paths.py says where each requested document must
-# be, and anything missing is an error. Asking the disk which verticals happen to exist and
-# quietly narrowing to those made --docs_mode both silently equivalent to whichever single
-# vertical was present, so two runs of the same command could plan from different knowledge
-# and nothing in the CSV said which.
 info_docs=""
 missing=""
 for docs_game in "${docs_games[@]}"; do
@@ -115,18 +102,12 @@ fi
 ARGS["supervisor"]="info_subgoal_retrieval"
 ARGS["info_docs"]="$info_docs"
 
-# Defaulted, not required: --docs_mode is the whole reason two runs of this arm can differ
-# while sharing a supervisor, executor, controller_variant and model — which is one CSV path
-# and one session tree for both. Leaving it to the caller to remember means the collision is
-# only avoided when someone thinks of it, and the failure is silent: without --regenerate the
-# second run RESUMES the first one's CSV, so a zeroshot_only file quietly gains curiosity_only
-# rows. An explicit --extra_name still wins, for telling two runs of the same docs_mode apart.
+# Default extra_name to docs_mode so runs differing only in docs_mode do not share a CSV.
 if [[ "${ARGS["extra_name"]}" == "none" ]]; then
     ARGS["extra_name"]="${ARGS["docs_mode"]}"
     echo "extra_name defaulted to docs_mode '${ARGS["docs_mode"]}' (names the CSV and session dir)"
 fi
 
-# Subset against run_benchmark.sh's own key list, which drops the three docs_* lookup flags it
-# does not accept.
+# Subset against run_benchmark.sh's own key list, which drops the docs_* flags it does not accept.
 arg_string=$(args_to_flags_subset ARGS RUN_BENCHMARK_ARG_KEYS)
 bash scripts/benchmark/run_benchmark.sh $arg_string

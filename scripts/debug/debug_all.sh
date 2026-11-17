@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# Runs every debug report for one game in pipeline order and stops at the first failure,
-# so a missing artifact is reported against the earliest stage that lacks it rather than
-# being masked by later errors. All reports land under <results_dir>/debug/<game>/.
-#
-# Ordering is the pipeline's own: curiosity -> infer -> zeroshot -> attempt ->
-# benchmark. Note that debug_curiosity has to load very large pickles and
-# debug_zeroshot starts an emulator, so this is not instant on a first run; both cache
-# their outputs.
+# Runs every debug report for one game in pipeline order (curiosity -> infer -> zeroshot ->
+# attempt -> benchmark), stopping at the first failure. Reports land under
+# <results_dir>/debug/<game>/.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -20,7 +15,6 @@ ARGS["max_gb"]=8.0
 ARGS["skip_curiosity"]=false
 ARGS["skip_zeroshot"]=false
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -55,16 +49,12 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"
 done
 
-# Shared flags every subscript accepts (game, run_name, executor, output_dir,
-# model_name). Per-stage extras are appended on the individual calls below.
 shared=$(args_to_flags_subset ARGS DEBUG_MODEL_ARG_KEYS)
 
 if [[ "${ARGS["skip_curiosity"]}" == "true" ]]; then
@@ -91,7 +81,6 @@ bash scripts/debug/debug_attempt.sh $shared || exit 1
 echo "=== [5/5] benchmark ==="
 bash scripts/debug/debug_benchmark.sh $shared || exit 1
 
-# Index linking whatever was produced, so the folder has one entry point.
 debug_root="$results_dir/debug/${ARGS["game"]}"
 index="$debug_root/index.md"
 {

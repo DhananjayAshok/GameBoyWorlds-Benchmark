@@ -1,20 +1,11 @@
-"""
-Queries GameBoyWorlds for all available training states and writes them to
-scripts/core/all_train_states.sh as a bash associative array (TRAIN_STATES).
-Run this whenever the set of training states in GameBoyWorlds changes so that
-create_all_traj.sh and propose_all_zeroshot.sh stay in sync.
-"""
 import os
 
 import click
 
 from python_scripts.common import log
 
-# DELTA TODO: 1: Change this to print out only the init states from benchmark for those.
-# That means each game dict will lead to a straight comma separated list of states.
+# TODO: print only the benchmark init states, as one comma-separated list per game.
 
-#: Written relative to project_root, not CWD — this is a generated source file, and the
-#: generator must not depend on where it was invoked from.
 OUTPUT_RELPATH = os.path.join("scripts", "core", "all_train_states.sh")
 
 
@@ -24,7 +15,7 @@ def task_dictionary_cmd(obj):
     """Regenerate scripts/core/all_train_states.sh from GameBoyWorlds' training states."""
     from gameboy_worlds import get_all_training_states
 
-    all_training_states = get_all_training_states()  # {game: [state1, state2, ...]}
+    all_training_states = get_all_training_states()
 
     output_path = os.path.join(obj["parameters"]()["project_root"], OUTPUT_RELPATH)
     lines = [

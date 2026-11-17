@@ -1,7 +1,3 @@
-"""
-Embedding models and in-memory vector indices.
-"""
-
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Type, Union
 
@@ -21,13 +17,7 @@ _EmbeddingInput = Union[str, np.ndarray, Image.Image]
 
 
 class RandomPatchProjection:
-    """A learning-free image embedding: project each screen cell through a fixed random matrix.
-
-    Game Boy specific. ``StateParser.capture_grid_cells`` splits the 160x144 screen into
-    90 cells of 16x16; each is flattened, projected to ``cell_reduction_dimension``,
-    normalised, and the 90 results are concatenated. The projection is seeded from
-    ``random_seed`` so the same screen always embeds identically across runs.
-    """
+    """Game Boy specific: assumes a 160x144 screen split into 90 cells of 16x16."""
 
     cell_reduction_dimension = 8
 
@@ -45,7 +35,6 @@ class RandomPatchProjection:
     def _embed_single(self, item: Union[np.ndarray, Image.Image]) -> torch.Tensor:
         item = np.array(item)
         grid_cells = StateParser.capture_grid_cells(item, y_offset=0)
-        # Always 90 grid cells that are 16x16 (because 160 * 144)
         cell_embeddings = []
         for key in sorted(grid_cells.keys()):
             cell_image_resized = np.resize(grid_cells[key], (16, 16))
@@ -58,7 +47,6 @@ class RandomPatchProjection:
                 cell_embedding = self.random_projection(cell_image_tensor)
                 cell_embedding = cell_embedding / (cell_embedding.norm() + 1e-6)
             cell_embeddings.append(cell_embedding)
-        # shape (cell_reduction_dimension * 90,)
         return torch.cat(cell_embeddings, dim=0)
 
     def project(self, items: List[Union[np.ndarray, Image.Image]]) -> torch.Tensor:
@@ -66,24 +54,12 @@ class RandomPatchProjection:
 
 
 class HuggingFaceEmbeddingEngine(ABC):
-    """
-    Embedding engine using HuggingFace models.
-    """
-
     MODEL_REGISTRY: Dict[str, Tuple[AutoModel, AutoProcessor, str]] = {}
     """ Model registry to cache loaded models. Keyed by model name. Value is a tuple of (model, processor, model_kind). """
 
     @staticmethod
     @abstractmethod
     def _do_start(model_kind: str, model_name: str) -> Tuple[AutoModel, AutoProcessor]:
-        """
-        Starts the engine and returns the model and processor.
-
-        :param model_kind: The kind of model to load
-        :param model_name: The name of the model to load
-        :return: A tuple of (model, processor)
-        :rtype: Tuple[AutoModel, AutoProcessor]
-        """
         raise NotImplementedError()
 
     @staticmethod
@@ -92,16 +68,6 @@ class HuggingFaceEmbeddingEngine(ABC):
         model_kind: str,
         model_name: str,
     ):
-        """
-        Starts the embedding engine with the specified model.
-
-        :param engine_class: The embedding engine class to use
-        :type engine_class: Type[HuggingFaceEmbeddingEngine]
-        :param model_kind: The kind of model to use
-        :type model_kind: str
-        :param model_name: The name of the model to use
-        :type model_name: str
-        """
         if model_name in HuggingFaceEmbeddingEngine.MODEL_REGISTRY:
             _model, _processor, loaded_model_kind = (
                 HuggingFaceEmbeddingEngine.MODEL_REGISTRY[model_name]
@@ -130,18 +96,6 @@ class HuggingFaceEmbeddingEngine(ABC):
     def _do_embed(
         model_kind: str, model_name: str, items: List[_EmbeddingInput]
     ) -> torch.Tensor:
-        """
-        Logic to generate embeddings for a list of items.
-
-        :param model_kind: The kind of model to use
-        :type model_kind: str
-        :param model_name: The name of the model to use
-        :type model_name: str
-        :param items: List of input texts to embed
-        :type items: List[_EmbeddingInput]
-        :return: Tensor containing the embeddings
-        :rtype: torch.Tensor
-        """
         raise NotImplementedError()
 
     @staticmethod
@@ -151,20 +105,6 @@ class HuggingFaceEmbeddingEngine(ABC):
         model_name: str,
         items: List[_EmbeddingInput],
     ) -> torch.Tensor:
-        """
-        Generate embeddings for a list of items using the specified model.
-
-        :param engine_class: The embedding engine class to use
-        :type engine_class: Type[HuggingFaceEmbeddingEngine]
-        :param model_kind: The kind of model to use
-        :type model_kind: str
-        :param model_name: The name of the model to use
-        :type model_name: str
-        :param items: List of inputs to embed
-        :type items: List[_EmbeddingInput]
-        :return: Tensor containing the embeddings
-        :rtype: torch.Tensor
-        """
         if not HuggingFaceEmbeddingEngine.is_loaded(model_name=model_name):
             HuggingFaceEmbeddingEngine.start(
                 engine_class=engine_class, model_kind=model_kind, model_name=model_name
@@ -178,16 +118,6 @@ class HuggingFaceTextEmbeddingEngine(HuggingFaceEmbeddingEngine):
 
     @staticmethod
     def _do_start(model_kind: str, model_name: str) -> Tuple[AutoModel, AutoProcessor]:
-        """
-        Starts the engine and returns the model and processor.
-        Currently only supports Qwen3-Embedding and Jina models. Add more model kinds as needed.
-
-        :param model_kind: The kind of model to load
-        :param model_name: The name of the model to load
-        :return: A tuple of (model, processor)
-        :rtype: Tuple[AutoModel, AutoProcessor]
-        """
-        # this way, we can add more model kinds w different engines (e.g. OpenAI API) later
         if model_kind == "qwen3":
             model = AutoModel.from_pretrained(
                 model_name, dtype=torch.bfloat16, device_map="auto"
@@ -209,18 +139,6 @@ class HuggingFaceTextEmbeddingEngine(HuggingFaceEmbeddingEngine):
     def _do_embed(
         model_kind: str, model_name: str, items: List[_EmbeddingInput]
     ) -> torch.Tensor:
-        """
-        Logic to generate embeddings for a list of items.
-
-        :param model_kind: The kind of model to use
-        :type model_kind: str
-        :param model_name: The name of the model to use
-        :type model_name: str
-        :param items: List of input texts to embed
-        :type items: List[_EmbeddingInput]
-        :return: Tensor containing the embeddings
-        :rtype: torch.Tensor
-        """
         model, processor, _ = HuggingFaceEmbeddingEngine.MODEL_REGISTRY[model_name]
         if model_kind == "qwen3":
             max_length = load_parameters()["text_embedding_model_max_length"]
@@ -244,18 +162,7 @@ class HuggingFaceTextEmbeddingEngine(HuggingFaceEmbeddingEngine):
 class HuggingFaceImageEmbeddingEngine(HuggingFaceEmbeddingEngine):
     @staticmethod
     def _do_start(model_kind: str, model_name: str) -> Tuple[AutoModel, AutoProcessor]:
-        """
-        Starts the engine and returns the model and processor.
-        Currently only supports Jina-Embedding models and the learning-free
-        :class:`RandomPatchProjection`. Add more model kinds as needed.
-
-        :param model_kind: The kind of model to load
-        :param model_name: The name of the model to load
-        :return: A tuple of (model, processor)
-        :rtype: Tuple[AutoModel, AutoProcessor]
-        """
         if model_kind == "jina":
-            # See the note in HuggingFaceTextEmbeddingEngine._do_start.
             model = AutoModel.from_pretrained(
                 model_name,
                 trust_remote_code=True,
@@ -271,18 +178,6 @@ class HuggingFaceImageEmbeddingEngine(HuggingFaceEmbeddingEngine):
     def _do_embed(
         model_kind: str, model_name: str, items: List[_EmbeddingInput]
     ) -> torch.Tensor:
-        """
-        Logic to generate embeddings for a list of items.
-
-        :param model_kind: The kind of model to use
-        :type model_kind: str
-        :param model_name: The name of the model to use
-        :type model_name: str
-        :param items: List of input images to embed
-        :type items: List[_EmbeddingInput]
-        :return: Tensor containing the embeddings
-        :rtype: torch.Tensor
-        """
         model, _processor, _ = HuggingFaceEmbeddingEngine.MODEL_REGISTRY[model_name]
         if model_kind == "random_patch":
             return model.project(items)
@@ -310,16 +205,6 @@ class EmbeddingModel(ABC):
         model_kind: str,
         engine: Type[HuggingFaceEmbeddingEngine],
     ):
-        """
-        Initializes the embedding model with the specified model and engine.
-
-        :param model_name: The name of the model to use
-        :type model_name: str
-        :param model_kind: The kind of Embedding model
-        :type model_kind: str
-        :param engine: The embedding engine class to use
-        :type engine: Type[HuggingFaceEmbeddingEngine]
-        """
         self._model_name = model_name
         self._model_kind = model_kind
         self._ENGINE = engine
@@ -330,14 +215,6 @@ class EmbeddingModel(ABC):
         )
 
     def embed(self, items: List[_EmbeddingInput]) -> torch.Tensor:
-        """
-        Generate embeddings for a list of items.
-
-        :param items: List of inputs to embed
-        :type items: List[_EmbeddingInput]
-        :return: Tensor containing the embeddings
-        :rtype: torch.Tensor
-        """
         return self._ENGINE.embed(
             engine_class=self._ENGINE,
             model_kind=self._model_kind,
@@ -348,19 +225,6 @@ class EmbeddingModel(ABC):
     def compare(
         self, embeddings_a: torch.Tensor, embeddings_b: torch.Tensor
     ) -> torch.Tensor:
-        """
-        Compare two sets of embeddings and return cosine similarity scores.
-
-        Each row is L2-normalised before the matrix product, so entry ``(i, j)`` is the
-        cosine similarity between ``embeddings_a[i]`` and ``embeddings_b[j]``.
-
-        :param embeddings_a: First set of embeddings
-        :type embeddings_a: torch.Tensor
-        :param embeddings_b: Second set of embeddings
-        :type embeddings_b: torch.Tensor
-        :return: Similarity scores, of shape (len(embeddings_a), len(embeddings_b))
-        :rtype: torch.Tensor
-        """
         return torch.matmul(
             embeddings_a / embeddings_a.norm(dim=1, keepdim=True),
             (embeddings_b / embeddings_b.norm(dim=1, keepdim=True)).T,
@@ -369,19 +233,6 @@ class EmbeddingModel(ABC):
     def embed_compare(
         self, item: _EmbeddingInput, existing_index: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Given an input and an existing index of embeddings, embed the input and compare it to the existing index.
-
-        :param item: The input to embed and compare
-        :type item: _EmbeddingInput
-        :param existing_index: The existing index of embeddings to compare against
-        :type existing_index: torch.Tensor
-        :return: A tuple containing
-
-            - The embedding of the input. Will have the extra dimension for batch size 1.
-            - The similarity scores between the input embedding and the existing index
-        :rtype: Tuple[torch.Tensor, torch.Tensor]
-        """
         embedding = self.embed([item])
         similarity_scores = self.compare(embedding, existing_index)
         return embedding, similarity_scores
@@ -390,16 +241,6 @@ class EmbeddingModel(ABC):
 class TextEmbeddingModel(EmbeddingModel):
 
     def __init__(self, model_name: str = None, model_kind: str = None, parameters: dict = None):
-        """
-        Initializes the TextEmbeddingModel with model and kind from project parameters if not provided.
-
-        :param model_name: The name of the text embedding model to use, defaults to None
-        :type model_name: str, optional
-        :param model_kind: The kind of text embedding model to use, defaults to None
-        :type model_kind: str, optional
-        :param parameters: Loaded parameters dict. If None, loads from config.
-        :type parameters: dict, optional
-        """
         if model_name is None:
             parameters = load_parameters(parameters)
             model_name = parameters["text_embedding_model"]
@@ -413,16 +254,6 @@ class TextEmbeddingModel(EmbeddingModel):
 
 class ImageEmbeddingModel(EmbeddingModel):
     def __init__(self, model_name: str = None, model_kind: str = None, parameters: dict = None):
-        """
-        Initializes the ImageEmbeddingModel with model and kind from project parameters if not provided.
-
-        :param model_name: The name of the image embedding model to use, defaults to None
-        :type model_name: str, optional
-        :param model_kind: The kind of image embedding model to use, defaults to None
-        :type model_kind: str, optional
-        :param parameters: Loaded parameters dict. If None, loads from config.
-        :type parameters: dict, optional
-        """
         if model_name is None:
             parameters = load_parameters(parameters)
             model_name = parameters["image_embedding_model"]
@@ -436,14 +267,6 @@ class ImageEmbeddingModel(EmbeddingModel):
 
 class Index:
     def __init__(self, modality: str, parameters: dict = None):
-        """
-        A growable tensor of embeddings for one modality.
-
-        :param modality: Either ``"text"`` or ``"image"``.
-        :type modality: str
-        :param parameters: Loaded parameters dict. If None, loads from config.
-        :type parameters: dict, optional
-        """
         if modality not in ["text", "image"]:
             log_error(f"Index modality must be 'text' or 'image', got {modality}")
         self.modality = modality
@@ -455,49 +278,21 @@ class Index:
         """ The tensor index of embeddings. Shape: (num_entries, embed_size) """
 
     def embed(self, items: List[_EmbeddingInput]) -> torch.Tensor:
-        """
-        Embed a list of items using the appropriate embedding model.
-
-        :param items: List of input texts or images to embed
-        :type items: List[_EmbeddingInput]
-        :return: Tensor containing the embeddings
-        :rtype: torch.Tensor
-        """
         if not isinstance(items, list):
             items = [items]
         return self._embedding_model.embed(items)
 
     def add_embedding_to_index(self, embedding: torch.Tensor):
-        """
-        Add a new embedding to the index.
-
-        :param embedding: The embedding tensor to add to the index
-        :type embedding: torch.Tensor
-        """
         if self.index is None:
             self.index = embedding
         else:
             self.index = torch.cat([self.index, embedding], dim=0)
 
     def add_to_index(self, items: List[_EmbeddingInput]):
-        """
-        Add new items to the index.
-
-        :param items: List of input texts or images to add to the index
-        :type items: List[_EmbeddingInput]
-        """
         self.add_embedding_to_index(self.embed(items))
 
     def add_compare(self, item: _EmbeddingInput) -> torch.Tensor:
-        """
-        Embed an input and compare it to the existing index, then add it.
-
-        :param item: The input text or image to embed and compare
-        :type item: _EmbeddingInput
-        :return: Similarity scores against the index as it was *before* this item was
-            added, or ``None`` if the index was empty.
-        :rtype: torch.Tensor
-        """
+        """Scores are against the index before this item was added; None if it was empty."""
         if self.index is None:
             self.add_to_index([item])
             return None

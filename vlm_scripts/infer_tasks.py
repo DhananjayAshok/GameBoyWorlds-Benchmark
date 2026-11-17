@@ -1,33 +1,3 @@
-"""
-Called by scripts/vlm/infer_tasks.sh (via vlm.py infer_tasks). Use --help for CLI options.
-
-Input: grouped_high_reward_trajectories.pkl
-    Path: parameters["storage_dir"]/grouped_trajectories/$game/<path>/grouped_high_reward_trajectories.pkl
-    Format: dict[int, list[trajectory]]
-        - keys are group indices (grouped by similarity of final frames)
-        - each trajectory is a tuple (observations, actions, high_level_actions, rewards)
-            - observations: np.ndarray of shape (num_frames, 144, 160, 1)
-            - actions: list[int] of length (num_frames - 1)
-            - high_level_actions: list[int] of length (num_frames - 1)
-            - rewards: list[float] of length (num_frames - 1)
-
-Output: trajectory_annotation.json  +  trajectory_annotation.pkl
-    Path: Paths.curiosity_annotation() and its .pkl sibling.
-    trajectory_annotation.json — dict[int, str]
-        - keys are group indices
-        - values are distilled imperative task strings (e.g. "Walk into the building")
-    trajectory_annotation.pkl — dict[int, list[trajectory]]
-        - keys are group indices
-        - values are the subset of trajectories from that group that were actually used
-          during inference (up to max_trajectories_per_group); same trajectory format as input
-
-    With --dedup_tasks (default on), groups that distill to the SAME task string
-    are merged into a single group_idx before saving (their trajectory lists are
-    concatenated), so downstream consumers don't process the same task twice.
-    This is exact-match on a normalized form only — paraphrases are
-    not merged. See _dedup_task_groups.
-"""
-
 import json
 import os
 import pickle
@@ -51,10 +21,6 @@ def save_frames(frames, save_name, high_level_actions=None):
         high_level_actions=high_level_actions,
     )
 
-
-# ---------------------------------------------------------------------------
-# Module-level prompt constants ([GAME] is replaced at call time)
-# ---------------------------------------------------------------------------
 
 DESCRIBE_PROMPT = """You are observing two consecutive screenshots from a game of [GAME].
 
@@ -129,18 +95,11 @@ Task: <single distilled imperative task string>
 [STOP]
 """
 
-# ---------------------------------------------------------------------------
-# Parse helper: extract "Key: value" from VLM output
-# ---------------------------------------------------------------------------
-
-
 
 def _parse_infer_block(
     text: str, window_offset: int = 0, n_obs: int = None
 ) -> dict | None:
-    """Parse a single Task/Start/End block from INFER output.
-    Returns a dict with keys: task, start, end as absolute obs array indices, or None if no Task found or task is NO TASK.
-    """
+    # start and end are returned as absolute observation indices.
     text = text.lower()
 
     task = parse_key_value(text, "Task")
@@ -177,11 +136,6 @@ def got_bigger(subject, refined_subject, multiplier=1.5):
         return False
 
 
-# ---------------------------------------------------------------------------
-# Core functions
-# ---------------------------------------------------------------------------
-
-
 def describe_pairwise(
     window,
     action_window,
@@ -190,7 +144,6 @@ def describe_pairwise(
     max_new_tokens: int,
     verbose: bool = False,
 ) -> str:
-    """Run pairwise DESCRIBE over consecutive frame pairs and build a DESC_AND_CHANGES block."""
     k = len(window)
     frame_descs = {}
     diffs = {}
@@ -237,19 +190,13 @@ def infer_task(
     verbose: bool = False,
     describe_pairs: bool = False,
 ) -> dict | None:
-    """
-    Three-stage pipeline: DESCRIBE (pairwise over last `lookback` frames) → INFER → REFINE.
-    Returns a dict with keys: tasks (list of {task, start, end}), frame_descriptions, task_description.
-    start/end are absolute obs array indices.
-    Returns None if parsing fails or VLM returns NO TASK.
-    """
     observations, actions, high_level_actions, rewards, init_state = trajectory
     n = len(observations)
     k = min(lookback, n)
-    window = observations[n - k :]  # k frames, window indices 0..k-1
+    window = observations[n - k :]
     action_window = high_level_actions[
         n - k :
-    ]  # k-1 actions, action_window[i] is the action causing window[i]→window[i+1]
+    ]  # action_window[i] is the action causing window[i]→window[i+1]
 
     frame_descs = {}
 
@@ -260,7 +207,6 @@ def infer_task(
     else:
         desc_and_changes = ""
 
-    # --- Stage 2: INFER (all k frames as images) ---
     infer_prompt = INFER_PROMPT.replace("[GAME]", game).replace(
         "[DESC_AND_CHANGES]", desc_and_changes
     )
@@ -288,7 +234,6 @@ def infer_task(
         return None
     task_description = parse_key_value(infer_output, "Visual Description")
 
-    # --- Stage 3: REFINE + validity gate (text only) ---
     refine_prompt = REFINE_PROMPT.replace("[CANDIDATE_TASK]", parsed_block["task"])
     refine_output = vlm.infer(
         texts=refine_prompt,
@@ -297,10 +242,7 @@ def infer_task(
     if verbose:
         log_info(f"REFINE output:\n{refine_output}\n---")
 
-    # Reject INVALID (too generic to complete exactly) AND any malformed output that does
-    # not clearly say VALID — both are treated exactly like NO TASK (return None). Output is
-    # lowercased and "invalid" contains "valid", so test for "invalid" first, then require an
-    # explicit "valid".
+    # "invalid" contains "valid", so test for "invalid" first, then require an explicit "valid".
     verdict = parse_key_value(refine_output, "Verdict") or ""
     if "invalid" in verdict or "valid" not in verdict:
         if verbose:
@@ -309,7 +251,6 @@ def infer_task(
 
     refined_task = parse_key_value(refine_output, "Task")
     if refined_task is None or refined_task.strip() in ("", "none"):
-        # Malformed: VALID verdict but no usable Task string.
         if verbose:
             log_info("REFINE gave no usable Task despite VALID verdict — treating as NO TASK.")
         return None
@@ -321,7 +262,6 @@ def infer_task(
         log_info(
             f"Final inferred task: {refined_task}, start: {parsed_block['start']}, end: {parsed_block['end']}"
         )
-        # save_frames of both start and end
         start_idx = parsed_block["start"] if parsed_block["start"] is not None else None
         end_idx = parsed_block["end"] if parsed_block["end"] is not None else None
         if start_idx is not None and end_idx is not None:
@@ -343,7 +283,6 @@ def infer_task(
 
 
 def _select_group_trajectories(group: list, max_trajectories_per_group: int) -> list:
-    """Pick up to max_trajectories_per_group trajectories from a group."""
     use_traj_idxes = list(range(len(group)))
     if len(group) > max_trajectories_per_group:
         use_traj_idxes = list(
@@ -353,7 +292,6 @@ def _select_group_trajectories(group: list, max_trajectories_per_group: int) -> 
 
 
 def _distill_tasks(all_tasks: list[str], vlm: VLM, game: str, max_new_tokens: int) -> str:
-    """Distill a list of candidate task strings for a group into a single task string."""
     distill_prompt = DISTILL_PROMPT.replace("[GAME]", game).replace(
         "[CANDIDATE_LIST]", "\n".join(f"- {t}" for t in all_tasks)
     )
@@ -368,28 +306,10 @@ def _distill_tasks(all_tasks: list[str], vlm: VLM, game: str, max_new_tokens: in
 
 
 def _canonical_task(task: str) -> str:
-    """Normalize a task string for duplicate detection: lowercase, collapse
-    whitespace, strip surrounding punctuation. Cheap exact-match canonicalization
-    — does not catch semantic paraphrases."""
     return " ".join(task.lower().split()).strip(" .!?\"'")
 
 
 def _dedup_task_groups(trajectory_output: dict, trajectory_data_output: dict):
-    """Merge groups that distilled to the same task string.
-
-    Curiosity groups are clustered by final-frame similarity, so several
-    independent groups can distill to an identical task (e.g. three separate
-    'enter the pokemon center' groups). Downstream (build_info) treats every
-    group_idx as a distinct task, so identical task strings cause redundant
-    VLM calls. We collapse groups sharing a canonical
-    task string into the first group_idx that produced it, concatenating their
-    trajectories so no example data is lost. Detection is exact-match on the
-    canonical form only — paraphrases (different wording, same meaning) are NOT
-    merged here.
-
-    Returns (deduped_output, deduped_data, merges) where merges maps the kept
-    group_idx to the list of group_idxs folded into it (for logging).
-    """
     canon_to_keep: dict[str, int] = {}
     deduped_output: dict[int, str] = {}
     deduped_data: dict[int, list] = {}
@@ -409,24 +329,8 @@ def _dedup_task_groups(trajectory_output: dict, trajectory_data_output: dict):
     return deduped_output, deduped_data, merges
 
 
-# ---------------------------------------------------------------------------
-# Grouped-trajectory loading
-# ---------------------------------------------------------------------------
-
-
 def load_grouped_trajectories(path):
-    """Yield groups from a grouped-trajectory pkl, one group at a time.
-
-    Handles two on-disk formats transparently:
-      - Manifest (written by combine_grouped_trajectories.py): a list[str] of
-        paths to per-init_state grouped pkls. Each path is loaded in turn and its
-        groups yielded, so only one input file is resident at a time.
-      - Plain list[group] (written by group_trajectories.py for a single state):
-        each element is already a group and is yielded directly.
-
-    Group order is positional across the whole sequence, matching what a single
-    pickle.load of a concatenated list would have produced.
-    """
+    # The pkl is either a manifest (a list of paths to grouped pkls) or a plain list of groups.
     with open(path, "rb") as f:
         items = pickle.load(f)
     for item in items:
@@ -436,11 +340,6 @@ def load_grouped_trajectories(path):
                     yield group
         else:
             yield item
-
-
-# ---------------------------------------------------------------------------
-# Click interface
-# ---------------------------------------------------------------------------
 
 
 @click.command(name="infer_task")
@@ -519,16 +418,7 @@ def infer_task_cmd(
         if os.path.exists(pkl_checkpoint_path):
             with open(pkl_checkpoint_path, "rb") as f:
                 trajectory_data_output = pickle.load(f)
-        # A group is "done" only when BOTH its annotation and its trajectories are on
-        # disk. The two checkpoints are separate non-atomic writes (json first), so a run
-        # killed between them — or one resuming with the pkl absent entirely — comes back
-        # with annotations whose trajectories never landed. The skip check below keys off
-        # `trajectory_output` alone, so without this those groups are skipped, the pool
-        # does no work, and the final pkl is written short (empty, in the absent-pkl case)
-        # while the json looks complete. Nothing downstream catches it: the emptiness
-        # guard below checks only `trajectory_output`, and _dedup_task_groups tolerates the
-        # gap via .get(gid, []). Dropping the unpaired annotations makes the pair the unit
-        # of truth.
+        # A group is done only when both its annotation and its trajectories are on disk: the two writes are not atomic.
         unpaired = [
             group_idx for group_idx in trajectory_output
             if group_idx not in trajectory_data_output
@@ -550,12 +440,7 @@ def infer_task_cmd(
 
     grouped_trajectories = load_grouped_trajectories(trajectory_path)
 
-    # infer_task pipelines are independent across groups and across trajectories
-    # within a group, so submit them all to one shared pool. --verbose runs
-    # infer_task's print/save_frames/breakpoint debugging path, and HuggingFaceModel
-    # isn't safe for concurrent generate() calls — both fall back to max_workers=1,
-    # which processes submitted jobs one at a time in submission order (i.e.
-    # identical to the old sequential loop).
+    # HuggingFaceModel is not safe for concurrent generate() calls.
     effective_workers = (
         1 if (obj["verbose"] or isinstance(vlm._vlm, HuggingFaceModel)) else max_concurrency
     )
@@ -617,8 +502,7 @@ def infer_task_cmd(
                 )
         log_info(f"Dedup: {before} groups → {len(trajectory_output)} unique tasks.")
 
-    # Checked BEFORE writing: traj_path existing is this command's skip-if-exists marker.
-    # The checkpoint is left in place so a rerun resumes.
+    # Checked before writing: traj_path existing is this command's skip-if-exists marker.
     if not trajectory_output:
         log_error(
             f"infer_tasks produced 0 task annotations from {trajectory_path}. "

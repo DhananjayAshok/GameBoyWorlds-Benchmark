@@ -1,19 +1,3 @@
-"""
-Read-only diagnostics for the GameBoyRL pipeline. Called by scripts/debug/*.sh.
-Use --help for CLI options.
-
-Each subcommand reads one stage's saved artifacts and writes a markdown report (plus any
-figures it needs) to <results_dir>/debug/<game>/<stage>/. Nothing here trains, serves, or
-queries a model, and nothing reads logs/ or slurm — only artifacts the pipeline is
-guaranteed to have written. A missing artifact is a hard error naming the script that
-produces it.
-
-Group options identify *which experiment* is being inspected and must agree across every
-report; per-command options control presentation (how many samples, how many frames) and
-vary freely. --model_name is per-command because the curiosity stage's paths are not
-keyed on a model.
-"""
-
 import click
 
 from utils import load_parameters

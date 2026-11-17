@@ -1,24 +1,3 @@
-"""
-Task-attempt diagnostics: how many proposed tasks the VLM could actually complete, and
-how much of that success required escalating hints.
-
-Input (all produced by scripts/vlm/attempt_tasks.sh)
-----------------------------------------------------
-<attempts_dir>/all_trajectories.csv
-    group_idx, init_state, task_string, success, n_tries
-<attempts_dir>/success_trajectories.json   {group_idx: task_string}
-<attempts_dir>/success_trajectories.pkl    {group_idx: 5-tuple trajectory}
-
-``n_tries`` is the key column. attempt_tasks retries a failed task up to --max_attempts
-(default 5), deriving a fresh hint from the failed trajectory between attempts, so
-n_tries == 1 means the task was solved unaided and n_tries > 1 means it was solved only
-after being told what to do.
-
-Output
-------
-<results_dir>/debug/<game>/attempt/report.md plus frame strips beside it.
-"""
-
 import json
 import os
 import pickle
@@ -93,24 +72,6 @@ def _figure_by_init_state(frame: pd.DataFrame, out_path: str):
 
 
 def _completion_check_blocks(frame: pd.DataFrame) -> list:
-    """How the self-termination completion check behaved, and whether it was right.
-
-    ``attempt_tasks`` runs with ``allow_self_termination=True``, so after every action the
-    executor is asked whether the task is finished and a ``yes`` ends the episode
-    (``termination_reason == "agent_done"``). Nothing can assert on that judgement, so the
-    only way to know it is working is to read three things together:
-
-    * **the breakdown** — a check that fires on everything is over-eager, one that never
-      fires is dead weight paying a VLM call per step;
-    * **agreement with the checker** — ``success`` is :class:`AttemptCheckerSupervisor`
-      judging the same trajectory from the frames and its own description, independently of
-      the executor. ``agent_done`` with ``success == False`` is the failure that matters: a
-      trajectory truncated before the task was done, then shipped forward as evidence;
-    * **steps saved** — the benefit the per-step cost buys.
-
-    Returns ``[]`` on a CSV written before these columns existed, rather than failing:
-    older attempt dirs are still worth reporting on for everything else.
-    """
     if "termination_reason" not in frame.columns:
         return []
     known = frame[frame["termination_reason"].notna()]
@@ -191,7 +152,6 @@ def debug_attempt(obj, model_name, n_frames, max_trajectories):
     unaided = int((solved["n_tries"] == 1).sum())
     hinted = n_success - unaided
 
-    # How many tasks were proposed in the first place — the top of this funnel.
     tasks_path = paths.tasks_file()
     n_proposed = 0
     if os.path.exists(tasks_path):
@@ -215,7 +175,6 @@ def debug_attempt(obj, model_name, n_frames, max_trajectories):
 
     never = frame[~frame["success"]][["init_state", "task_string", "n_tries"]]
 
-    # Cross-check the success artifacts against each other.
     success_json = paths.success_trajectories_json()
     consistency = []
     success_keys = set()
@@ -234,7 +193,6 @@ def debug_attempt(obj, model_name, n_frames, max_trajectories):
         consistency.append(f"in successes but not in the CSV (**{len(only_json)}**): "
                            f"`{', '.join(only_json[:20])}`")
 
-    # Frame strips for successful trajectories.
     strips = []
     pkl_path = paths.success_trajectories_pkl()
     if os.path.exists(pkl_path):

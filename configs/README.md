@@ -10,4 +10,12 @@ python configs/create_env_file.py
 
 You can source this file to use config vars in bash scripts. 
 
-You can use this README to list all relevant parameters and what they do.
+## Splits (`configs/splits/`)
+
+`split_config.yaml` sets the seed, the training games and the `val`/`test` fractions. `benchmark_splits.json` is generated from it and is what the environment server reads; it is checked in so everyone evaluates on the same held-out tasks. Regenerate it with:
+
+```bash
+python run_env_server.py generate_splits --show
+```
+
+The server stops with an error if the file no longer matches the benchmark's task list.

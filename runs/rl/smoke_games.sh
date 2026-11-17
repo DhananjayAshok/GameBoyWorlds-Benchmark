@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Short RL run per title, to check a game's environment starts and steps at all. Measures
-# nothing — 1000 timesteps. Was runs/test_games.sh.
-#
+# Short RL run per title, to check a game's environment starts and steps at all.
 # Disable train logging before running this over many titles.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
@@ -14,7 +12,6 @@ ARGS["games"]="harry_potter_philosophers_stone,harry_potter_chamber_of_secrets"
 ARGS["timesteps"]=1000
 ARGS["log_dir"]="logs/smoke_games"
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -49,7 +46,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do

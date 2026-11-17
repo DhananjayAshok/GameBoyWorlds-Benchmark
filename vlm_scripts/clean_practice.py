@@ -1,47 +1,3 @@
-"""
-Called by scripts/vlm/clean_practice.sh (via vlm.py clean_practice). Use --help for CLI options.
-
-Input
------
-A practice output directory produced by vlm_scripts/practice_tasks.py
-(--practice_path). Contains results.csv and {group_idx}_{attempt}.pkl files
-(each pkl is a List[ExecutorVLMCallRecord] for that episode).
-
-Processing
-----------
-Two independent passes, both over the SUCCESSFUL episodes only (matching what
-create_dataset.py consumes):
-
-  1. paraphrase — for each unique task_string, ask the VLM for k diverse
-     paraphrases. These are precomputed here (once) so create_dataset no longer
-     has to call a VLM. Train-only augmentation happens later in create_dataset.
-
-  2. filter — for every ExecutorVLMCallRecord (the frame image(s) + the agent's
-     reasoning/action), ask the VLM to catch only CRITICAL errors and emit an
-     ACCEPT/REJECT decision. The prompt errs strongly toward ACCEPT — a record
-     is only REJECTed when there is clear visual evidence the response badly
-     misdescribes the frame or the action is unlikely to advance the task.
-     create_dataset later drops the REJECTed calls.
-
-Both passes use the shared async pattern (ThreadPoolExecutor + atomic
-checkpointing): a fresh run resumes from the checkpoint and skips already-done
-work, so re-running is cheap and there are no per-aspect disable flags. Forced
-to a single worker for --verbose or a local HuggingFace model.
-
-Output (written into --practice_path)
--------------------------------------
-  paraphrases.json     — {task_string: [paraphrase, ...]} (up to k each)
-  clean_decisions.csv  — one row per VLM call:
-      group_idx, attempt, call_idx, accept (bool; False = reject), reason
-
-Checkpointing
--------------
-  paraphrases_checkpoint.json — partial {task: [...]}, written atomically.
-  clean_decisions_checkpoint.json — partial list of decision rows, written
-  atomically. On startup both are loaded and already-done units skipped; on
-  completion the final files are written and the checkpoints removed.
-"""
-
 import json
 import os
 import pickle
@@ -56,8 +12,6 @@ from tqdm import tqdm
 from execution.report import ACTION_TAGS, EnvironmentStepRecord
 from utils import (VLM, HuggingFaceModel, log_info, log_error, parse_key_value,
                    parse_list)
-# Source of truth for which episodes/records become data — imported so the clean
-# pass selects and slices exactly what create_dataset will emit.
 from create_dataset import select_successful, _episode_cutoff
 
 
@@ -104,8 +58,7 @@ Decision: <ACCEPT or REJECT>
 [STOP]"""
 
 
-# Used when the call produced an env step, whose resulting frame is appended as the LAST
-# image. Keep the Reason/Decision footer byte-identical to CLEAN_PROMPT.
+# Keep the Reason/Decision footer identical to CLEAN_PROMPT.
 CLEAN_PROMPT_TRANSITION = """You are reviewing a single decision an agent made while playing [GAME].
 
 The agent was working toward this task:
@@ -139,7 +92,6 @@ def _strip_blocks(text: str) -> str:
 
 
 def _paraphrase_task(task: str, vlm: VLM, max_new_tokens: int, k: int) -> list[str]:
-    """Ask the VLM for paraphrases of a single task string. Returns up to k of them."""
     prompt = (
         AUGMENT_PARAPHRASE_PROMPT
         .replace("[CORE_TASK]", task)
@@ -157,16 +109,6 @@ def _filter_record(
     game: str,
     max_new_tokens: int,
 ) -> tuple[bool, str]:
-    """Judge a single ExecutorVLMCallRecord. Returns (accept, reason).
-
-    accept is True (keep) or False (reject); on any parse/inference failure we
-    default to True to honour the err-toward-accept policy.
-
-    When the call produced an env step and the agent was shown at least one frame, that
-    step's resulting frame is appended as the LAST image and the transition-aware prompt
-    is used. The after-frame is read off the record's own steps; a call that took several
-    steps ends at the last one.
-"""
     images = list(record.images) if record.images else []
     env_steps = [s for s in record.steps if isinstance(s, EnvironmentStepRecord)]
     next_frame = env_steps[-1].frame_after if env_steps else None
@@ -186,11 +128,6 @@ def _filter_record(
     decision_raw = parse_key_value(output, "Decision") or ""
     accept = "reject" not in decision_raw.lower()
     return accept, reason
-
-
-# ---------------------------------------------------------------------------
-# Passes
-# ---------------------------------------------------------------------------
 
 
 def _atomic_write_json(obj, path: str) -> None:
@@ -271,14 +208,10 @@ def _run_filter_pass(
         rows = []
         done = set()
 
-    # Build the full job list of (group_idx, attempt, call_idx, task, record),
-    # mirroring the records create_dataset would emit for each successful episode.
     jobs = []
     missing_pkls = 0
     for _, row in successful.iterrows():
-        # group_idx is a string id like "10_0", not a number. Do NOT int() it:
-        # int() treats underscores as digit separators (int("10_0") == 100), which
-        # mangles the pkl path (100_0.pkl) so every lookup misses.
+        # group_idx is a string id like "10_0": never int() it, since int("10_0") == 100.
         group_idx = str(row["group_idx"])
         attempt = int(row["attempt"])
         pkl_path = os.path.join(practice_path, f"{group_idx}_{attempt}.pkl")
@@ -291,10 +224,7 @@ def _run_filter_pass(
         for call_idx, record in enumerate(vlm_call_log[:cutoff]):
             if (group_idx, attempt, call_idx) in done:
                 continue
-            # Auxiliary calls (the completion check under allow_self_termination, and any
-            # other non-action call an executor logs) are not candidate training rows, so
-            # there is nothing here to judge. Filtering them costs a VLM call each and
-            # would write accept/reject decisions create_dataset then ignores.
+            # Non-action calls are not candidate training rows, so there is nothing to judge.
             if record.tag not in ACTION_TAGS:
                 continue
             jobs.append((group_idx, attempt, call_idx, row["task_string"], record))
@@ -314,8 +244,7 @@ def _run_filter_pass(
             try:
                 accept, reason = future.result()
             except Exception:
-                # An infer exception is an outage, not a judgment — parse failures never
-                # raise. Abort loudly; records judged so far are checkpointed.
+                # An infer exception is an outage, not a judgment: parse failures never raise.
                 log_error(
                     f"clean filter aborting at [{group_idx}_{attempt}] call {call_idx}: VLM "
                     f"inference failed (is the server up?). Records judged so far are "
@@ -339,11 +268,6 @@ def _run_filter_pass(
     log_info(f"Saved {len(rows)} decisions ({n_reject} reject) -> {out_path}")
     if os.path.exists(checkpoint_path):
         os.remove(checkpoint_path)
-
-
-# ---------------------------------------------------------------------------
-# Click interface
-# ---------------------------------------------------------------------------
 
 
 @click.command(name="clean_practice")

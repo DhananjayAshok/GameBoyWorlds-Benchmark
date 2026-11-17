@@ -1,60 +1,3 @@
-"""
-Create a VLA training dataset from successful practice trajectories, with a
-leakage-free train/validation split and paraphrase augmentation on train only.
-
-Input
------
-A practice output directory produced by vlm_scripts/practice_tasks.py
-(--practice_path). Contains results.csv and {group_idx}_{attempt}.pkl files
-(each pkl is a List[ExecutorVLMCallRecord] for that episode).
-
-It also expects the artifacts produced by vlm_scripts/clean_practice.py in the
-same directory (run clean_practice first):
-  paraphrases.json     — {task_string: [paraphrase, ...]} used to augment train.
-  clean_decisions.csv  — group_idx, attempt, call_idx, accept (bool); rows with
-    accept == False are dropped from the dataset.
-Both are required: a missing paraphrases.json or clean_decisions.csv is an error
-(run clean_practice on the practice dir first).
-
-Output
-------
-Written into --practice_path:
-  train_dataset.csv      — training rows, augmented with all but the last
-    paraphrase of each task.
-  validation_dataset.csv — held-out rows, each phrased with the task's RESERVED
-    last paraphrase (never used in train), for leakage-free model selection in
-    train_vlm.sh. Tasks with no paraphrase fall back to the canonical string.
-  images/ — JPEG files named {group_idx}_{attempt}_{call_idx}_{img_idx}.jpg
-
-Row fields: task_string, input, output, image.
-
-Paraphrases
------------
-For each task, paraphrases.json holds up to k paraphrases. The LAST one is
-reserved for validation only: train rows are augmented with paraphrases[:-1],
-and validation rows use paraphrases[-1] as their task string. So neither the
-held-out episodes nor the held-out phrasing are ever seen during training.
-
-Split
------
-Episodes are split per task: for each task_string, its episodes (group_idx,
-attempt) are shuffled (seeded) and val_frac of them go to validation, the rest
-to train. The split is by *episode*, so all calls of an episode stay on one side
-and no episode (hence no shared output/image) straddles the split. If a task has
-too few episodes to yield at least one validation episode
-(floor(n_episodes * val_frac) < 1), all of its episodes go to train.
-
-Usage
------
-This module is a click group with two commands, so the command name is required:
-
-  python create_dataset.py create_dataset  --practice_path <dir> [--overwrite] [--val_frac 0.2]
-  python create_dataset.py merge_practices --practice_paths <dir,dir,...> --save_path <dir>
-
-merge_practices combines the train/validation CSVs of several practice dirs (one per
-pipeline leg) into a single dataset, tagging each row with a `source` column.
-"""
-
 import json
 import os
 import pickle
@@ -80,35 +23,18 @@ def _strip_blocks(text: str) -> str:
     return STEP_INFO_RE.sub('', HINT_RE.sub('', text))
 
 
-# The low_level controller's legal buttons. Calls whose Action: line names anything else, or
-# has no parseable Action: line, are dropped when building rows.
+# The low_level controller's legal buttons.
 VALID_ACTIONS = {"A", "B", "UP", "DOWN", "LEFT", "RIGHT", "START", "SELECT"}
 
 
 def _episode_cutoff(safe_success_point, n_calls: int, safety_margin: int) -> int:
-    """Return the number of leading VLM calls to keep for an episode.
-
-    ``safe_success_point`` is already a vlm_call_log slice index (see
-    execution/supervisors/), not a frame number, so we slice directly.
-    ``safety_margin`` keeps a few extra calls as insurance. Returns ``n_calls``
-    (keep everything) when safe_success_point is N/A.
-    """
+    # safe_success_point is a vlm_call_log slice index, not a frame number.
     if safe_success_point is None or pd.isna(safe_success_point):
         return n_calls
     return min(n_calls, int(safe_success_point) + safety_margin)
 
 
 def select_successful(df: pd.DataFrame) -> pd.DataFrame:
-    """Episodes usable for the dataset: the ones the checker judged successful.
-
-    practice_tasks writes results.csv with ``success`` in {True, False}. The judge is
-    binary — AttemptCheckerSupervisor returns a verdict, not a score — so this is a
-    straight filter.
-
-    This is the single source of truth for episode selection: clean_practice imports it
-    so the two stay in lockstep. If they ever diverged, clean would judge a different
-    episode set than create_dataset emits.
-    """
     if 'success' not in df.columns:
         log_error("results.csv has no 'success' column — it was not written by practice_tasks.")
     return df[df['success'] == True]
@@ -128,7 +54,6 @@ def _save_image(img_array: np.ndarray, path: str) -> None:
 
 
 def _load_decisions(practice_path: str) -> dict:
-    """Load clean_decisions.csv into {(group_idx, attempt, call_idx): accept_bool}."""
     path = os.path.join(practice_path, 'clean_decisions.csv')
     if not os.path.exists(path):
         log_error(
@@ -143,7 +68,6 @@ def _load_decisions(practice_path: str) -> dict:
 
 
 def _load_paraphrases(practice_path: str) -> dict:
-    """Load paraphrases.json into {task_string: [paraphrase, ...]}."""
     path = os.path.join(practice_path, 'paraphrases.json')
     if not os.path.exists(path):
         log_error(
@@ -155,11 +79,6 @@ def _load_paraphrases(practice_path: str) -> dict:
 
 
 def _split_episodes_by_task(episodes_by_task: dict, val_frac: float, seed: int) -> set:
-    """Return the set of episode ids assigned to validation.
-
-    For each task, shuffle its episodes and hold out floor(n * val_frac); if that
-    is < 1 the task contributes nothing to validation (all its episodes train).
-    """
     rng = np.random.default_rng(seed)
     val_episodes = set()
     for task, episodes in episodes_by_task.items():
@@ -213,8 +132,6 @@ def create_dataset(practice_path, overwrite, safety_margin, val_frac, seed):
 
     os.makedirs(images_dir, exist_ok=True)
 
-    # Build one row per kept call, tagging each with its episode id and task so we
-    # can split by episode afterwards.
     rows = []
     episodes_by_task = defaultdict(set)
     missing_pkls = 0
@@ -222,8 +139,7 @@ def create_dataset(practice_path, overwrite, safety_margin, val_frac, seed):
     n_unparseable = 0
     n_illegal = 0
     for _, row in tqdm(successful.iterrows(), total=len(successful), desc='episodes'):
-        # group_idx is a string id like "10_0"; int() would mangle it via underscore
-        # digit-separator parsing (int("10_0") == 100). Keep it as a raw string.
+        # group_idx is a string id like "10_0": never int() it, since int("10_0") == 100.
         group_idx = str(row['group_idx'])
         attempt = int(row['attempt'])
         episode_id = (group_idx, attempt)
@@ -243,14 +159,10 @@ def create_dataset(practice_path, overwrite, safety_margin, val_frac, seed):
                 n_rejected += 1
                 continue
 
-            # Not an action call at all. Skipped on the tag so it is not counted as
-            # unparseable below.
             if record.tag not in ACTION_TAGS:
                 continue
 
-            # Drop calls whose response has no parseable Action: line, or names an action
-            # the environment cannot execute. Checked before saving images so dropped rows
-            # leave no orphan files behind.
+            # Checked before saving images so dropped rows leave no orphan files behind.
             action = parse_action_line(record.response)
             if action is None:
                 n_unparseable += 1
@@ -283,9 +195,7 @@ def create_dataset(practice_path, overwrite, safety_margin, val_frac, seed):
         clean_row = {k: row[k] for k in fields}
         task = row['task_string']
         task_paraphrases = paraphrases.get(task, [])
-        # Reserve the last paraphrase for validation only: train never uses it,
-        # and validation rows are phrased with it (an unseen phrasing). The rest
-        # augment train.
+        # The last paraphrase is reserved for validation: train never uses it.
         test_paraphrase = task_paraphrases[-1] if task_paraphrases else None
         train_paraphrases = task_paraphrases[:-1]
 
@@ -296,11 +206,9 @@ def create_dataset(practice_path, overwrite, safety_margin, val_frac, seed):
                 val_row['input'] = row['input'].replace(task, test_paraphrase)
                 val_rows.append(val_row)
             else:
-                # No paraphrase available for this task — fall back to canonical.
                 val_rows.append(clean_row)
         else:
             train_rows.append(clean_row)
-            # Augment train only, never with the reserved test paraphrase.
             for paraphrase in train_paraphrases:
                 aug = dict(clean_row)
                 aug['task_string'] = paraphrase
@@ -327,22 +235,6 @@ VALIDATION_NAME = 'validation_dataset.csv'
 
 
 def _source_label(practice_path: str) -> str:
-    """
-    Short provenance label for a practice dir, derived from its path.
-
-    The two verticals lay their practice dirs out differently:
-      curiosity  .../curiosity/<run_name>/practice_<executor>
-                     -> "curiosity"
-      zeroshot   .../zeroshot/zeroshot_tasks_<executor>_<controller>_attempts/practice_<executor>
-                     -> "zeroshot_<executor>"
-
-    The curiosity leg's label carries no executor; the zeroshot leg's does. The executor is
-    identified by longest match against :data:`AVAILABLE_EXECUTORS`. Falls back to the parent
-    directory name for anything unrecognised.
-
-    :return: The provenance label.
-    :rtype: str
-"""
     parts = os.path.normpath(practice_path).split(os.sep)
     if len(parts) >= 3 and parts[-3] == 'curiosity':
         return 'curiosity'
@@ -355,7 +247,6 @@ def _source_label(practice_path: str) -> str:
         ]
         if matches:
             return f'zeroshot_{max(matches, key=len)}'
-        # A zeroshot dir naming an executor this build does not have.
         return 'zeroshot'
     return stem or 'unknown'
 
@@ -372,7 +263,6 @@ def _load_split(practice_path: str, filename: str, label: str) -> pd.DataFrame:
 
 
 def _balance_equal(frame: pd.DataFrame, seed: int) -> pd.DataFrame:
-    """Downsample every source to the smallest source's row count."""
     if frame.empty:
         return frame
     counts = frame['source'].value_counts()
@@ -395,16 +285,7 @@ def _balance_equal(frame: pd.DataFrame, seed: int) -> pd.DataFrame:
 @click.option('--seed', default=0, show_default=True, type=int,
               help='Seed for balancing and the final shuffle.')
 def merge_practices(practice_paths, save_path, balance, seed):
-    """Merge the datasets of several practice dirs into one train/validation pair.
-
-    Rows keep their images by reference — the ``image`` column holds absolute paths into each
-    source's images/ dir, so nothing is copied and the merged CSV points at the originals.
-    A ``source`` column records which practice dir each row came from.
-
-    Always regenerates. There is no skip-if-exists guard: the merge is a pure function of its
-    inputs and takes seconds, against upstream legs that take days, so the only thing a guard
-    could buy is silently training on a merge that predates the latest practice data.
-    """
+    """Merge the datasets of several practice dirs into one train/validation pair."""
     paths = [p.strip() for p in practice_paths.split(',') if p.strip()]
     if not paths:
         log_error('--practice_paths is empty.')
@@ -431,10 +312,7 @@ def merge_practices(practice_paths, save_path, balance, seed):
     for split, parts in (('train', train_parts), ('validation', val_parts)):
         frame = pd.concat(parts, ignore_index=True)
         before = len(frame)
-        # `image` is part of the dedup key: the prompt text alone is not the input to a VLM.
-        # Different episodes of the same task routinely reach an identical prompt and emit an
-        # identical response while showing a different frame — deduping on (input, output)
-        # alone silently drops those, which are legitimately distinct training examples.
+        # image is part of the dedup key: distinct frames can share an identical prompt and response.
         frame = frame.drop_duplicates(subset=['input', 'output', 'image'], keep='first')
         log_info(f'{split}: {before} rows -> {len(frame)} after dedup '
                  f'({before - len(frame)} duplicates dropped)')

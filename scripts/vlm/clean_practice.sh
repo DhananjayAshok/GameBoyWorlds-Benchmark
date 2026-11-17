@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Cleans a practice output directory (--practice_path) produced by practice_tasks.sh:
-# precomputes a paraphrase dict per task (paraphrases.json) and runs a VLM
-# accept/reject quality filter over every practice VLM call (clean_decisions.csv).
-# Both passes checkpoint and resume, so re-running skips already-done work.
-# create_dataset.py consumes these artifacts.
+# Cleans a practice directory (--practice_path) produced by practice_tasks.sh: writes
+# per-task paraphrases (paraphrases.json) and a VLM accept/reject filter over every practice
+# call (clean_decisions.csv). Both passes resume. create_dataset.py consumes the output.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -13,7 +11,6 @@ REQUIRED_ARGS=()
 populate_array CLEAN_PRACTICE_ESSENTIALS REQUIRED_ARGS
 populate_dict CLEAN_PRACTICE_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -48,7 +45,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do

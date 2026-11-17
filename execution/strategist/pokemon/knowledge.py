@@ -1,7 +1,3 @@
-"""
-What the strategist knows: a tree of knowledge, organised by topic rather than by episode.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -26,6 +22,7 @@ class KnowledgeNode:
 
 
 class KnowledgeSubtree:
+    # `leaves` holds every child, not only childless ones; the name is part of the saved format.
     def __init__(self, root: KnowledgeNode, leaves: Optional[List["KnowledgeSubtree"]] = None,
                  depth: int = 0) -> None:
         self.root = root
@@ -53,11 +50,6 @@ class KnowledgeSubtree:
     def nodes(self) -> List[KnowledgeNode]:
         return [tree.root for tree in self.walk()]
 
-    def find(self, title: str) -> Optional["KnowledgeSubtree"]:
-        wanted = title.strip().lower()
-        return next((tree for tree in self.walk()
-                     if tree.root.title.strip().lower() == wanted), None)
-
     def paths(self, prefix: KnowledgePath = ()) -> Dict[KnowledgePath, KnowledgeNode]:
         path = prefix + (self.root.title,)
         out = {path: self.root}
@@ -71,12 +63,6 @@ class KnowledgeSubtree:
         if len(path) == 1:
             return self
         return next((found for leaf in self.leaves if (found := leaf.at(path[1:])) is not None), None)
-
-    def render(self, indent: int = 0) -> str:
-        lines = [f"{'  ' * indent}- {self.root.title}: {self.root.description}"]
-        for leaf in self.leaves:
-            lines.append(leaf.render(indent + 1))
-        return "\n".join(lines)
 
 
 class KnowledgeTree(StrategistArtifact):
@@ -96,9 +82,6 @@ class KnowledgeTree(StrategistArtifact):
     @update
     def set_description(self, path: KnowledgePath, description: str) -> None:
         self._at(path).root.description = description
-
-    def render(self) -> str:
-        return self.tree.render()
 
     def diff(self, old: "KnowledgeTree") -> Dict[str, Any]:
         new_nodes = self.tree.paths()

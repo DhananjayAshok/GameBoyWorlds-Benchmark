@@ -1,7 +1,3 @@
-"""
-Benchmark arms, exposed as click subcommands of run_benchmark.py
-"""
-
 from benchmark_scripts.baseline import baseline_cmd as baseline
 from benchmark_scripts.revision import revision_cmd as revision
 from benchmark_scripts.subgoal import subgoal_cmd as subgoal

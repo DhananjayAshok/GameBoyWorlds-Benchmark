@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# Reports the benchmark stage. Writes two markdowns under
-# <results_dir>/debug/<game>/benchmark/:
-#   episodes_<model>.md  every episode step by step, read from the archived supervisor
-#                        report beside that episode's video (per model, unlike the per-call
-#                        PNGs which are keyed on the executor class and overwritten by
-#                        whichever run finished last)
-#   comparison.md        paired base vs fine-tuned: success rates, subgoal fractions, and
-#                        every task solved by one model but not the other
+# Reports the benchmark stage under <results_dir>/debug/<game>/benchmark/:
+# episodes_<model>.md (every episode step by step) and comparison.md (paired comparison
+# of --model_name against --compare_model).
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -22,7 +17,6 @@ ARGS["max_episodes"]=0
 ARGS["supervisor"]="dummy"
 ARGS["n_tasks"]="none"
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -57,9 +51,7 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"

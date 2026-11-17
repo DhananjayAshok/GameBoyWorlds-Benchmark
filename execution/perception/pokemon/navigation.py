@@ -31,11 +31,7 @@ def in_bounds(cell: Cell) -> bool:
 
 
 def cell_kinds(identified, ledge_patterns: Optional[Collection[Tuple[Optional[str], ...]]] = None) -> Dict[Cell, str]:
-    """
-    Walkable, ledge or blocked for every on-screen cell. ``ledge_patterns`` are cells (their four
-    quarter hashes, in QUARTERS order) the player has been seen hopping down over: the tile labels
-    can call a ledge an obstacle, and a cell once crossed is a ledge whatever its labels say.
-    """
+    # ``ledge_patterns``: quarter hashes (QUARTERS order) of cells seen hopped over; they override the labels.
     tags: Dict[Cell, set] = {}
     hashes: Dict[Cell, Dict[str, Optional[str]]] = {}
     for (x, y, quarter), tile in identified.items():

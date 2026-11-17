@@ -1,37 +1,3 @@
-"""
-Info-document diagnostics: is the built document any good?
-
-This vertical is almost entirely un-unit-testable — every stage is a model judgement, so
-there is no assertion that catches a bad document, only a human reading the right rendering
-of it. This command is the instrument.
-
-`debug.py info` — offline, no VLM, no emulator
-    Reads insights.jsonl and the whole merge/ tree.
-      - the yield funnel (pairs in -> NONE rate -> leaves -> final entries)
-      - benchmark init_state coverage: which of the benchmark's starting states the
-        collection actually visited, and so which episodes the document knows nothing
-        first-hand about
-      - the entry-count-per-round curve, the single most diagnostic plot: tracking the
-        "never matched" reference line means the matcher never fires, a flat line means it
-        fires on everything
-      - insight drift, the anti-generality check: vague-phrase vs concrete-anchor ratio per
-        round, plus one entry's Insights rendered side by side as the rounds rewrote it
-      - the match audit, replayed from every matches.json
-      - the final document itself
-
-The equivalent instrument for the plan arm is `debug.py compare` over the plan CSVs.
-
-Input (all produced by scripts/vlm/build_info.sh)
-------------------------------------------------
-<info_dir>/insights.jsonl
-<info_dir>/merge/round_<r>/<i>.{json,matches.json,meta.json}
-<info_dir>/info.json
-
-Output
-------
-<results_dir>/debug/<game>/info/<model_name>/<source>/report.md, plus figures beside it.
-"""
-
 import glob
 import json
 import os
@@ -50,9 +16,6 @@ from execution.info_doc import TASK_SECTION, InfoDocument
 from python_scripts.paths import INFO_DOC_FILENAME
 from utils import log_info
 
-# Phrases that signal an insight has drifted into unfalsifiable advice, and the concrete
-# anchors that signal it has not. The ratio between them per merge round is the cheap
-# automated read on generalisation-by-merge.
 VAGUE_PHRASES = [
     "carefully", "make sure to", "pay attention", "as needed", "appropriately",
     "be aware", "in general", "if necessary", "keep in mind", "properly",
@@ -91,8 +54,7 @@ def _round_dirs(info_dir: str) -> list[str]:
 
 def _round_documents(round_dir: str) -> list:
     docs = []
-    # Node documents only: the sibling .matches.json / .meta.json are the merge's audit
-    # trail, not documents, and would fail InfoDocument.from_dict.
+    # Node documents only: the sibling .matches.json and .meta.json would fail InfoDocument.from_dict.
     for doc_path in sorted(glob.glob(os.path.join(round_dir, "[0-9]*.json"))):
         if doc_path.endswith((".matches.json", ".meta.json")):
             continue
@@ -102,7 +64,6 @@ def _round_documents(round_dir: str) -> list:
 
 
 def _figure_entry_counts(per_round: pd.DataFrame, n_leaves: int, out_path: str):
-    """Entry count vs round, against the 'never matched' reference line."""
     fig, axis = plt.subplots(figsize=(7.5, 4.5))
     axis.plot(per_round["round"], per_round["task_entries"], marker="o",
               color="#4C78A8", label="task entries")
@@ -121,7 +82,6 @@ def _figure_entry_counts(per_round: pd.DataFrame, n_leaves: int, out_path: str):
 
 
 def _figure_drift(per_round: pd.DataFrame, out_path: str):
-    """Mean insight length and the vague:concrete ratio, per round."""
     fig, (left, right) = plt.subplots(1, 2, figsize=(12, 4.5))
 
     left.plot(per_round["round"], per_round["mean_insight_words"], marker="o", color="#54A24B")
@@ -183,9 +143,6 @@ def debug_info(obj, model_name, source, max_entries):
         model_name=model_name, output_dir=obj["output_dir"],
         mode=obj["mode"],
     )
-    # Keyed on model and source: one game has an 'attempt' and a 'curiosity' document, and two
-    # models may each have built both. They are different documents and must not overwrite each
-    # other's report.
     report_dir = paths.debug_dir("info", model_name, source)
     images_dir = paths.debug_dir("info", model_name, source, "images")
 
@@ -197,10 +154,6 @@ def debug_info(obj, model_name, source, max_entries):
     leaf_docs = [InfoDocument.from_dict(row["document"]) for row in rows]
     leaf_stats = _document_stats(leaf_docs)
 
-    # --- Raw pre-merge insights (the leaves) -------------------------------
-    # One leaf per stage-A pair, straight from insights.jsonl, before any merge round
-    # has run. This is the literal extraction output; the funnel/merge-tree sections below
-    # only ever show aggregate stats over these, never the insight text itself.
     leaf_render_blocks = [
         md.h2("Raw insights (pre-merge leaves)"),
         md.para(f"**{len(rows)}** leaves — one per stage-A pair, before any merge round "
@@ -227,9 +180,7 @@ def debug_info(obj, model_name, source, max_entries):
             f"Showing {max_entries}/{len(rows)} leaves — pass --max_entries 0 for all."
         ))
 
-    # --- Funnel -----------------------------------------------------------
-    # The number of pairs that went in is the annotation json's length; insights.jsonl only
-    # holds the survivors, so the difference is the NONE rate.
+    # insights.jsonl only holds the survivors, so the gap to the annotation json is the NONE rate.
     n_pairs = None
     for candidate in (paths.success_trajectories_json() if source == "attempt"
                       else paths.curiosity_annotation(),):
@@ -250,10 +201,6 @@ def debug_info(obj, model_name, source, max_entries):
                   f"**{leaf_stats['image_entries']}** image")
     funnel.append(f"leaf insights: **{leaf_stats['n_insights']}**")
 
-    # --- Benchmark init_state coverage ------------------------------------
-    # Read-only diagnostic; no benchmark text ever enters the document. An init state the
-    # data collection never visited contributes no entries, so every episode starting there
-    # plans from knowledge of somewhere else.
     coverage_block = []
     try:
         from gameboy_worlds import get_benchmark_tasks
@@ -285,9 +232,8 @@ def debug_info(obj, model_name, source, max_entries):
     except Exception as error:
         coverage_block = [md.warn(f"Could not compute benchmark coverage: {error}")]
 
-    # --- Merge tree -------------------------------------------------------
     round_dirs = _round_dirs(info_dir)
-    per_round_rows = [dict(round=-1, **leaf_stats)]      # round -1 == the leaves themselves
+    per_round_rows = [dict(round=-1, **leaf_stats)]  # round -1 is the leaves themselves
     match_records = []
     for round_dir in round_dirs:
         round_idx = int(os.path.basename(round_dir).split("_")[1])
@@ -341,7 +287,6 @@ def debug_info(obj, model_name, source, max_entries):
                                 "is no `info.json` and `--knowledge_mode retrieval` has "
                                 "nothing to read. Re-run build_info with `--stage all`.")]
 
-    # --- The document itself ---------------------------------------------
     doc_blocks = []
     doc_path = os.path.join(info_dir, INFO_DOC_FILENAME)
     if os.path.exists(doc_path):

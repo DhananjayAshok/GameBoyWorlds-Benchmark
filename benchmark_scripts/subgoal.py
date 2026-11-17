@@ -1,7 +1,3 @@
-"""
-The subgoal arm: decompose the task into a plan, then drive the plan step by step.
-"""
-
 from __future__ import annotations
 
 import json
@@ -25,15 +21,7 @@ _EMPTY_SUMMARY = {key: 0 for key in SUMMARY_COLUMNS}
 
 
 def _summary(result: dict, report) -> dict:
-    """Flat counts for the CSV.
-
-    ``n_plan_steps`` is the *current* plan and ``n_slots_attempted`` is how many target
-    slots the loop actually worked through. They are different numbers after a replan, and
-    reading ``n_steps_cleared`` against the first was how an episode came to report
-    "1/0 steps cleared": ``n_steps_cleared`` counts slots, so ``n_slots_attempted`` is its
-    denominator. ``n_original_plan_steps`` is the plan as first written, so a reader can see
-    what the replans changed.
-    """
+    # n_steps_cleared counts slots: its denominator is n_slots_attempted, not n_plan_steps.
     step_log = result["step_log"]
     attempts = [a for record in step_log for a in record["attempts"]]
     return {

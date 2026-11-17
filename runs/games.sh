@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 # Game lists shared by every driver under runs/. Sourced, never executed.
-#
-# These are the record of what a sweep covers. Narrow a run with --games on the driver
-# rather than by commenting entries out here.
+# Narrow a run with --games on the driver rather than by editing these lists.
 
-# The ten-title benchmark sweep.
 BENCH_GAMES=(
     "bomberman_pocket"
     "bomberman_quest"
@@ -27,8 +24,7 @@ PRACTICE_GAMES=(
     "bomberman_quest"
 )
 
-# Titles with practice datasets to fine-tune on. Same set as PRACTICE_GAMES today; kept
-# separate because the two stages gate on different artifacts.
+# Titles with practice datasets to fine-tune on.
 TRAIN_GAMES=("${PRACTICE_GAMES[@]}")
 
 # Pokemon titles the strategist plays.
@@ -40,10 +36,8 @@ POKEMON_GAMES=(
 )
 
 # resolve_games <default_array_name> <comma_separated_or_none>
-#
-# Echoes one game per line: the named default list when the second argument is `none`,
-# otherwise the comma-separated selection, validated against the default list so a typo
-# fails here instead of after the first arm has already run.
+# Echoes one game per line: the default list when the second argument is `none`, otherwise
+# the comma-separated selection, validated against the default list.
 function resolve_games() {
     local -n default_list="$1"
     local requested="$2"

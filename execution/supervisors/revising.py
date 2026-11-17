@@ -1,21 +1,3 @@
-"""
-The retry engine: attempt a target, critique what happened, revise the hint, try again.
-
-:class:`RevisingSupervisor` is the whole of the ``revision`` arm and the base of the two
-that follow it. Its loop: a list of targets, attempted in order; each target is judged and
-retried until it clears, runs out of attempts, or the budget ends — except the last, which
-only the environment can clear.
-
-- ``_resolve_targets()`` returning ``[None]`` — this class — gives one target, which is
-  therefore the last, and nothing is VLM-judged.
-- :class:`~execution.supervisors.subgoal.SubgoalSupervisor` overrides
-  ``_resolve_targets()`` to return plan steps, which are judged.
-- :class:`~execution.supervisors.info_subgoal.InfoSubgoalSupervisor` overrides
-  ``_knowledge()``.
-
-Success is the environment's verdict in every arm; the judge only advances a plan.
-"""
-
 from __future__ import annotations
 
 from typing import List, Optional, Tuple
@@ -30,22 +12,7 @@ from utils import log_info, parse_key_value
 
 
 class RevisingSupervisor(Supervisor):
-    """Run the task in short legs, critiquing and re-hinting after each failure.
-
-    :param max_leg_steps: Env-step cap for one executor attempt.
-    :param max_attempts_per_target: Failed attempts at one *intermediate* target before
-        moving on. Counted against the target as it currently reads, so a replan starts the
-        count fresh.
-    :param final_attempt_multiplier: The last target's cap, as a multiple of
-        *max_attempts_per_target*.
-    :param max_frames_per_slice: Trajectory frames per judging call.
-    :param max_history_attempts: How many past attempts at the current target are shown to
-        :meth:`_diagnose_failure`. Defaults to *max_attempts_per_target*.
-    :param verbose: Log the per-attempt narration. Off by default.
-
-    :ivar step_log: One dict per target attempted — its text, every attempt's termination
-        reason, the judge's verdict and reasoning, the hints tried, and any revision.
-    """
+    """Run the task in short legs, critiquing and re-hinting after each failure."""
 
     def __init__(self, *args, max_leg_steps: int = 5, max_attempts_per_target: int = 3,
                  final_attempt_multiplier: int = 3, max_frames_per_slice: int = 8,
@@ -64,14 +31,6 @@ class RevisingSupervisor(Supervisor):
 
     @property
     def max_final_attempts(self) -> int:
-        """Failed attempts at the *last* target before the episode gives up.
-
-        ``final_attempt_multiplier * max_attempts_per_target`` is the floor; the cap is
-        never allowed below the episode's own step budget.
-
-        :return: The attempt cap for the last target.
-        :rtype: int
-        """
         floor = self.max_attempts_per_target * self.final_attempt_multiplier
         return max(floor, self._max_steps)
 
@@ -83,56 +42,28 @@ class RevisingSupervisor(Supervisor):
                 "max_frames_per_slice": self._max_frames_per_slice,
                 "max_history_attempts": self.max_history_attempts}
 
-    # -- Hooks the arms above override ----------------------------------------
-
     def _resolve_targets(self) -> List[Optional[str]]:
-        """What to attempt, in order, plus any per-episode setup that decides it.
-
-        ``None`` means the benchmark task itself.
-
-        :return: The targets to attempt, in order.
-        :rtype: List[Optional[str]]
-        """
+        # A ``None`` target means the benchmark task itself.
         return [None]
 
     def _knowledge(self) -> str:
-        """The insights block interpolated into the hint and plan prompts. Empty for every
-        arm without a document.
-
-        :return: The insights block, or ``""``.
-        :rtype: str
-        """
         return ""
 
     def _diagnose_failure(self, index: int, targets: List[Optional[str]],
                           history: List[str], judgement: str,
                           regression: Optional[str]) -> Optional[List[str]]:
-        """Optionally replace the remaining targets after a failure. ``None`` to keep going.
-
-        *history* holds the failed attempts at the target as it currently reads.
-
-        :return: Replacement targets, or ``None`` to keep the current list.
-        :rtype: Optional[List[str]]
-        """
         return None
 
     def _check_regression(self, summaries: List[str]) -> Optional[str]:
-        """Whether the attempt undid earlier progress. Only meaningful with several targets."""
         return None
 
     def _on_target_cleared(self, target: str) -> None:
-        """Note that a target was reached. Only meaningful with several targets."""
+        pass
 
     def _on_targets_replaced(self, targets: List[Optional[str]]) -> None:
-        """The target list was spliced. Only meaningful for an arm that tracks a plan.
-
-        Called with the list *after* splicing, not with the replacement tail.
-        """
-
-    # -- Shared machinery -----------------------------------------------------
+        pass
 
     def _say(self, message: str) -> None:
-        """Per-attempt commentary. Silent unless the caller asked for it."""
         if self.verbose:
             log_info(message, self._parameters)
 
@@ -148,11 +79,6 @@ class RevisingSupervisor(Supervisor):
 
     def _run_leg(self, leg_task: str, hint: Optional[str], self_terminate: bool,
                  budget: int) -> ExecutorReport:
-        """One executor attempt, capped at the smaller of the leg cap and what is left.
-
-        :return: The attempt's executor report.
-        :rtype: ExecutorReport
-        """
         return self.call_executor(
             leg_task,
             hint=hint,
@@ -162,24 +88,11 @@ class RevisingSupervisor(Supervisor):
 
     @staticmethod
     def _budget_spent(report: ExecutorReport) -> int:
-        """What one leg cost the episode's step budget: every recorded step, not just the
-        ones that reached the environment. Floored at 1 so the budget strictly decreases.
-
-        :return: Steps to charge the budget for this leg.
-        :rtype: int
-        """
+        # Floored at 1 so the budget strictly decreases.
         return max(1, len(report.steps))
 
     def _leg_spec(self, target: Optional[str], is_last: bool,
                   hint: Optional[str]) -> Tuple[str, Optional[str], bool]:
-        """``(task, hint, allow_self_termination)`` for one attempt at *target*.
-
-        An intermediate target becomes the executor's task, not its hint. The last target
-        reverts to the real task with self-termination off.
-
-        :return: ``(task, hint, allow_self_termination)``.
-        :rtype: Tuple[str, Optional[str], bool]
-        """
         if target is None:
             return self._task, hint, False
         if is_last:
@@ -187,16 +100,6 @@ class RevisingSupervisor(Supervisor):
         return target, hint, True
 
     def judge_step(self, env_steps: list, target: str, stop_reason: str) -> Tuple:
-        """Windowed judgement of whether *target* was reached, against the current screen.
-
-        The step's termination condition is a statement about what the screen shows, so the
-        screen is what settles it. The executor's own stop reason is passed in as context
-        and framed as a claim to be checked, since a leg that self-terminated is exactly
-        the case where the agent's opinion and the screen may disagree.
-
-        :return: ``(complete, reasoning, segment_summaries)``. An attempt with no env steps
-            is never complete: nothing happened, so nothing can have been achieved.
-        """
         if not env_steps:
             return False, "No environment steps were taken in this attempt.", []
 
@@ -224,14 +127,6 @@ class RevisingSupervisor(Supervisor):
     def write_resume_hint(self, summaries: List[str], target: str, judgement: str,
                           previous_hint: str = "", report=None,
                           regression: Optional[str] = None) -> Optional[str]:
-        """Write the hint for the next attempt, anchored on the current screen.
-
-        *report* is the attempt that just failed. Callers keep the previous attempt's hint
-        when this returns ``None`` (``write_resume_hint(...) or hint``).
-
-        :return: The hint for the next attempt, or ``None`` if none could be written.
-        :rtype: Optional[str]
-        """
         prior_block = (f'Previous hint, which did not work (do not simply repeat it):\n'
                        f'"{previous_hint}"\n\n' if previous_hint else "")
         trace_block = (f"\n\nWhat they pressed, and the reason they gave for each:\n"
@@ -257,30 +152,11 @@ class RevisingSupervisor(Supervisor):
             self._say(f"      diagnosis: {self.last_diagnosis}")
         return hint or None
 
-    # -- The loop -------------------------------------------------------------
-
     def _handle_failed_attempt(self, *, index: int, targets: List[Optional[str]],
                                history: List[str], attempt: dict, report,
                                env_steps: list, summaries: List[str], verdict: str,
                                hint_target: str, hint_reason: str, hint: Optional[str],
                                attempts_at_target: int, attempt_cap: int) -> Tuple:
-        """Everything that happens after an attempt fails, whichever target it was.
-
-        Regression-check, record the attempt in the failure history, ask whether the plan
-        itself is at fault, and — if it is not and there are attempts left — write the hint
-        for the next try. The cap is tested after the replan check and before the hint is
-        written.
-
-        :param verdict: How this attempt is described in the failure history and to the
-            replanner.
-        :param hint_target: What the next attempt is being advised about. Not the same as
-            the target: the last target reverts to the benchmark task.
-        :param hint_reason: The reason given to the hint writer, which is the judge's
-            reasoning where there is one.
-        :return: ``(replacement, hint, exhausted)`` — replacement targets if the plan was
-            judged flawed, the hint to run the next attempt under, and whether this target
-            has run out of attempts.
-        """
         regression = self._check_regression(summaries)
         if regression:
             attempt["regression"] = regression
@@ -306,16 +182,6 @@ class RevisingSupervisor(Supervisor):
         return None, hint, False
 
     def _evaluate(self) -> dict:
-        """Attempt each target in turn until one lands the episode or the budget ends.
-
-        The retry loop is bounded three ways, in increasing order of bluntness: an attempt
-        cap moves on to the next target (:attr:`max_attempts_per_target`, or
-        :attr:`max_final_attempts` for the last one), :meth:`_diagnose_failure` may replace
-        the remaining targets, and the step budget stops everything.
-
-        :return: The episode record.
-        :rtype: dict
-        """
         self.step_log = []
         budget = self._max_steps
         targets = self._resolve_targets()
@@ -329,9 +195,7 @@ class RevisingSupervisor(Supervisor):
             target = targets[index]
             is_last = index == len(targets) - 1
             record = {"step": target, "attempts": [], "replans": [], "cleared": False}
-            # All three describe the target *as it currently reads*, so all three are reset
-            # when a replan changes what that is. ``record`` is not: it is the audit trail
-            # for this slot and has to hold everything attempted in it, replan included.
+            # These three are reset on a replan; ``record`` is not, it audits the whole slot.
             hint: Optional[str] = None
             history: List[str] = []
             attempts_at_target = 0
@@ -348,9 +212,6 @@ class RevisingSupervisor(Supervisor):
                 if leg_hint and leg_hint != target:
                     self._say(f"      hint: {leg_hint}")
 
-                # call_executor files the report into report.event_log, after the supervisor
-                # calls that produced this leg's hint and before the ones that judge it.
-                # That ordering is the record; no per-leg tagging is needed.
                 report = self._run_leg(leg_task, leg_hint, self_terminate, budget)
                 env_steps = [s for s in report.steps
                              if isinstance(s, EnvironmentStepRecord)]
@@ -360,8 +221,7 @@ class RevisingSupervisor(Supervisor):
                 self._say(f"      -> {report.termination_reason} after "
                           f"{len(env_steps)} step(s)")
 
-                # The environment ending outranks every judgement. `max_invalid` is NOT
-                # here: it is re-hintable, not terminal.
+                # `max_invalid` is NOT here: it is re-hintable, not terminal.
                 if report.termination_reason in ("terminated", "truncated"):
                     attempt["cleared"] = report.termination_reason == "terminated"
                     record["attempts"].append(attempt)
@@ -370,8 +230,7 @@ class RevisingSupervisor(Supervisor):
                     break
 
                 if is_last:
-                    # Not judged: the only thing that clears the last target is the
-                    # environment terminating, which the branch above already caught.
+                    # Not judged: only the environment terminating clears the last target.
                     attempt["cleared"] = False
                     record["attempts"].append(attempt)
                     summaries = (self._segment_summaries(env_steps, self._task)
@@ -406,8 +265,6 @@ class RevisingSupervisor(Supervisor):
 
                 if replacement:
                     record["replans"].append(replacement)
-                    # Everything from here on is replaced; targets already cleared are not
-                    # touched, so progress already made survives.
                     targets[index:] = replacement
                     self._on_targets_replaced(targets)
                     target = targets[index]
@@ -429,13 +286,7 @@ class RevisingSupervisor(Supervisor):
         return self._extras()
 
     def _extras(self) -> dict:
-        """Arm-specific values for the CSV. ``Supervisor.evaluate`` attaches the report."""
         return {"step_log": self.step_log}
 
     def process_executor_return(self, report: ExecutorReport) -> ExecutorReport:
-        """Hand the report back unchanged — ``call_executor`` has already filed it.
-
-        This arm reads each leg in :meth:`_evaluate`, where the target it belongs to is
-        known, so nothing needs to be derived here.
-        """
         return report

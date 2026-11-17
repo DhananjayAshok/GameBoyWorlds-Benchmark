@@ -59,11 +59,6 @@ class Report:
         return md.img(alt, path, self.report_dir) if path else ""
 
 
-# ----------------------------------------------------------------------------
-# Drawing
-# ----------------------------------------------------------------------------
-
-
 def contact_sheet(report: Report, items: Sequence[Tuple[str, np.ndarray]], path: str,
                   columns: int = 12) -> Optional[str]:
     if not items:
@@ -87,11 +82,6 @@ def contact_sheet(report: Report, items: Sequence[Tuple[str, np.ndarray]], path:
     return path
 
 
-# ----------------------------------------------------------------------------
-# Formatting helpers
-# ----------------------------------------------------------------------------
-
-
 def path_text(path: Tuple[str, ...]) -> str:
     *parents, last = path
     return " › ".join([*parents, f"**{last}**"])
@@ -100,11 +90,6 @@ def path_text(path: Tuple[str, ...]) -> str:
 def count_phrase(counts: List[Tuple[int, str]]) -> str:
     parts = [f"{n} {label}" for n, label in counts if n]
     return ", ".join(parts) if parts else "no change"
-
-
-# ----------------------------------------------------------------------------
-# Views: (artifact, report, episode) -> (markdown blocks, one-line summary)
-# ----------------------------------------------------------------------------
 
 
 def goal_lines(tree, level: int, focus) -> List[str]:
@@ -203,7 +188,9 @@ def view_notepad(notepad: ThoughtNotepad, report: Report, episode: int) -> Tuple
     return blocks, f"{notepad.length} words over {n_lines} lines"
 
 
-MAP_DIRECTION = re.compile(r"MUST be to walk to the unexplored edge at \((-?\d+), (-?\d+)\), (\d+) steps ([a-z-]+)")
+# Matches the dispatch prompt's exploration line (exploration.prompt_block), with or without the area name.
+MAP_DIRECTION = re.compile(
+    r"MUST be to walk to the unexplored edge(?: of .+?)? at \((-?\d+), (-?\d+)\), (\d+) steps ([a-z-]+)")
 MAP_LEGEND = "Green: unexplored edge. Blue: trail. Red: the player."
 DOOR_LEGEND = "Numbered boxes are doors and stairs: cyan once the area behind is known, orange if not entered yet."
 
@@ -376,11 +363,6 @@ VIEWS: Dict[str, Callable[..., Tuple[List[str], str]]] = {
 }
 
 
-# ----------------------------------------------------------------------------
-# Diffs: (new, old, diff, report, old_ep, new_ep) -> (markdown blocks, one-line summary)
-# ----------------------------------------------------------------------------
-
-
 def diff_goals(new, old, d, report: Report, a: int, b: int) -> Tuple[List[str], str]:
     new_nodes, old_nodes = new.tree.paths(), old.tree.paths()
     blocks = []
@@ -516,11 +498,6 @@ DIFFS: Dict[str, Callable[..., Tuple[List[str], str]]] = {
 }
 
 
-# ----------------------------------------------------------------------------
-# Commands
-# ----------------------------------------------------------------------------
-
-
 def setup(obj: dict, name: str, mode: str) -> Tuple[str, Report]:
     parameters, game = obj["parameters"], obj["game"]
     run_dir = playthrough_dir(parameters, game=game, name=name)
@@ -545,8 +522,7 @@ def selected(artifact: Optional[str], run_dir: str) -> List[str]:
 
 @click.group(name="playthrough")
 def debug_playthrough():
-    """Inspect a playthrough's saved artifacts (goals, knowledge, tiles, notepad, global map,
-    strategy guide)."""
+    """Inspect a playthrough's saved artifacts (goals, knowledge, tiles, notepad, global map, strategy guide)."""
 
 
 ARTIFACT_OPTION = click.option("--artifact", type=click.Choice(list(ARTIFACTS)), default=None,

@@ -6,51 +6,21 @@ from utils.fundamental import get_logger
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-#: Root paths that are resolved against :data:`PROJECT_ROOT` when given relatively, so that
-#: every artifact path is absolute regardless of the working directory a script is run from.
 ROOT_PATH_KEYS = ("storage_dir", "results_dir")
 
 
 def absolutize_roots(params: dict[str, Any]) -> None:
-    """Rewrite every key in :data:`ROOT_PATH_KEYS` to an absolute path, in-place.
-
-    ``os.path.join`` returns its second argument unchanged when that argument is already
-    absolute, so this is idempotent and safe to call more than once.
-
-    :param params: The parameters dictionary to fix up in-place.
-    :type params: dict[str, Any]
-    """
     for key in ROOT_PATH_KEYS:
         if key in params and isinstance(params[key], str):
             params[key] = os.path.abspath(os.path.join(PROJECT_ROOT, params[key]))
 
 
 def load_yaml(yaml_path: str) -> dict[str, Any]:
-    """
-    Load a YAML file and return its contents as a dictionary.
-
-    :param yaml_path: Absolute path to the YAML file.
-    :type yaml_path: str
-    :return: Parsed YAML contents.
-    :rtype: dict[str, Any]
-    """
     with open(yaml_path, "r") as f:
         return yaml.load(f, Loader=yaml.FullLoader)
 
 
 def compute_secondary_parameters(params: dict[str, Any]) -> None:
-    """
-    Derive and create secondary parameters from the base configuration in-place.
-
-    Derives the following keys from ``storage_dir``: ``data_dir``, ``model_dir``,
-    ``tmp_dir``, ``sync_dir``. Derives the following from ``results_dir``:
-    ``log_dir``, ``figure_dir``. All derived directories are created if they do
-    not exist. Also sets ``log_file`` (defaulting to ``<log_dir>/log.txt`` if not
-    already present) and initialises the ``logger`` key.
-
-    :param params: The parameters dictionary to extend in-place.
-    :type params: dict[str, Any]
-    """
     absolutize_roots(params)
     params["data_dir"] = os.path.join(params["storage_dir"], "data")
     params["model_dir"] = os.path.join(params["storage_dir"], "models")
@@ -72,7 +42,6 @@ def compute_secondary_parameters(params: dict[str, Any]) -> None:
         log_file = os.path.join(params["log_dir"], "log.txt")
         params["log_file"] = log_file
     else:
-        # check if log_file is a child of log_dir, but handle silly // vs / cases
         log_dir_str = params["log_dir"].replace("//", "/")
         log_file_str = params["log_file"].replace("//", "/")
         if not log_file_str.startswith(log_dir_str):
@@ -83,21 +52,10 @@ def compute_secondary_parameters(params: dict[str, Any]) -> None:
 
 
 def load_parameters(parameters: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-    """
-    Loads the parameters for the project from configs/private_vars.yaml and any other yaml files in the configs directory.
-
-    That is, unless a non None parameters dictionary is passed through, in which case we assume all is good and just return it.
-
-    :param parameters: An already-loaded parameters dict, or None to load from disk.
-        Passing an existing dict is a no-op (safe to call repeatedly).
-    :type parameters: dict[str, Any] or None
-    :return: A dictionary of fully loaded and validated parameters.
-    :rtype: dict[str, Any]
-    """
     if parameters is not None:
         if (
             "logger" not in parameters
-        ):  # this is a flag that secondary parameters need to be computed
+        ):  # a missing logger means secondary parameters are not computed yet
             compute_secondary_parameters(parameters)
         return parameters
     essential_keys = ["storage_dir", "results_dir"]
@@ -132,10 +90,8 @@ def load_parameters(parameters: Optional[dict[str, Any]] = None) -> dict[str, An
     for essential_key in essential_keys:
         if essential_key not in params:
             error(f"Please set {essential_key} in one of the config yamls")
-    # Before the makedirs below, so a relative root never creates a stray tree under
-    # whatever directory the script happened to be launched from.
+    # Must precede the makedirs below, or a relative root creates a stray tree under the cwd.
     absolutize_roots(params)
-    # check if there are any .py files in storage_dir, if so, log error
     if os.path.exists(params["storage_dir"]):
         if any([f.endswith(".py") for f in os.listdir(params["storage_dir"])]):
             logger.warning(

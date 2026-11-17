@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Uses the VLM to annotate a trajectory file with step-by-step guidance, producing
-# a guidance file that practice_tasks.sh can use for guided practice sessions.
-# Input is a trajectory path (--trajectory_path); controls observation window size
-# via --max_obs_at_once.
+# Uses the VLM to annotate a trajectory file (--trajectory_path) with step-by-step guidance,
+# producing the guidance file practice_tasks.sh consumes.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -12,7 +10,6 @@ REQUIRED_ARGS=()
 populate_array INFER_GUIDANCE_ESSENTIALS REQUIRED_ARGS
 populate_dict INFER_GUIDANCE_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -47,7 +44,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do

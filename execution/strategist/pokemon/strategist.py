@@ -1,18 +1,10 @@
-"""
-The layer above :class:`~execution.pokemon.supervisors.PokemonPlayThroughSupervisor`.
-
-It owns the long game -- what to aim at, what is known about the world, and where the
-player is -- and dispatches one supervisor per short-horizon task, folding the result back
-into its own state.
-"""
-
 from __future__ import annotations
 
 import json
 import os
 import re
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 from gameboy_worlds.emulation.pokemon import AgentState
@@ -33,8 +25,8 @@ from execution.strategist.pokemon.guide import (StrategyGuide, battle_tips, guid
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree, remember
 from execution.strategist.pokemon.notepad import ThoughtNotepad
 from execution.strategist.pokemon.global_map import (FAILURE_EPISODES, GlobalMap, MappingEnvironment, explore_text,
-                                                     exploring, judge_merge, judge_stuck, name_segment, navigate_map,
-                                                     prompt_block, stuck_signs)
+                                                     exploring, judge_merge, judge_stuck, keep_exploring,
+                                                     name_segment, navigate_map, prompt_block, stuck_signs)
 from execution.perception.pokemon.navigation import cell_kinds
 from execution.strategist.report import (REPORT_DETAILS, EpisodeArchive, EpisodeRecord, StrategistReport,
                                          StrategistVLMCallRecord, save_episode_report, trim_episode)
@@ -43,18 +35,17 @@ from utils import VLM, load_parameters, log_error, log_info, log_warn
 from utils.lm_inference import clean_value, parse_key_value
 from utils.parsing import parse_list
 
-#: One file per process, stamped like the run it records, so a resumed run writes its own.
 PROVENANCE_PREFIX = "provenance"
 MAX_BATTLE_REASON = 200
-#: A frame is black when this fraction of its pixels are at or below BLACK_PIXEL_LEVEL (a door warp
-#: leaves grey lines, so "every pixel" is too strict).
+# A door warp leaves grey lines, so a frame counts as black when most, not all, pixels are dark.
 BLACK_PIXEL_LEVEL = 10
 BLACK_FRACTION = 0.95
 MAX_SETTLE_STEPS = 8
+FIXED_GOAL_SOURCES = ("initial", "default", "override")
 
 
 def settle_screen(env) -> None:
-    """While the screen is black, let the game run on (no button) so an episode never ends mid door-warp."""
+    """While the screen is black, let the game run on so an episode never ends mid door-warp."""
     for _ in range(MAX_SETTLE_STEPS):
         frame = np.asarray(env.get_info()["core"]["current_frame"])
         if float(np.mean(frame <= BLACK_PIXEL_LEVEL)) < BLACK_FRACTION:
@@ -63,35 +54,14 @@ def settle_screen(env) -> None:
         if captured is None:
             return
 
-# One run writes to three trees, and only the first is addressable from (game, name) alone.
-# Recovering the other two, given a provenance_<stamp>.json payload:
-#
-#   1. State, under this project's storage:
-#        paths.playthrough_dir(game=payload["game"], name=payload["init_kwargs"]["name"])
-#      holds episode_<n>/*.pkl, episode_<n>/report.pkl.gz and the provenance files. Also
-#      recorded verbatim as payload["init_kwargs"]["storage"].
-#
-#   2. Video, under GameBoyWorlds' storage. payload["session_dir"] is relative to
-#      paths.playthrough_sessions_root(game=...) and resolves with:
-#        paths.playthrough_session_abs(payload["session_dir"], game=payload["game"])
-#        paths.playthrough_video(payload["session_dir"], game=payload["game"])
-#      The second returns None when the run saved no video. Do NOT rebuild this path from
-#      the stamp in the provenance filename; see _resolve_session_dir for why it differs.
-#      A payload["session_dir"] of None means the run predates this field, or the emulator
-#      exposed no session path -- glob sessions/<game>/strategist/<name>/*/*/videos/0.mp4.
-#
-#   3. Emulator save states, under GameBoyWorlds' rom_data, NOT under either of the above:
-#        <gbw storage>/rom_data/<series>/<game>/states/custom_<treat_name(name)><n>.state
-#      one per saved episode, named by _emulator_state_name. There is no accessor for the
-#      states directory on this side; GameBoyWorlds builds it as
-#      gbw_parameters[f"{game}_rom_data_path"] + "/states/".
-
 
 def treat_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9]", "", name)
 
 
 class PokemonStrategist:
+    """Plays one long game: picks a task each episode, runs a supervisor on it, and updates its memory."""
+
     RECENT_EPISODES = 5
     MAX_DISPATCH_ATTEMPTS = 2
     MAX_EXTRACT_ATTEMPTS = 2
@@ -113,10 +83,7 @@ class PokemonStrategist:
         supervisor_max_new_tokens: int = 4800,
         subgoal_every: int = 5,
         report_detail: str = "strategist",
-        resume: bool = True,
         resume_run: Optional[str] = None,
-        resume_episode: Union[str, int] = "latest",
-        on_episode_complete: Optional[Callable[["StrategistReport"], None]] = None,
         override_goal: Optional[str] = None,
         parameters: Optional[dict] = None,
         **supervisor_kwargs: Any,
@@ -129,19 +96,16 @@ class PokemonStrategist:
         self._strategist_vlm_model = strategist_vlm_model
         self._strategist_vlm_kind = strategist_vlm_kind
         self._max_new_tokens = max_new_tokens
-        #: Named, not left to ``supervisor_kwargs``, where it would collide with this class's
-        #: own ``max_new_tokens``.
         self._supervisor_max_new_tokens = supervisor_max_new_tokens
         self._subgoal_every = subgoal_every
         self._report_detail = report_detail
-        self._resume = resume
-        self._on_episode_complete = on_episode_complete
         self._parameters = load_parameters(parameters)
         if isinstance(subgoal_every, bool) or not isinstance(subgoal_every, int) or subgoal_every <= 0:
             log_error(f"subgoal_every must be a positive integer, got {subgoal_every!r}.", self._parameters)
         if report_detail not in REPORT_DETAILS:
             log_error(f"report_detail must be one of {REPORT_DETAILS}, got {report_detail!r}.",
                       self._parameters)
+        # Emulator save states are named <name><episode>, so a trailing digit would make them ambiguous.
         if treat_name(name)[-1:].isdigit():
             log_error(f"Strategist name {name!r} must not end in a digit.", self._parameters)
         self._supervisor_kwargs = supervisor_kwargs
@@ -149,43 +113,23 @@ class PokemonStrategist:
 
         self._dir = playthrough_dir(self._parameters, game=game, name=name)
         self._resume_run = resume_run
-        self._resume_episode = resume_episode
         self._resume_dir = self._dir
-
-        if resume_episode != "latest":
-            try:
-                self._resume_episode = int(resume_episode)
-            except (TypeError, ValueError):
-                log_error(f"resume_episode must be 'latest' or an integer, got {resume_episode!r}.",
-                          self._parameters)
         if resume_run is not None and resume_run != name:
-            if not resume:
-                log_error(f"resume_run={resume_run!r} was given with resume=False, which asks "
-                          f"to start from that run's state and from nothing at the same time.",
-                          self._parameters)
             if os.path.exists(self._dir):
                 log_error(f"resume_run={resume_run!r} would fork that run's state into {name!r}, "
                           f"but {self._dir} already exists.", self._parameters)
             self._resume_dir = playthrough_dir(self._parameters, game=game, name=resume_run)
 
-        #: --fresh starts every artifact over too.
-        load_episode = None if self._resume_episode == "latest" else self._resume_episode
         self.tiles = self._load_or_default(
-            TileRecognizer, lambda: TileRecognizer(name=name, game=game, parameters=self._parameters),
-            load_episode)
-        self.goals = self._load_or_default(PokemonGoalTree, PokemonGoalTree, load_episode)
-        self.knowledge = self._load_or_default(PokemonKnowledgeTree, PokemonKnowledgeTree, load_episode)
-        self.notepad = self._load_or_default(ThoughtNotepad, ThoughtNotepad, load_episode)
-        self.global_map = self._load_or_default(GlobalMap, GlobalMap, load_episode)
-        self.guide = self._load_or_default(StrategyGuide, StrategyGuide, load_episode)
+            TileRecognizer, lambda: TileRecognizer(name=name, game=game, parameters=self._parameters))
+        self.goals = self._load_or_default(PokemonGoalTree, PokemonGoalTree)
+        self.knowledge = self._load_or_default(PokemonKnowledgeTree, PokemonKnowledgeTree)
+        self.notepad = self._load_or_default(ThoughtNotepad, ThoughtNotepad)
+        self.global_map = self._load_or_default(GlobalMap, GlobalMap)
+        self.guide = self._load_or_default(StrategyGuide, StrategyGuide)
 
-        if not resume:
-            self.start_episode = 0
-        elif self._resume_episode != "latest":
-            self.start_episode = self._resume_episode + 1
-        else:
-            resumed_from = episode_dirs(self._resume_dir)
-            self.start_episode = (max(resumed_from) + 1) if resumed_from else 0
+        resumed_from = episode_dirs(self._resume_dir)
+        self.start_episode = (max(resumed_from) + 1) if resumed_from else 0
         self._override_goal = override_goal
         if override_goal is not None and self.start_episode == 0:
             self.goals.tree = GoalSubtree.create_tree(
@@ -202,7 +146,7 @@ class PokemonStrategist:
 
         self._identified: Optional[Dict[Any, Any]] = None
         self._screen_tiles: Optional[str] = None
-        #: Episodes run by *this* instance, which is what ``max_episodes`` bounds.
+        # Episodes run by this process, which is what max_episodes bounds.
         self._episodes_run = 0
         self._ran = False
         self._explore_now = False
@@ -231,28 +175,14 @@ class PokemonStrategist:
             "subgoal_every": self._subgoal_every,
             "report_detail": self._report_detail,
             "storage": self._dir,
-            "resume": self._resume,
             "resume_run": self._resume_run,
-            "resume_episode": self._resume_episode,
             "resume_dir": self._resume_dir,
             "supervisor_kwargs": dict(self._supervisor_kwargs),
             "override_goal": self._override_goal,
         }
 
     def _resolve_session_dir(self) -> Optional[str]:
-        """The emulator's session directory, cut to ``<name>/<stamp>/<n>_<hash>``.
-
-        Read off the emulator rather than rebuilt from the naming convention: the stamp in
-        the session path is minted by ``run_playthrough.py`` before the emulator boots, while
-        this class's own ``_started_at`` is minted after, so the two disagree whenever
-        construction crosses a second boundary. Recording what the emulator actually used is
-        the only reliable link between the two halves of a run.
-
-        :return: The relative session directory, or ``None`` if the emulator does not expose
-            one (``Environment._emulator`` having moved, or a session path outside the
-            strategist root).
-        :rtype: Optional[str]
-        """
+        # Read off the emulator: its timestamp is minted before this object's and can differ by a second.
         emulator = getattr(self._env, "_emulator", None)
         session_path = getattr(emulator, "session_path", None) if emulator is not None else None
         if not session_path:
@@ -279,17 +209,13 @@ class PokemonStrategist:
     def _path(self, filename: str) -> str:
         return os.path.join(self._dir, filename)
 
-    def _load_or_default(self, cls, factory: Callable[[], Any], episode_number: Optional[int]) -> Any:
-        if self._resume and cls.exists(self._resume_dir):
-            artifact = cls.load(self._resume_dir, episode_number, parameters=self._parameters)
+    def _load_or_default(self, cls, factory: Callable[[], Any]) -> Any:
+        if cls.exists(self._resume_dir):
+            artifact = cls.load(self._resume_dir, parameters=self._parameters)
             if self._resume_dir != self._dir:
                 artifact.last_written = None
             return artifact
         return factory()
-
-    # ------------------------------------------------------------------
-    # Recording
-    # ------------------------------------------------------------------
 
     @property
     def _vlm(self) -> VLM:
@@ -331,10 +257,6 @@ class PokemonStrategist:
             return self._vlm_call(stage, **kwargs)
         return call
 
-    # ------------------------------------------------------------------
-    # Screen and prompt blocks
-    # ------------------------------------------------------------------
-
     def _current_place(self) -> str:
         return self.global_map.place_label() if self.global_map.current else "unknown"
 
@@ -359,6 +281,10 @@ class PokemonStrategist:
                  f"[{e.status}]: {e.summary or 'no summary'}" for e in recent]
         return P.STRATEGIST_RECENT_BLOCK.replace("[RECENT]", "\n".join(lines))
 
+    def _episode_lines(self) -> str:
+        return "\n".join(f"- episode {e.n}: {e.task} [{e.status}]" + (f": {e.summary}" if e.summary else "")
+                         for e in self.report.episodes[-self.RECENT_EPISODES:])
+
     def _fill(self, prompt: str) -> str:
         return (prompt.replace("[GAME]", self._game)
                 .replace("[RECENT_BLOCK]", self._recent_block())
@@ -368,20 +294,11 @@ class PokemonStrategist:
                 .replace("[NOTEPAD]", self.notepad.text.strip() or "(empty)")
                 .replace("[GUIDE]", guide_block(self.guide, self.global_map, self.start_episode + self._episodes_run)))
 
-    # ------------------------------------------------------------------
-    # The strategist's own calls
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # Global map
-    # ------------------------------------------------------------------
-
     def _map_opening_screen(self, frame: np.ndarray) -> None:
         free = self._env.get_info()["pokemon_core"]["agent_state"] == AgentState.FREE_ROAM
         self.global_map.on_step(frame, self._identified if free else {}, free)
 
     def _failure_streak(self) -> Tuple[int, List[str]]:
-        """Episodes in a row, newest first, that did not complete, and their tasks."""
         streak, failed = 0, []
         for e in reversed(self.report.episodes):
             if e.status == "completed":
@@ -391,15 +308,8 @@ class PokemonStrategist:
         return streak, failed
 
     def _abandon_failing_plan(self, n: int) -> None:
-        """
-        When exploration takes over because the plan kept failing, drop the plan as well.
-
-        Exploring alone gets the player somewhere new, but the goal tree still points at what was
-        failing, so the strategist plans its way straight back. Abandon the generated part of the
-        current goal path, down from the deepest goal the game started with (those are never touched),
-        record why in the knowledge tree, and let the goal planner re-plan from there this episode.
-        Once per trigger.
-        """
+        """When exploration takes over from a failing plan, abandon the generated goals that led there,
+        or the planner walks straight back to them."""
         if not self._explore_now or exploring(self.global_map, n):
             return
         streak, failed = self._failure_streak()
@@ -410,7 +320,7 @@ class PokemonStrategist:
             return
         path = self.goals.path_to(frontier)
         generated = next((path[:i] for i in range(1, len(path) + 1)
-                          if self.goals.tree.at(path[:i]).root.source not in ("initial", "default", "override")),
+                          if self.goals.tree.at(path[:i]).root.source not in FIXED_GOAL_SOURCES),
                          None)
         if generated is None:
             return
@@ -421,7 +331,7 @@ class PokemonStrategist:
                               f"does not work from here", episode_number=n)
         self._remember_all([f"The plan '{top}' (which came down to '{leaf}') failed {streak} episodes in a row "
                             f"and was abandoned: that approach does not work from here, so do not plan it again."], n)
-        self.global_map.stats["plans_abandoned"] += 1
+        self.global_map.count("plans_abandoned")
         log_info(f"Global map: the plan {top!r} kept failing; abandoned it and re-planning.", self._parameters)
 
     def _supervisor_steps(self, report: SupervisorReport, marker: Optional[Tuple[int, int]],
@@ -460,9 +370,8 @@ class PokemonStrategist:
         gmap = self.global_map
         self._consolidate()
         gmap.queue_grown()
-        queue, gmap.naming_queue = gmap.naming_queue, []
-        tasks = "\n".join(f"- episode {e.n}: {e.task} [{e.status}]" + (f": {e.summary}" if e.summary else "")
-                          for e in self.report.episodes[-self.RECENT_EPISODES:])
+        queue = gmap.take_naming_queue()
+        tasks = self._episode_lines()
         done = set()
         for entry in queue:
             left = entry.get("reason", "door") == "door"
@@ -499,6 +408,8 @@ class PokemonStrategist:
                                        explore=self._explore_now,
                                        episode=self.start_episode + self._episodes_run,
                                        failed_tasks=failed)
+        if override is not None:
+            keep_exploring(self.global_map, override["until"])
         if override is not None and override["kind"] == "edge":
             log_info(f"Global map: exploration overrides the task: head to ({override['dx']}, {override['dy']}) "
                      f"{override['sector']} in {self.global_map.area_label(override['area'])}.", self._parameters)
@@ -520,12 +431,10 @@ class PokemonStrategist:
         signs = stuck_signs(gmap, list(gmap.new_cells_by_episode), streak)
         if signs is None:
             return False
-        episodes = "\n".join(f"- episode {e.n}: {e.task} [{e.status}]" + (f": {e.summary}" if e.summary else "")
-                             for e in self.report.episodes[-self.RECENT_EPISODES:])
-        stuck = judge_stuck(gmap, signs, episodes, frame, self._vlm_caller("stuck_check"), self._game,
+        stuck = judge_stuck(gmap, signs, self._episode_lines(), frame, self._vlm_caller("stuck_check"), self._game,
                             self._parameters)
-        gmap.stats["stuck_checks"] += 1
-        gmap.stats["stuck_yes"] += bool(stuck)
+        gmap.count("stuck_checks")
+        gmap.count("stuck_yes", bool(stuck))
         verdict = "unanswered" if stuck is None else "stuck: exploring" if stuck else "not stuck"
         log_info(f"Global map: {signs}; the strategist judged itself {verdict}.", self._parameters)
         return bool(stuck)
@@ -605,7 +514,7 @@ class PokemonStrategist:
                 self.goals.edit(path, achievable_without_subgoals=None, episode_number=n)
                 self.goals.set_frontier(self.goals.path_to(self.goals.frontier()), n, episode_number=n)
         if answer["return"] and defeat is not None:
-            gmap.defeat_return = {"defeat": defeat, "episode": n}
+            gmap.return_to_defeat(defeat, n)
         log_info(f"Defeat reflection: {answer['wrong']} Plan: "
                  f"{'PREPARE ' + answer['prepare'] if answer['prepare'] else 'CONTINUE'}; "
                  f"return: {'yes' if answer['return'] else 'no'}; {len(answer['changes'])} tip change(s).",
@@ -640,10 +549,6 @@ class PokemonStrategist:
             self._remember_all(facts or [], n)
         self.notepad.clear(episode_number=n)
 
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
-
     def save_all(self, episode_number: int) -> None:
         artifacts = [self.tiles, self.goals, self.knowledge, self.notepad, self.guide, self.global_map]
         for artifact in artifacts:
@@ -652,19 +557,8 @@ class PokemonStrategist:
 
     @staticmethod
     def _emulator_state_name(run_name: str, episode_number: int) -> str:
-        """``strategist<name><n>``, saved by the emulator as ``custom_strategist<name><n>.state``.
-
-        The ``strategist`` prefix is what makes these separable from the states
-        ``Environment._simulate`` writes, which are named for a uuid4 hex and deleted in a
-        ``finally`` that a killed job never reaches. A uuid hex cannot begin with
-        ``strategist``, so the sync set's ``custom_strategist*`` pattern cannot pick one up.
-        Must stay alphanumeric: ``save_custom_state`` rejects anything else.
-        """
+        # Alphanumeric only (save_custom_state rejects anything else); sync_data matches the prefix.
         return f"strategist{treat_name(run_name)}{episode_number}"
-
-    # ------------------------------------------------------------------
-    # The loop
-    # ------------------------------------------------------------------
 
     def _stop_reason(self) -> Optional[str]:
         if self._episodes_run >= self._max_episodes:
@@ -681,9 +575,6 @@ class PokemonStrategist:
                       "report accumulates, so this would merge two runs into one record.",
                       self._parameters)
         self._ran = True
-        # Bounded by max_episodes, which is the only stop reason that can be counted
-        # ahead of time; the environment ending the run early just leaves the bar short
-        # of its total.
         progress = tqdm(total=self._max_episodes, desc="episodes", unit="ep")
         while True:
             stop = self._stop_reason()
@@ -711,7 +602,7 @@ class PokemonStrategist:
             unsuccessful_for = n - since
             if unsuccessful_for <= 0 or unsuccessful_for % self._subgoal_every:
                 return
-        self.global_map.routes = []
+        self.global_map.clear_routes()
         create_subgoals(self.goals, self.knowledge, self._current_place(), explore_text(self.global_map),
                         self.notepad.text,
                         lambda request: navigate_map(self.global_map, request, self._vlm_caller, self._game,
@@ -719,8 +610,6 @@ class PokemonStrategist:
                         self._vlm_caller, self._game, n, unsuccessful_for, self._parameters)
 
     def _run_episode(self, n: int) -> EpisodeRecord:
-        #: Where this episode's own calls start, so the archive holds one episode rather
-        #: than every call the run has made so far.
         calls_from = len(self.report.event_log)
         frame = self._current_frame()
         self._perceive(frame, n)
@@ -802,14 +691,6 @@ class PokemonStrategist:
                  f"{self.global_map.n_areas} area(s).", self._parameters)
         self.save_all(record.n)
         self._archive_episode(record, calls_from)
-        if self._on_episode_complete is not None:
-            # A run of this length ends by wall clock, not by finishing, so the record has
-            # to be on disk before the next episode starts. A checkpoint that cannot be
-            # written must not take the run down with it.
-            try:
-                self._on_episode_complete(self.report)
-            except Exception as error:  # noqa: BLE001
-                log_warn(f"Could not checkpoint the strategist report: {error}", self._parameters)
 
 
 def _parse_dispatch(output: str) -> Tuple[Any, Optional[str]]:

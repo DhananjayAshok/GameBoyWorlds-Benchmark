@@ -1,7 +1,3 @@
-"""
-Executor agents
-"""
-
 from execution.executors.base import (
     DEBUG_ON_INVALID,
     MAX_CONSECUTIVE_INVALID,

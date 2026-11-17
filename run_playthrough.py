@@ -1,23 +1,5 @@
-"""
-Entry point for a playthrough. Use --help for CLI options.
-
-Not a benchmark arm. Every arm in ``run_benchmark.py`` sweeps a fixed list of short tasks
-and scores each independently; a playthrough is the opposite shape -- one long-horizon
-run, one emulator session, and a sequence of tasks the strategist chooses as it goes.
-There is no task list to sweep and no per-task pass rate to average.
-
-    python run_playthrough.py --name gemma_starter --init_state starter \\
-        --model google/gemma-4-31b-it --vlm_kind vllm --max_episodes 400
-
-State (tiles) persists under
-``Paths.playthrough_dir(name)`` and is resumed by default, so re-running the same --name
-continues the same playthrough. Each process writes its own ``provenance_<stamp>.json``
-there recording the settings it ran under.
-"""
-
 from __future__ import annotations
 
-import os
 from datetime import datetime
 
 import click
@@ -28,10 +10,7 @@ from execution.strategist.pokemon.strategist import PokemonStrategist
 from python_scripts import paths
 from utils import load_parameters, log_info
 
-#: As high as the emulator allows, so the playthrough ends on its episode count or the wall
-#: clock, never on the emulator truncating underneath it. This IS the ceiling:
-#: ``gameboy_hard_max_steps`` in GameBoyWorlds' config is 1,000,000 and anything larger is
-#: silently clamped to it.
+# GameBoyWorlds' gameboy_hard_max_steps: the emulator clamps anything larger.
 DEFAULT_ENV_MAX_STEPS = 1_000_000
 
 
@@ -53,9 +32,7 @@ DEFAULT_ENV_MAX_STEPS = 1_000_000
 @click.option("--executor_vlm_model", default=None, type=str, help="Defaults to --model.")
 @click.option("--executor_vlm_kind", default=None, type=str)
 @click.option("--max_episodes", default=400, show_default=True, type=int,
-              help="Episodes this run may take. One episode is a whole supervised run, so "
-                   "this multiplies the cost of everything else. Set it ABOVE what the "
-                   "wall clock allows, so the job ends on time rather than on the counter.")
+              help="Episodes this process may run. One episode is one task handed to a supervisor.")
 @click.option("--supervisor_max_steps", default=10, show_default=True, type=int,
               help="Executor calls the supervisor may spend per episode.")
 @click.option("--env_max_steps", default=DEFAULT_ENV_MAX_STEPS, show_default=True, type=int)
@@ -74,27 +51,19 @@ DEFAULT_ENV_MAX_STEPS = 1_000_000
                    "button presses.")
 @click.option("--save_video", default=True, show_default=True, type=bool)
 @click.option("--override_goal", default=None, type=str,
-              help="On a fresh run, replace the default goal tree with this single goal; subgoals are planned under it.")
+              help="On a new --name, replace the default goal tree with this single goal; subgoals are planned under it.")
 @click.option("--resume_run", default=None, type=str,
               help="Fork another run's latest state (artifacts and emulator save) into --name and "
                    "continue from it, e.g. to recreate a failure from a past playthrough.")
-@click.option("--resume/--fresh", default=True, show_default=True,
-              help="--fresh starts the tile database "
-                   "over, discarding what is on disk under this --name. It does NOT reset "
-                   "the emulator to a later point: the run still starts at --init_state.")
 def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategist_vlm_kind,
          supervisor_vlm_model, supervisor_vlm_kind, executor_vlm_model, executor_vlm_kind,
          max_episodes, supervisor_max_steps, env_max_steps, strategist_max_new_tokens,
          supervisor_max_new_tokens, subgoal_every, report_detail, controller_variant, save_video,
-         override_goal, resume_run, resume):
-    """Play one long-horizon playthrough with the strategist."""
+         override_goal, resume_run):
+    """Play one long playthrough; re-running the same --name continues it."""
     parameters = load_parameters()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = paths.playthrough_dir(parameters, game=game, name=name)
-    # The strategist makes its own directory. Making it here as well breaks --resume_run, which
-    # refuses to fork into a directory that already exists.
-    if resume_run is None:
-        os.makedirs(out_dir, exist_ok=True)
 
     log_info(f"Playthrough {name!r} on {game} from {init_state!r}", parameters)
     log_info(f"State: {out_dir}", parameters)
@@ -107,12 +76,7 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
         max_steps=env_max_steps,
         headless=True,
         save_video=save_video,
-        # depathify'd for the same reason playthrough_dir is: a name with spaces or
-        # slashes in it becomes a directory name here, on GameBoyWorlds' storage.
-        # No game segment: GameBoyWorlds roots every session at sessions/<game>/
-        # already, so putting it here would repeat it one level down.
-        # The leading segment must stay in step with paths.playthrough_sessions_root,
-        # which is what reads these back, so it is taken from there rather than spelled again.
+        # Relative to GameBoyWorlds' sessions/<game>/; read back by paths.playthrough_sessions_root.
         session_name=f"{paths.PLAYTHROUGH_SEGMENT}/{paths.depathify(name)}/{stamp}/",
     )
     try:
@@ -129,12 +93,10 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
             supervisor_max_new_tokens=supervisor_max_new_tokens,
             subgoal_every=subgoal_every,
             report_detail=report_detail,
-            resume=resume,
             resume_run=resume_run,
             override_goal=override_goal,
             parameters=parameters,
-            # Forwarded to each episode's PokemonPlayThroughSupervisor, which forwards the
-            # vlm_* pair on to every executor it spawns.
+            # Forwarded to each episode's supervisor; vlm_model/vlm_kind go on to its executors.
             supervisor_vlm_model=supervisor_vlm_model or model,
             supervisor_vlm_kind=supervisor_vlm_kind or vlm_kind,
             vlm_model=executor_vlm_model or model,
@@ -142,8 +104,7 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
         )
         report = strategist.run()
     finally:
-        # An emulator left open holds its session directory and its video handle, so a
-        # crashed run that keeps them is a run whose partial video cannot be read.
+        # Closing finalises the video, so a crashed run's partial recording stays readable.
         environment.close()
 
     log_info("\n" + str(report) + "\n", parameters)

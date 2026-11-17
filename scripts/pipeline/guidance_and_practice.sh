@@ -11,7 +11,6 @@ REQUIRED_ARGS=()
 populate_array GUIDANCE_AND_PRACTICE_ESSENTIALS REQUIRED_ARGS
 populate_dict GUIDANCE_AND_PRACTICE_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -46,7 +45,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
@@ -74,8 +72,7 @@ else
     # practice_tasks writes to dirname(guidance_path)/practice_{executor}.
     ARGS["practice_path"]="$(dirname "${ARGS["guidance_path"]}")/practice_${ARGS["executor"]}"
 
-    # Clean it (paraphrases + accept/reject filter), then build the train/validation
-    # CSVs from those artifacts. create_dataset requires them, so it only runs here.
+    # create_dataset requires clean_practice's artifacts, so it only runs here.
     if [[ "${ARGS["do_clean"]}" == "true" || "${ARGS["do_clean"]}" == "yes" || "${ARGS["do_clean"]}" == "y" || "${ARGS["do_clean"]}" == "t" ]]; then
         clean_flags=$(args_to_flags_subset ARGS CLEAN_PRACTICE_ARG_KEYS)
         bash scripts/vlm/clean_practice.sh $clean_flags || exit 1

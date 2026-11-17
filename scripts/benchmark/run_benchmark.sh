@@ -9,7 +9,6 @@ REQUIRED_ARGS=()
 populate_array RUN_BENCHMARK_ESSENTIALS REQUIRED_ARGS
 populate_dict RUN_BENCHMARK_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -44,7 +43,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
@@ -67,13 +65,10 @@ fi
 if [[ "${ARGS["regenerate"]}" == "true" ]]; then
     optional_flags+=" --regenerate"
 fi
-# Omitted when absent rather than passed as the sentinel, so a run without one keeps exactly
-# the name it had before --extra_name existed.
 if [[ "${ARGS["extra_name"]}" != "none" ]]; then
     optional_flags+=" --extra_name ${ARGS["extra_name"]}"
 fi
-# Only the world_model executor reads this; omitted when absent so no other arm records a
-# world-model knob it never used.
+# Only the world_model executor reads these.
 if [[ "${ARGS["world_model_run_name"]}" != "none" ]]; then
     optional_flags+=" --world_model_run_name ${ARGS["world_model_run_name"]}"
 fi

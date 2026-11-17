@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Two-step smoke test of the benchmark path on a cheap API model. Proves the plumbing,
-# measures nothing.
+# Two-step smoke test of the benchmark path on a cheap API model.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 source configs/config.env || { echo "Could not source configs/config.env"; exit 1; }
@@ -13,7 +12,6 @@ ARGS["games"]="harry_potter_philosophers_stone,harry_potter_chamber_of_secrets"
 ARGS["executor"]="single_actions"
 ARGS["max_steps"]=2
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -48,7 +46,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do

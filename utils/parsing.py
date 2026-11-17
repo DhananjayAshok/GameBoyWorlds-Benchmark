@@ -1,36 +1,19 @@
-"""
-Parsers for structured VLM/LLM responses.
-
-Every function here reads a model's free-text reply and pulls a typed value out of it.
-"""
-
 from __future__ import annotations
 
 import re
 from typing import Optional
 
-from utils.fundamental import depathify  # noqa: F401  (re-export; see below)
+from utils.fundamental import depathify  # noqa: F401
 from utils.lm_inference import parse_key_value
 
 
-# depathify lives in utils.fundamental, importable without the LM stack. Re-exported here to
-# keep `from utils.parsing import depathify` working.
-
-
 # A list item: "- foo", "* foo", "• foo", "1. foo", "1) foo", "1 foo".
-# The bare "<digits> foo" form — a number with no punctuation after it — is accepted
 _ITEM_RE = re.compile(r"^(?:[-*•]|\d+[.)]?)\s+(.*)$")
 
 _ABSENT = {"NONE", "N/A", "NA"}
 
 
 def _is_absent(value: str) -> bool:
-    """Whether an extracted item is a "no answer" token or punctuation rather than content.
-    The alphanumeric test catches markdown residue such as a trailing ``**``.
-
-    :return: Whether the item is absent.
-    :rtype: bool
-    """
     stripped = value.strip()
     return (not stripped
             or stripped.upper() in _ABSENT
@@ -38,15 +21,6 @@ def _is_absent(value: str) -> bool:
 
 
 def _heading_index(lines: list[str], marker: str) -> Optional[int]:
-    """Index of the line carrying ``marker``, preferring a heading over a mention.
-
-    :param lines: The lines of the model's reply.
-    :type lines: list[str]
-    :param marker: The heading to look for, in lowercase and with a trailing colon.
-    :type marker: str
-    :return: The index of the line with the heading, or the first line mentioning it
-    :rtype: Optional[int]
-    """
     mention = None
     for i, line in enumerate(lines):
         stripped = line.strip().lower().lstrip("*#->•+ \t")
@@ -58,16 +32,6 @@ def _heading_index(lines: list[str], marker: str) -> Optional[int]:
 
 
 def parse_list(text: str, key: Optional[str] = None) -> list[str]:
-    """Items from a model's list answer, optionally scoped to a ``Key:`` heading.
-
-    :param text: The model response.
-    :type text: str
-    :param key: Heading to scope the search to, without a trailing colon (``"Insights"``,
-        not ``"Insights:"``). When ``None``, every item line in the reply is taken.
-    :type key: str or None
-    :return: The items as bare strings — no bullet, no numbering.
-    :rtype: list[str]
-    """
     body = text or ""
 
     lowered = body.lower()
@@ -84,7 +48,6 @@ def parse_list(text: str, key: Optional[str] = None) -> list[str]:
             return []
         marker = f"{key.lower()}:"
         line = lines[index]
-        # Whatever follows the heading on its own line is the first item.
         head = line[line.lower().index(marker) + len(marker):].strip()
         match = _ITEM_RE.match(head)
         head = match.group(1).strip() if match else head
@@ -100,8 +63,8 @@ def parse_list(text: str, key: Optional[str] = None) -> list[str]:
         match = _ITEM_RE.match(stripped)
         if match is None:
             if started:
-                break      # next section — stop
-            continue       # preamble before the list — skip
+                break
+            continue
         started = True
         value = match.group(1).strip()
         if not _is_absent(value):
@@ -111,15 +74,6 @@ def parse_list(text: str, key: Optional[str] = None) -> list[str]:
 
 def parse_int(text: str, key: str, lo: Optional[int] = None,
               hi: Optional[int] = None) -> Optional[int]:
-    """The integer on a ``Key:`` line, or ``None`` if the model did not give one.
-
-    :param text: The model response.
-    :param key: The key whose value to read.
-    :param lo: Inclusive lower bound, or ``None`` for unbounded.
-    :param hi: Inclusive upper bound, or ``None`` for unbounded.
-    :return: The integer, or ``None`` when the key is absent, answered ``N/A``/``none``/
-        ``unknown``, unparseable, or out of range.
-    """
     raw = (parse_key_value(text, key) or "").strip()
     if not raw or raw.lower().startswith(("n/a", "na", "none", "unknown")):
         return None
@@ -142,14 +96,6 @@ def parse_int(text: str, key: str, lo: Optional[int] = None,
 
 
 def parse_action_line(text) -> Optional[str]:
-    """
-    The action on the first ``Action:`` line, or ``None`` if there is no usable one.
-
-    :param text: The model response.
-    :type text: str
-    :return: The action, or ``None`` when the key is absent, answered ``N/A``/``none``/``unknown``, or unparseable.
-    :rtype: Optional[str]
-    """
     if not isinstance(text, str):
         return None
     for line in text.splitlines():
@@ -160,32 +106,16 @@ def parse_action_line(text) -> Optional[str]:
     return None
 
 
-
 PLAN_SEPARATOR = "[STEP]"
 
 
 def parse_steps(text: str) -> list[str]:
-    """
-    Split a ``[STEP]``-separated plan into steps, dropping empties.
-    
-    :param text: The model response.
-    :type text: str
-    :return: The steps, or ``[]`` when the model produced no usable plan.
-    :rtype: list[str]
-    """
     if not text:
         return []
     return [part.strip() for part in text.split(PLAN_SEPARATOR) if part.strip()]
 
 
 def parse_plan(text: str) -> list[str]:
-    """
-    The steps of a ``Plan:`` answer, however the model chose to lay them out.
-    :param text: The model response.
-    :type text: str
-    :return: The steps, or ``[]`` when the model produced no usable plan.
-    :rtype: list[str]
-    """
     body = text or ""
 
     lowered = body.lower()

@@ -1,25 +1,3 @@
-"""
-The world-model planning arm.
-
-Every step, the world model is rolled forward one transition for each action in the
-discrete action space and the predicted latent is decoded back to a frame. The VLM is then
-shown the current frame followed by one predicted frame per action, and picks the one that
-best advances the task. The index it picks *is* the action, so unlike the prompt-driven arms
-there is no action string to parse and no unknown-action failure mode.
-
-Each decision is recorded as a :class:`~execution.report.WorldModelDecision` on the call that
-made it: which predicted image showed which action, what was picked, and — once the action
-has run — how close the prediction came to the frame that actually followed.
-
-**State that outlives one executor.** A supervised arm builds a new executor per leg, so the
-loaded checkpoint (:data:`_LOADED_MODELS`) and the frame stack (:data:`_FRAME_STACKS`) live
-at module level.
-
-**Transfer.** A checkpoint is looked up under the benchmark game unless the arm names a
-source game, which is how ``pokemon_crystal`` plays with ``pokemon_red``'s. The source game
-is then part of the arm's name.
-"""
-
 from __future__ import annotations
 
 import os
@@ -45,40 +23,23 @@ from execution.report import (WORLD_MODEL_FIRST_CHOICE, EnvironmentStepRecord,
 from python_scripts import paths
 from utils import depathify, log_error, parse_int
 
-#: Registry key of the world-model family. A runnable arm is always qualified by the
-#: checkpoint it plays with — see :func:`make_world_model_executor_class`.
 WORLD_MODEL_EXECUTOR = "world_model"
 
-#: Loaded checkpoints, shared by every executor in the process, as
-#: ``(world_model, action_space_spec)``. Keyed on both files' paths, their modification times
-#: and the device, so a checkpoint retrained mid-sweep is loaded afresh. Only ever used in
-#: eval mode under ``no_grad``.
+# Keyed on both files' paths, mtimes and the device, so a retrained checkpoint is reloaded.
 _LOADED_MODELS: Dict[tuple, Tuple[WorldModel, dict]] = {}
 
-#: One frame stack per live environment. The legs of one episode share an environment, so
-#: they share a stack and it carries across leg boundaries; the benchmark builds a new
-#: environment per episode, so each episode starts empty. Weak, so an environment's stack
-#: goes when the environment does. Keyed on the object, not ``id(env)``: ids are reused after
-#: garbage collection, which would hand a new episode an old episode's frames.
+# Keyed on the env object, not ``id(env)``: ids are reused after garbage collection.
 _FRAME_STACKS: "weakref.WeakKeyDictionary[Any, deque]" = weakref.WeakKeyDictionary()
 
 
 class WorldModelExecutor(PolicyExecutor):
-    """Choose an action by showing the VLM what the world model predicts each one does.
-
-    Not runnable on its own: the checkpoint is part of the arm's identity, so use
-    :func:`make_world_model_executor_class` to get the class for one run name.
-    """
+    """Choose an action by showing the VLM what the world model predicts each one does."""
 
     ACTION_POLICY = "single"
     HISTORY_POLICY = "none"
 
-    #: The RL run_name whose world_model.pt drives planning. Set on the subclass by
-    #: :func:`make_world_model_executor_class`, which also names the class after it.
     WORLD_MODEL_RUN_NAME: Optional[str] = None
 
-    #: The game the checkpoint was trained on, when it is not the game being played. ``None``
-    #: means the benchmark game's own checkpoint. Set by the same factory.
     WORLD_MODEL_GAME: Optional[str] = None
 
     DONE_CHECK_REASONING_LABEL = (
@@ -107,8 +68,7 @@ Choice: <the image number you pick>
     def __init__(self, env, task, max_steps,
                  observation_embedder_run_name: Optional[str] = None,
                  **kwargs):
-        # Everything here must be set before super().__init__(), which runs the whole
-        # episode. See the base class's subclass-initialisation warning.
+        # Must all be set before super().__init__(), which runs the whole episode.
         self._world_model_run_name = self.WORLD_MODEL_RUN_NAME
         self._observation_embedder_run_name = (
             observation_embedder_run_name or self._world_model_run_name
@@ -137,8 +97,7 @@ Choice: <the image number you pick>
         emb_file = paths.require(os.path.join(emb_dir, paths.OBSERVATION_ENCODER_FILENAME),
                                  "observation_encoder", parameters, self._game_for_paths)
         wm_stat, emb_stat = os.stat(wm_file), os.stat(emb_file)
-        # The run name alone does not identify a checkpoint: retraining writes over the same
-        # directory. The modification time is what tells two runs under one name apart.
+        # Retraining overwrites the directory, so the mtime tells two runs under one name apart.
         self._checkpoints = {
             "world_model_checkpoint": wm_file,
             "world_model_checkpoint_mtime": _mtime(wm_stat),
@@ -152,12 +111,9 @@ Choice: <the image number you pick>
         if key not in _LOADED_MODELS:
             for stale in [k for k in _LOADED_MODELS if k[:len(files)] == files]:
                 del _LOADED_MODELS[stale]
-            # normalized_observations must match how the world model was trained, which
-            # train_world_model.py leaves at the CNNEmbedder default.
+            # normalized_observations must match how the world model was trained.
             embedder = CNNEmbedder(seed=1, normalized_observations=True).to(self._device)
-            # Not CNNEmbedder.load(): it has no map_location, and the checkpoints were saved
-            # from a GPU, so it cannot load on a CPU-only machine. load_state_dict copies into
-            # the module's own tensors, so the result is identical.
+            # Not CNNEmbedder.load(): it has no map_location, so GPU checkpoints fail on CPU.
             embedder.load_state_dict(torch.load(emb_file, map_location=self._device))
             world_model = WorldModel(embedder=embedder, load_path=wm_dir).to(self._device)
             world_model.eval()
@@ -165,24 +121,11 @@ Choice: <the image number you pick>
             _LOADED_MODELS[key] = (world_model, spec)
         self._world_model, self._action_space_spec = _LOADED_MODELS[key]
 
-    # ------------------------------------------------------------------
-    # Action space
-    # ------------------------------------------------------------------
-
     @property
     def _controller(self):
         return self._env._controller
 
     def _candidate_actions(self) -> List[Tuple[int, type, Dict[str, Any], str]]:
-        """``(index, action_class, kwargs, label)`` for every action the model can score.
-
-        The saved spec stores sub-space coordinates, which the controller turns back into the
-        ``(class, kwargs)`` pair :meth:`_take_action` needs. Each coordinate is checked
-        against the action class the checkpoint recorded for it.
-
-        :return: One tuple per scorable action.
-        :rtype: list
-        """
         candidates = []
         for entry in self._action_space_spec["actions"]:
             space_action = (entry["sub_index"], entry["sub_action"])
@@ -206,25 +149,14 @@ Choice: <the image number you pick>
     def _action_label(action_class: type, kwargs: Dict[str, Any]) -> str:
         if not kwargs:
             return action_class.__name__
-        # Enum members render as their name (PRESS_BUTTON_A), which is what the prompt
-        # should say; anything else falls back to str().
         parts = [str(getattr(value, "name", None) or value) for value in kwargs.values()]
         return f"{action_class.__name__}({', '.join(parts)})"
-
-    # ------------------------------------------------------------------
-    # World model rollout
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _to_grey(frame: np.ndarray) -> np.ndarray:
         return np.asarray(frame).reshape(144, 160)
 
     def _observe(self, frame: np.ndarray) -> None:
-        """Push a frame, padding by repetition so the first step has a full stack.
-
-        This mirrors gym's ``FrameStackObservation``, which is what produced the stacks the
-        world model was trained on.
-        """
         grey = self._to_grey(frame)
         if not self._frames:
             for _ in range(FRAME_STACK):
@@ -233,15 +165,6 @@ Choice: <the image number you pick>
             self._frames.append(grey)
 
     def _seed_frames(self) -> None:
-        """Make the stack end at the current screen before the first prediction of a leg.
-
-        The stack advances once per environment step — pushed after each ``_take_action`` —
-        and is shared by every leg on this environment, so normally a previous leg's last
-        push already *is* the current screen and nothing is added. It is rebuilt when empty
-        (the episode's first leg) or when its last frame is not the current screen: something
-        moved the environment outside this arm, so the stored frames no longer lead up to
-        what is on screen and must not be paired with it.
-        """
         current = self._get_state()["core"]["current_frame"]
         if not self._frames or not np.array_equal(self._frames[-1], self._to_grey(current)):
             self._frames.clear()
@@ -254,11 +177,6 @@ Choice: <the image number you pick>
         return latents.reshape(-1)
 
     def _predict(self, candidates) -> Tuple[torch.Tensor, List[np.ndarray]]:
-        """Per candidate, the predicted next-frame embedding and its decoded 144x160x1 frame.
-
-        One batched forward pass: every module involved normalises per sample (LayerNorm, or
-        BatchNorm in eval mode), so batching does not change any prediction.
-        """
         latents = self._current_latents()
         embedder = self._world_model.embedder
         actions = torch.tensor([[float(index)] for index, _, _, _ in candidates],
@@ -277,7 +195,6 @@ Choice: <the image number you pick>
 
     def _score(self, decision: WorldModelDecision, predicted_embeddings: torch.Tensor,
                predicted_frames: List[np.ndarray], record: EnvironmentStepRecord) -> None:
-        """Fill in how close each prediction came to the frame the chosen action produced."""
         embedder = self._world_model.embedder
         before = self._to_grey(record.frame_before).astype(np.float32)
         after = self._to_grey(record.frame_after).astype(np.float32)
@@ -300,10 +217,6 @@ Choice: <the image number you pick>
         decision.reconstruction_pixel_error = float(np.abs(reconstruction - after).mean())
         decision.frame_changed = bool(record.frame_changed)
 
-    # ------------------------------------------------------------------
-    # Prompt
-    # ------------------------------------------------------------------
-
     def _choice_list_block(self, candidates) -> str:
         lines = ["Predicted outcomes:"]
         for offset, (_, _, _, label) in enumerate(candidates):
@@ -319,16 +232,11 @@ Choice: <the image number you pick>
             .replace("[CHOICE_LIST]", self._choice_list_block(candidates))
         )
 
-    # ------------------------------------------------------------------
-    # The loop
-    # ------------------------------------------------------------------
-
     def _execute(self) -> int:
         self._last_terminated = False
         self._last_truncated = False
         self._history_policy.reset()
-        # Not cleared: the stack is shared with earlier legs on this environment. An invalid
-        # reply takes no step and so pushes nothing; see _seed_frames for why this is exact.
+        # Not cleared: the stack is shared with earlier legs on this environment.
         self._seed_frames()
 
         error_message: Optional[str] = None
@@ -380,9 +288,7 @@ Choice: <the image number you pick>
             self._score(decision, predicted_embeddings, predicted_frames, record)
             n_env_steps += 1
 
-            # Outcome codes and termination_reason strings match PolicyExecutor's loop —
-            # the supervisor reads both, so an arm that numbered them differently would
-            # be scored differently for the same episode ending.
+            # Outcome codes and termination reasons must match PolicyExecutor's loop.
             if self._last_terminated:
                 self._finish_decision([record])
                 self.report.termination_reason = "terminated"
@@ -403,36 +309,18 @@ Choice: <the image number you pick>
     def _run_config(self, extra_kwargs):
         return {**super()._run_config(extra_kwargs),
                 "world_model_run_name": self._world_model_run_name,
-                # The game whose checkpoint was loaded, which differs from the report's own
-                # ``game`` exactly when this is a transfer run.
                 "world_model_game": self._game_for_paths,
                 "observation_embedder_run_name": self._observation_embedder_run_name,
                 **self._checkpoints}
 
 
 def world_model_executor_name(run_name: str, source_game: Optional[str] = None) -> str:
-    """The arm's name for one checkpoint: ``world_model_<run_name>``, or
-    ``world_model_<source_game>_<run_name>`` when the checkpoint is borrowed from another game.
-
-    This is what names the benchmark CSV, the emulator session directory and the archived
-    report's ``executor`` field, so two checkpoints never share a results file — and a
-    transfer run is never mistaken for a game's own checkpoint.
-    """
     if source_game:
         return f"{WORLD_MODEL_EXECUTOR}_{depathify(source_game)}_{depathify(run_name)}"
     return f"{WORLD_MODEL_EXECUTOR}_{depathify(run_name)}"
 
 
 def make_world_model_executor_class(run_name: str, source_game: Optional[str] = None) -> type:
-    """A named subclass of :class:`WorldModelExecutor` for one checkpoint. The class name
-    reaches the report as ``executor_name`` and names the CSV and session directory.
-
-    :param run_name: The RL run_name the checkpoint was trained under.
-    :param source_game: The game the checkpoint was trained on, when it is not the game being
-        benchmarked. Pass ``None``, never the benchmark game itself, to use its own checkpoint.
-    :return: The arm's executor class.
-    :rtype: type
-"""
     source = f" trained on {source_game}" if source_game else ""
     return type(world_model_executor_name(run_name, source_game), (WorldModelExecutor,), {
         "WORLD_MODEL_RUN_NAME": run_name,

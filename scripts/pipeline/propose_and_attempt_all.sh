@@ -13,7 +13,6 @@ REQUIRED_ARGS=()
 populate_array VLM_ESSENTIALS REQUIRED_ARGS
 populate_dict PROPOSE_AND_ATTEMPT_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -48,7 +47,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
@@ -79,7 +77,5 @@ if [[ "$_propose_only" == "false" ]]; then
     attempt_flags=$(args_to_flags_subset ARGS ATTEMPT_TASKS_ARG_KEYS)
     bash scripts/vlm/attempt_tasks.sh $attempt_flags || exit 1
 
-    # Terminal artifact of the zeroshot vertical: <stem>.json + <stem>.pkl. build_info.sh
-    # consumes this stem.
     echo "zeroshot trajectory stem: ${tasks_file%.jsonl}_${ARGS["executor"]}_attempts/success_trajectories"
 fi

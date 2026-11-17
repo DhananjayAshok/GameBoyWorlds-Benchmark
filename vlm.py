@@ -1,7 +1,3 @@
-"""
-Called by scripts/vlm/{attempt_tasks,build_info,infer_tasks,propose_zeroshot,propose_all_zeroshot}.sh.
-Use --help for CLI options.
-"""
 from vlm_scripts import (infer_tasks, propose_tasks_zeroshot, attempt_tasks, build_info,
                          infer_guidance, practice_tasks, clean_practice)
 import numpy as np

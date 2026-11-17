@@ -1,7 +1,3 @@
-"""
-Supervisors — agents that wrap executor runs and do something with the result.
-"""
-
 from utils import PLAN_SEPARATOR
 
 from execution.supervisors.base import Supervisor

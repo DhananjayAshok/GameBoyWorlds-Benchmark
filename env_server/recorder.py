@@ -1,9 +1,3 @@
-"""
-Our side of the glass: the full state tracker report for every step, whatever the client was sent.
-
-Off unless the server is started with --record_dir. This is where the test-time state goes: the test policy
-computes it and records it, and strips it from the response.
-"""
 import json
 import os
 from typing import Optional
@@ -15,6 +9,7 @@ from utils.log_handling import log_warn
 
 
 def _jsonable(value, depth: int = 0):
+    # Unlike codec.jsonable this summarises large arrays: frames are saved as PNG files beside the log.
     if depth > 8:
         return str(value)[:200]
     if isinstance(value, np.ndarray):
@@ -32,6 +27,8 @@ def _jsonable(value, depth: int = 0):
 
 
 class Recorder:
+    """Host-side record of every step's full tracker report, whatever the client was sent."""
+
     def __init__(self, *, directory: str, session: str, task_id: Optional[str], game: Optional[str],
                  policy: str, parameters: dict) -> None:
         self._parameters = parameters

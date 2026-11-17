@@ -45,16 +45,7 @@ def get_inputs(model_kind, processor, messages):
 
 
 class HuggingFaceModelBase(ABC):
-    """
-    Abstract base for all HuggingFace model wrappers (inference and embedding).
-
-    Manages registration in the shared ``HUGGINGFACE_MODEL_MAPPING`` store,
-    tracks model kwargs, and marks instances as defunct when the underlying
-    model is evicted from GPU memory.
-    """
-
     def _init_store(self, *, model: str, parameters, model_kwargs: dict, load_fn) -> None:
-        """Register this instance in the shared store, loading the model if needed."""
         self.model = model
         self.parameters = load_parameters(parameters)
         self.model_kwargs = model_kwargs
@@ -112,25 +103,7 @@ class HuggingFaceModel(HuggingFaceModelBase, InferenceModel):
         stop_strings: list[str] = None,
         num_return_sequences: int = 1,
     ) -> tuple[list[str], list[tuple[Optional[int], int]]]:
-        """
-        Generate for a batch of message lists and report per-sequence token counts.
-
-        Both returned lists are flat with length ``batch * num_return_sequences``, ordered
-        ``[r0s0, r0s1, ..., r1s0, ...]`` (row ``j`` belongs to record
-        ``j // num_return_sequences``).
-
-        Token counts are **pre-trim**: they describe what the model actually generated,
-        before the ``[STOP]``/stop-string truncation applied to the text below. Input
-        tokens are the record's real prompt length (padding excluded) and are reported on
-        the record's first row only, with ``0`` on its remaining rows, since the prompt is
-        encoded once per record however many sequences are sampled from it. Output tokens
-        count generated tokens up to the terminating EOS, excluding it (generation pads
-        with ``eos_token_id``, so the two are indistinguishable here).
-
-        :return: ``(final_texts, usage_stats)`` where ``usage_stats[j]`` is
-            ``(input_tokens, output_tokens)`` for ``final_texts[j]``.
-        :rtype: tuple[list[str], list[tuple[Optional[int], int]]]
-        """
+        """Token counts are pre-trim and exclude EOS; input tokens sit on a record's first row only."""
         processor = HUGGINGFACE_MODEL_MAPPING[self.model].processor
         model = HUGGINGFACE_MODEL_MAPPING[self.model].model
         inputs = get_inputs(self.model_kind, processor, messages).to(model.device)
@@ -168,7 +141,7 @@ class HuggingFaceModel(HuggingFaceModelBase, InferenceModel):
         else:
             # No mask means nothing was padded, so every record used the full width.
             record_input_tokens = [start_index] * inputs["input_ids"].shape[0]
-        pad_token_id = tokenizer.eos_token_id  # what generate() was told to pad with
+        pad_token_id = tokenizer.eos_token_id
         if isinstance(pad_token_id, (list, tuple)):
             pad_token_id = pad_token_id[0]
         usage_stats = []
@@ -207,25 +180,6 @@ class HuggingFaceModel(HuggingFaceModelBase, InferenceModel):
         stop_strings: list[str] = None,
         num_return_sequences: int = 1,
     ) -> dict[str, Any]:
-        """
-        Run local HuggingFace generation on a batch. Parameters are as
-        :meth:`InferenceModel.do_infer`.
-
-        Token counts come from the generation tensors (see :meth:`_generate`) and carry
-        two HuggingFace-specific caveats worth knowing when comparing them to an API
-        backend's: they are **pre-trim** (what the model actually generated, before the
-        ``[STOP]``/stop-string truncation applied to the returned text), and output tokens
-        **exclude** the terminating EOS. The prompt is encoded once per record however
-        many sequences are sampled, so ``input_tokens`` does not scale with
-        ``num_return_sequences``.
-
-        :return: ``{"output": ..., "meta": ...}`` where ``output`` holds the post-processed
-            output strings shaped ``[batch, num_return_sequences]`` and ``meta`` is
-            ``{"input_tokens": [...], "output_tokens": [...]}``, each a list of length
-            ``batch`` (one entry per record, output tokens summed over the record's
-            sequences). See :meth:`InferenceModel._build_meta`.
-        :rtype: dict[str, Any]
-        """
         if self.is_defunct:
             log_error(
                 f"Cannot run inference on defunct model.",
@@ -262,18 +216,6 @@ class HuggingFaceModel(HuggingFaceModelBase, InferenceModel):
         stop_strings: list[str] = None,
         num_return_sequences: int = 1,
     ) -> dict[str, Any]:
-        """
-        Run local HuggingFace generation on a pre-formatted chat messages list.
-
-        The same pre-trim / EOS-excluded token-counting caveats as :meth:`do_infer` apply.
-
-        :return: ``{"output": ..., "meta": ...}``. ``output`` is a single output string if
-            ``num_return_sequences == 1``, else a list of ``num_return_sequences`` output
-            strings. A messages list is a single record, so ``meta``'s
-            ``input_tokens``/``output_tokens`` are scalars (int or None) regardless of
-            ``num_return_sequences``, with output tokens summed over the sequences.
-        :rtype: dict[str, Any]
-        """
         if self.is_defunct:
             log_error(
                 f"Cannot run inference on defunct model.",
@@ -295,12 +237,11 @@ class HuggingFaceModel(HuggingFaceModelBase, InferenceModel):
 @dataclass
 class HuggingFaceModelStore:
     model: PreTrainedModel
-    processor: PreTrainedTokenizerBase | Any  # tokenizers are PreTrainedTokenizerBase; processors (e.g. AutoProcessor) have no common base
+    processor: PreTrainedTokenizerBase | Any
     model_kwargs: dict[str, Any]
     users: list["HuggingFaceModelBase"] = field(default_factory=list)
 
 
-# Single shared store for all HuggingFace model wrappers (inference and embedding).
 HUGGINGFACE_MODEL_MAPPING: dict[str, HuggingFaceModelStore] = {}
 
 
@@ -313,7 +254,6 @@ def set_users_defunct(model_name: str) -> None:
 
 
 def remove_from_model_store(model_name: str, verbose: bool = False) -> None:
-    """Remove a model from the store and free its GPU memory."""
     if model_name in HUGGINGFACE_MODEL_MAPPING:
         if verbose:
             log_info(f"Removing {model_name} from store and clearing from GPU.")
@@ -329,7 +269,6 @@ def remove_from_model_store(model_name: str, verbose: bool = False) -> None:
 
 
 def clear_model_store() -> None:
-    """Remove all models from the store and free their GPU memory."""
     for model_name in list(HUGGINGFACE_MODEL_MAPPING.keys()):
         remove_from_model_store(model_name)
 

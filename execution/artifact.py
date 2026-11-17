@@ -1,8 +1,3 @@
-"""
-Shared persistence for the strategist's state: goals, knowledge, tiles, the global map and the guide are
-each one artifact, checkpointed per episode under the same strategist directory.
-"""
-
 from __future__ import annotations
 
 import functools
@@ -18,7 +13,6 @@ EPISODE_DIR_RE = re.compile(r"episode_(\d+)")
 
 
 def episode_dirs(strategist_dir: str) -> Dict[int, str]:
-    """Every ``episode_<n>`` directory directly under ``strategist_dir``, keyed by ``n``."""
     if not os.path.isdir(strategist_dir):
         return {}
     found = {}
@@ -30,7 +24,6 @@ def episode_dirs(strategist_dir: str) -> Dict[int, str]:
 
 
 def update(method):
-    """Marks the artifact as changed in ``episode_number``, which the caller must pass by keyword."""
     @functools.wraps(method)
     def wrapper(self, *args, episode_number: int, **kwargs):
         result = method(self, *args, **kwargs)
@@ -40,15 +33,13 @@ def update(method):
 
 
 class StrategistArtifact(ABC):
-    #: Names of instance attributes that should not be pickled (e.g. closures, open
-    #: handles). Subclasses override this to exclude what they can't or shouldn't persist.
+    # Names of instance attributes that are not pickled.
     _TRANSIENT: Tuple[str, ...] = ()
 
     last_written: Optional[int] = None
 
     @abstractmethod
     def diff(self, old: "StrategistArtifact") -> Dict[str, Any]:
-        """What changed going from ``old`` (an earlier instance of the same subclass) to self."""
         raise NotImplementedError
 
     def __getstate__(self) -> dict:
@@ -77,7 +68,6 @@ class StrategistArtifact(ABC):
 
     @classmethod
     def exists(cls, strategist_dir: str) -> bool:
-        """Whether there is anything for :meth:`load` to find, with no episode_number given."""
         return bool(cls.saved_episodes(strategist_dir))
 
     def save(self, strategist_dir: str, episode_number: int, parameters: Optional[dict] = None) -> Optional[str]:

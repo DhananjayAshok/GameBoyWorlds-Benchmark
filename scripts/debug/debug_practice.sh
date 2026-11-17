@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Reports the practice stage: judged success vs the environment-verified benchmark rate
-# (the optimism gap), per-task judged success, the safe_success_point cutoff that decides
-# how many calls each episode contributes, clean-filter accept rates, and a stratified
-# judge-audit image pack for manual scoring. Writes
+# Reports the practice stage: judged success vs the environment-verified benchmark rate,
+# per-task judged success, clean-filter accept rates, and a judge-audit image pack. Writes
 # <results_dir>/debug/<game>/practice/report.md.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
@@ -18,7 +16,6 @@ ARGS["n_audit"]=40
 ARGS["n_frames"]=8
 ARGS["seed"]=0
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -53,9 +50,7 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"

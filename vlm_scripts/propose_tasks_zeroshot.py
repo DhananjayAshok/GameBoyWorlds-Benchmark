@@ -1,19 +1,3 @@
-"""
-Called by scripts/vlm/propose_zeroshot.sh and scripts/vlm/propose_all_zeroshot.sh (via vlm.py propose_tasks_zeroshot).
-Use --help for CLI options.
-
-Every path below comes from :mod:`python_scripts.paths`, which owns the directory scheme.
-
-Input: one or more init_state names (--init_states, comma-separated) and the game environment
-    - The first frame and action space are loaded live from the environment via get_first_frame_and_actions.
-
-Output: JSONL file, one JSON object per line, one line per init_state
-    Path: Paths.tasks_file(), i.e. <zeroshot_dir>/zeroshot_tasks.jsonl
-    Each line: {"init_state": <str>, "tasks": [<task_str>, ...]}
-        - init_state: the name of the initial game state
-        - tasks: list of imperative task strings proposed by the VLM from the first frame
-"""
-
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -79,7 +63,6 @@ def _propose_for_init_state(
     max_new_tokens: int,
     verbose: bool,
 ) -> list[str]:
-    """Propose tasks from the initial frame of a single init_state."""
     first_frame, action_space_str = get_first_frame_and_actions(init_state, game)
 
     prompt = (
@@ -97,10 +80,7 @@ def _propose_for_init_state(
     if verbose:
         log_info(f"PROPOSE output for '{init_state}':\n{output}\n---")
 
-    # Lowercased here, not in the parser: these strings go on to name directories on disk
-    # (proposed_tasks/<game>/.../<task>_attempts), and every artifact already written was
-    # keyed on the lowercase form. The old _parse_task_list lowercased internally; dropping
-    # that without restoring it here would orphan the existing corpus.
+    # Lowercased because these strings go on to name directories on disk.
     tasks = [task.lower() for task in parse_list(output, "Tasks")]
     if not tasks:
         log_warn(
@@ -157,11 +137,7 @@ def propose_tasks_zeroshot(obj, init_states, max_concurrency):
 
     vlm = VLM(model_name, vlm_kind)
 
-    # propose pipelines are independent across init_states, so submit them all to
-    # one shared pool. --verbose interleaves prompt/output prints and
-    # HuggingFaceModel isn't safe for concurrent generate() calls — both fall
-    # back to max_workers=1, which processes jobs one at a time in submission
-    # order (i.e. identical to the old sequential loop).
+    # HuggingFaceModel is not safe for concurrent generate() calls.
     effective_workers = (
         1 if (verbose or isinstance(vlm._vlm, HuggingFaceModel)) else max_concurrency
     )

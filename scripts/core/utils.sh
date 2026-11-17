@@ -1,25 +1,12 @@
 # Core shared library sourced by every other script in this project.
-# Loads the project config and virtual environment, then defines all default argument
-# dictionaries (training, evaluation, VLM, sweep, iterative training, etc.) and the
-# utility functions (args_to_flags, populate_dict, etc.) used for argument parsing
-# and forwarding across the script hierarchy. Also defines the TRAINING_ARG_KEYS,
-# EVALUATION_ARG_KEYS, and related arrays that callers use to subset flags when
-# invoking sub-scripts.
+# Loads the project config and virtual environment, then defines the default argument
+# dictionaries, the *_ARG_KEYS arrays, and the argument parsing/forwarding helpers.
 
 source configs/config.env || { echo "configs/config.env not found"; exit 1; }
 source setup/.venv/bin/activate || { echo "Virtual environment not found."; exit 1; }
 PROJECT_ROOT=$(pwd)
 
-# args_to_flags <assoc_array_name>
-#
-# Converts a bash associative array into a flat --key value string suitable
-# for passing to a Python click command or another bash script.
-# Empty values ("") are emitted as --key none.
-#
-# Usage (capture-safe — all diagnostics go to stderr):
-#   declare -A ARGS=( ["lr"]="0.001" ["dataset"]="" )
-#   flags=$(args_to_flags ARGS)
-#   python get_strings.py <string_kind> $flags
+# Converts an associative array into a flat --key value string; empty values become --key none.
 function args_to_flags() {
     local -n _dict="$1"
     local result=""
@@ -33,11 +20,6 @@ function args_to_flags() {
     echo "${result% }"  # trim trailing space
 }
 
-# get_string_from_args <string_kind> <assoc_array_name>
-#
-# Utility function to get a string from get_strings.py by passing an associative array of args.
-# Usage:
-#   string=$(get_string_from_args <string_kind> ARGS)
 function get_string_from_args() {
     local string_kind="$1"
     shift
@@ -47,15 +29,7 @@ function get_string_from_args() {
 
 
 
-# args_to_flags_subset <assoc_array_name> <array_of_keys>
-#
-# Like args_to_flags, but only emits flags for the specified keys.
-# Keys not present in the array are silently skipped.
-# Use this when calling a subscript that doesn't accept all of the caller's ARGS.
-#
-# Usage:
-#   subset=$(args_to_flags_subset ARGS REQUESTED_KEYS_ARRAY)
-#   bash scripts/a.sh $subset
+# Like args_to_flags, but only emits flags for the specified keys; absent keys are skipped.
 function args_to_flags_subset() {
     local -n _dict="$1"
     local -n _keys="$2"
@@ -95,46 +69,16 @@ function populate_dict_subset(){
     done
 }
 
-# model_save_name <full_model_name>
-#
 # The basename the pipeline keys paths on: google/Gemma-4-31B-it -> gemma-4-31b-it.
-# '##*/' strips everything through the LAST slash; ',,' folds to lowercase (bash 4+).
-#
-# The Bash twin of model_save_name() in python_scripts/paths.py. Both fold case, because a
-# served model's basename is not case-stable — the same weights are published as
-# Qwen/Qwen3-VL-8B-Instruct and referred to in lowercase elsewhere, and a scheme that
-# preserves case makes those two spellings different artifacts.
-#
-# This is the ONE path-shaped rule Bash still implements itself, because it is needed before
-# any python_funcs.py call (to build $model_save_name for display and for legacy call sites)
-# and shelling out for a string split is not worth it. Everything else goes through path_of.
-# `python_funcs.py model_save_name` exists and must agree with this.
-#
-# Names directories and files ONLY. Never pass this to a backend as a model identifier —
-# those are case-sensitive upstream, and $model_name is what they take.
-#
-# Usage:
-#   model_save_name=$(model_save_name "$model_name")
+# Must agree with model_save_name() in python_scripts/paths.py.
+# Names directories and files ONLY. Never pass this to a backend as a model identifier.
 function model_save_name() {
     local base="${1##*/}"
     echo "${base,,}"
 }
 
-# path_of <command> [--flag value ...]
-#
-# Ask python_funcs.py for a path. THE way Bash gets any path — no script should compose
-# "$storage_dir/..." itself, because that reintroduces the second derivation this replaces.
-#
-# Wrapped rather than called directly because $(...) swallows a non-zero exit: a failed
-# lookup would otherwise set the variable to "" and silently root every derived path at "/".
-# This turns that into a loud exit instead.
-#
-# Costs ~0.15s per call (python_funcs.py imports nothing heavy). That is cheap, but not free —
-# hoist it out of tight loops rather than calling it per iteration.
-#
-# Usage:
-#   stem=$(path_of info_source_stem --game "$game" --model_name "$model_name" \
-#                  --run_name "$run_name" --executor "$executor" --source zeroshot)
+# Ask python_funcs.py for a path. THE way Bash gets any path.
+# Wrapped rather than called directly because $(...) swallows a non-zero exit.
 function path_of() {
     local out
     if ! out=$(python "$PROJECT_ROOT/python_funcs.py" "$@"); then
@@ -148,10 +92,7 @@ function path_of() {
     echo "$out"
 }
 
-# path_of_allow_empty <command> [--flag value ...]
-#
-# Same, but an empty result is a legitimate answer rather than an error. Only for commands
-# whose contract includes "nothing" — info_available_sources on a game with neither vertical.
+# Same, but an empty result is a legitimate answer rather than an error.
 function path_of_allow_empty() {
     local out
     if ! out=$(python "$PROJECT_ROOT/python_funcs.py" "$@"); then
@@ -162,7 +103,6 @@ function path_of_allow_empty() {
 }
 
 
-################################################################################
 ESSENTIAL_ARGS=("game") # should be game later. 
 declare -A ALL_DEFAULTS=( # make this empty later
 )
@@ -244,7 +184,6 @@ SWEEP_DEFAULTS["clear_loser_replay_buffer"]=true
 
 SWEEP_ARG_KEYS=("${SWEEP_ESSENTIALS[@]}" "${!SWEEP_DEFAULTS[@]}")
 
-# declare an ITERATIVE_TRAINING_DEFAULTS if needed, and an ITERATIVE_TRAINING_ARG_KEYS array, if there are any args specific to iterative training that aren't already covered by the above categories. Otherwise, just use TRAINING_DEFAULTS and TRAINING_ARG_KEYS for iterative training as well.
 ITERATIVE_TRAINING_ESSENTIALS=()
 declare -A ITERATIVE_TRAINING_DEFAULTS
 populate_array ESSENTIAL_ARGS ITERATIVE_TRAINING_ESSENTIALS
@@ -269,9 +208,7 @@ CREATE_TRAJ_DEFAULTS["skip_training"]=false
 CREATE_TRAJ_DEFAULTS["z_min"]=6.0
 CREATE_TRAJ_DEFAULTS["overwrite"]=false
 CREATE_TRAJ_DEFAULTS["keep_buffers"]=false
-# When false, the run stops after training and the replay buffers are the output. Grouping is
-# what consumes them and what the buffer deletion is conditioned on, so skipping it also
-# forces the buffers to be kept regardless of --keep_buffers.
+# When false, the run stops after training and the buffers are kept regardless of --keep_buffers.
 CREATE_TRAJ_DEFAULTS["group_trajectories"]=true
 
 CREATE_TRAJ_ARG_KEYS=("${CREATE_TRAJ_ESSENTIALS[@]}" "${!CREATE_TRAJ_DEFAULTS[@]}")
@@ -316,13 +253,7 @@ INFER_TASKS_DEFAULTS["describe_pairs"]=false
 
 INFER_TASKS_ARG_KEYS=("${INFER_TASKS_ESSENTIALS[@]}" "${!INFER_TASKS_DEFAULTS[@]}")
 
-# --- Practice pipeline: infer_guidance -> practice_tasks -> clean_practice -> create_dataset
-# Both verticals feed this. trajectory_path is the annotation stem of whichever leg is being
-# run — the curiosity leg's trajectory_annotation or the zeroshot leg's success_trajectories —
-# since infer_guidance reads the same {group_idx: task} json + trajectory pkl pair from either.
 
-# infer_guidance: annotates each task group with gold step-by-step guidance, written to
-# {trajectory_path}_guidance.json.
 INFER_GUIDANCE_ESSENTIALS=("trajectory_path")
 populate_array VLM_ESSENTIALS INFER_GUIDANCE_ESSENTIALS
 declare -A INFER_GUIDANCE_DEFAULTS
@@ -332,9 +263,6 @@ INFER_GUIDANCE_DEFAULTS["max_concurrency"]=16
 
 INFER_GUIDANCE_ARG_KEYS=("${INFER_GUIDANCE_ESSENTIALS[@]}" "${!INFER_GUIDANCE_DEFAULTS[@]}")
 
-# practice_tasks: repeated guided attempts per task, into {dirname guidance_path}/practice_<executor>.
-# executor and controller_variant match ATTEMPT_TASKS so a practice dir sits beside the attempts
-# dir that produced its tasks, and so merge_practices' source labels stay comparable.
 PRACTICE_TASKS_ESSENTIALS=("guidance_path")
 populate_array VLM_ESSENTIALS PRACTICE_TASKS_ESSENTIALS
 declare -A PRACTICE_TASKS_DEFAULTS
@@ -351,9 +279,7 @@ PRACTICE_TASKS_DEFAULTS["max_concurrency"]=16
 
 PRACTICE_TASKS_ARG_KEYS=("${PRACTICE_TASKS_ESSENTIALS[@]}" "${!PRACTICE_TASKS_DEFAULTS[@]}")
 
-# clean_practice: paraphrases + accept/reject decisions over a practice dir.
-# safety_margin must match CREATE_DATASET's: the two slice each episode's call log at the same
-# point, so a mismatch would judge a different set of calls than the dataset emits.
+# safety_margin must match CREATE_DATASET's: the two slice each episode's call log at the same point.
 CLEAN_PRACTICE_ESSENTIALS=("practice_path")
 populate_array VLM_ESSENTIALS CLEAN_PRACTICE_ESSENTIALS
 declare -A CLEAN_PRACTICE_DEFAULTS
@@ -364,8 +290,6 @@ CLEAN_PRACTICE_DEFAULTS["max_concurrency"]=16
 
 CLEAN_PRACTICE_ARG_KEYS=("${CLEAN_PRACTICE_ESSENTIALS[@]}" "${!CLEAN_PRACTICE_DEFAULTS[@]}")
 
-# create_dataset: train/validation CSVs from the practice dir. Makes no VLM calls, so it takes
-# none of VLM_DEFAULTS beyond overwrite.
 CREATE_DATASET_ESSENTIALS=("practice_path")
 declare -A CREATE_DATASET_DEFAULTS
 CREATE_DATASET_DEFAULTS["overwrite"]=false
@@ -375,7 +299,6 @@ CREATE_DATASET_DEFAULTS["seed"]=0
 
 CREATE_DATASET_ARG_KEYS=("${CREATE_DATASET_ESSENTIALS[@]}" "${!CREATE_DATASET_DEFAULTS[@]}")
 
-# merge_practices: combines several practice dirs' datasets into one, tagging rows by source.
 # "none" is a real value of balance (no downsampling), not an absent-argument sentinel.
 MERGE_PRACTICES_ESSENTIALS=("practice_paths" "save_path")
 declare -A MERGE_PRACTICES_DEFAULTS
@@ -384,11 +307,6 @@ MERGE_PRACTICES_DEFAULTS["seed"]=0
 
 MERGE_PRACTICES_ARG_KEYS=("${MERGE_PRACTICES_ESSENTIALS[@]}" "${!MERGE_PRACTICES_DEFAULTS[@]}")
 
-# guidance_and_practice: the pipeline driver. Takes the union of the four legs' arguments, minus
-# the paths it derives itself — guidance_path is {trajectory_path}_guidance.json and practice_path
-# is {dirname guidance_path}/practice_<executor>, so neither is a user argument here.
-# The three toggles select how much of the chain runs: guidance_only stops after guidance,
-# practice_only reuses an existing guidance file, and do_clean gates the clean+dataset tail.
 GUIDANCE_AND_PRACTICE_ESSENTIALS=("trajectory_path")
 populate_array VLM_ESSENTIALS GUIDANCE_AND_PRACTICE_ESSENTIALS
 declare -A GUIDANCE_AND_PRACTICE_DEFAULTS
@@ -402,12 +320,7 @@ GUIDANCE_AND_PRACTICE_DEFAULTS["do_clean"]=true
 
 GUIDANCE_AND_PRACTICE_ARG_KEYS=("${GUIDANCE_AND_PRACTICE_ESSENTIALS[@]}" "${!GUIDANCE_AND_PRACTICE_DEFAULTS[@]}")
 
-# build_info: distils (task, trajectory) pairs into an info document, beside its own input
-# stem. --stage a is enough for benchmark_info --mode
-# init_state; the full run also builds the merge tree.
-# source is required, not defaulted: it is the document's recorded provenance, and a
-# wrong-but-plausible default would be written into the artifact and believed by every
-# reader. build_info_all.sh has it in hand as a loop variable.
+# source is required, not defaulted: it is the document's recorded provenance.
 BUILD_INFO_ESSENTIALS=("trajectory_path" "source")
 populate_array VLM_ESSENTIALS BUILD_INFO_ESSENTIALS
 declare -A BUILD_INFO_DEFAULTS
@@ -415,15 +328,11 @@ populate_dict VLM_DEFAULTS BUILD_INFO_DEFAULTS
 BUILD_INFO_DEFAULTS["n_frames"]=8
 BUILD_INFO_DEFAULTS["max_concurrency"]=16
 BUILD_INFO_DEFAULTS["stage"]="all"
-# Recorded in the document's provenance. Names no path: the output dir is info_docs beside
-# the input stem, whose parents already carry the model and (for zeroshot) the executor.
+# executor and controller_variant are provenance-only here; they name no path.
 BUILD_INFO_DEFAULTS["executor"]="single_actions"
-# Paired with executor, and likewise provenance-only here: the caller resolved the stem.
 BUILD_INFO_DEFAULTS["controller_variant"]="low_level"
 BUILD_INFO_DEFAULTS["overwrite_from_round"]=none
-# Override the shared VLM default of 1000: stage A emits six labelled fields plus a bullet
-# list of insights, and the stage-B combine emits a merged list that grows with the entry.
-# Truncation here does not fail loudly — it silently drops the trailing insights.
+# Above the shared VLM default of 1000: truncation here silently drops the trailing insights.
 BUILD_INFO_DEFAULTS["max_new_tokens"]=3000
 
 BUILD_INFO_ARG_KEYS=("${BUILD_INFO_ESSENTIALS[@]}" "${!BUILD_INFO_DEFAULTS[@]}")
@@ -450,12 +359,8 @@ CREATE_ALL_INFO_DOCS_DEFAULTS["mode"]="both"
 
 CREATE_ALL_INFO_DOCS_ARG_KEYS=("${CREATE_ALL_INFO_DOCS_ESSENTIALS[@]}" "${!CREATE_ALL_INFO_DOCS_DEFAULTS[@]}")
 
-# info_mode_sources <mode>
-#
-# The source verticals a --mode selects. Shares its vocabulary with full.sh's --mode so the
-# context-engineering arm and the fine-tuning arm mean the same thing by the same word.
-# Order matters: zeroshot first, because it is the verified-solution source and reads first
-# in a comma-joined --info_docs list.
+# The source verticals a --mode selects. Order matters: zeroshot reads first in a
+# comma-joined --info_docs list.
 function info_mode_sources() {
     case "$1" in
         curiosity_only) echo "curiosity" ;;
@@ -465,26 +370,7 @@ function info_mode_sources() {
     esac
 }
 
-# info_source_stem, info_dir_for_stem and info_available_sources USED TO LIVE HERE.
-#
-# They are now the Python accessors of the same names in python_scripts/paths.py, reached
-# through path_of / path_of_allow_empty:
-#
-#   stem=$(path_of info_source_stem --game "$game" --model_name "$model_name" \
-#                  --run_name "$run_name" --executor "$executor" --source "$source")
-#   dir=$(path_of source_info_dir  --game ... --source "$source")     # was info_dir_for_stem
-#   srcs=$(path_of_allow_empty info_available_sources --game ... )
-#
-# The Bash versions were a second derivation of a rule Python already owned, with nothing
-# checking the two against each other — the failure they existed to prevent (build_info_all
-# writing where benchmark_info_all does not look) was exactly what a drift between them
-# would cause. Note the Python side takes the FULL --model_name and folds it itself, where
-# these took an already-folded $model_save_name.
-#
-# info_mode_sources and info_sources_to_mode stay in Bash: they are pure vocabulary mapping
-# over --mode, not paths, and nothing on the Python side duplicates them.
 
-# build_info_all: stage A/B for every source a --mode selects, plus the debug report.
 BUILD_INFO_ALL_ESSENTIALS=()
 populate_array VLM_ESSENTIALS BUILD_INFO_ALL_ESSENTIALS
 BUILD_INFO_ALL_ESSENTIALS+=("run_name")
@@ -492,30 +378,23 @@ declare -A BUILD_INFO_ALL_DEFAULTS
 populate_dict VLM_DEFAULTS BUILD_INFO_ALL_DEFAULTS
 BUILD_INFO_ALL_DEFAULTS["max_new_tokens"]=3000
 BUILD_INFO_ALL_DEFAULTS["executor"]="single_actions"
-# Paired with executor: the attempts dir the documents are built from is keyed on both, so a
-# variant mismatch reads another variant's trajectories.
+# Paired with executor: the attempts dir the documents are built from is keyed on both.
 BUILD_INFO_ALL_DEFAULTS["controller_variant"]="low_level"
 BUILD_INFO_ALL_DEFAULTS["mode"]="both"
 BUILD_INFO_ALL_DEFAULTS["stage"]="all"
 BUILD_INFO_ALL_DEFAULTS["n_frames"]=8
 BUILD_INFO_ALL_DEFAULTS["max_concurrency"]=16
-# The `none` sentinel, not an integer: build_info.py's --overwrite_from_round is only emitted
-# when set, because passing it at all rebuilds the merge tree from that round.
+# `none` sentinel: --overwrite_from_round is only emitted when set, since passing it rebuilds the merge tree.
 BUILD_INFO_ALL_DEFAULTS["overwrite_from_round"]=none
 BUILD_INFO_ALL_DEFAULTS["do_debug"]=true
 
 BUILD_INFO_ALL_ARG_KEYS=("${BUILD_INFO_ALL_ESSENTIALS[@]}" "${!BUILD_INFO_ALL_DEFAULTS[@]}")
 
-# benchmark_info_all: plan-arm benchmarks over the documents build_info_all produced, plus
-# the no-knowledge baseline the results are only interpretable against.
 BENCHMARK_INFO_ALL_ESSENTIALS=()
 populate_array VLM_ESSENTIALS BENCHMARK_INFO_ALL_ESSENTIALS
 BENCHMARK_INFO_ALL_ESSENTIALS+=("run_name")
 declare -A BENCHMARK_INFO_ALL_DEFAULTS=(
-    # One knob for both halves: which attempts/curiosity dirs the documents were built from,
-    # AND the executor run at test time. These were separate (build and bench used
-    # different executors) and must not be — the baseline has to be the same executor as
-    # the plan run, or the delta mixes the plan effect with a scaffold change.
+    # Both the executor the documents were built from and the one run at test time.
     ["executor"]="single_actions"
     ["controller_variant"]="low_level"
     ["mode"]="both"
@@ -530,8 +409,6 @@ declare -A BENCHMARK_INFO_ALL_DEFAULTS=(
 
 BENCHMARK_INFO_ALL_ARG_KEYS=("${BENCHMARK_INFO_ALL_ESSENTIALS[@]}" "${!BENCHMARK_INFO_ALL_DEFAULTS[@]}")
 
-# info_full: the per-game driver. Its key set is the union of the two stages it calls, so
-# the all-games sweep can forward one dict down without knowing the split.
 INFO_FULL_ESSENTIALS=()
 populate_array VLM_ESSENTIALS INFO_FULL_ESSENTIALS
 INFO_FULL_ESSENTIALS+=("run_name")
@@ -540,36 +417,22 @@ populate_dict BUILD_INFO_ALL_DEFAULTS INFO_FULL_DEFAULTS
 populate_dict BENCHMARK_INFO_ALL_DEFAULTS INFO_FULL_DEFAULTS
 INFO_FULL_DEFAULTS["do_build"]=true
 INFO_FULL_DEFAULTS["do_benchmark"]=true
-# Longer episodes than a bare benchmark_info_all run: a plan the executor never gets far
-# enough to work through scores like the baseline for reasons unrelated to plan quality.
 INFO_FULL_DEFAULTS["max_steps"]=150
-# The two stages want different concurrency (build 16, benchmark 8) and the flat union above
-# holds one value per key — the second populate_dict would win and silently halve the build.
-# Split the key so both halves are reachable from here, and drop the merged one; info_full.sh
-# assigns the right half to max_concurrency before each forwarding call.
+# The two stages want different concurrency, so the key is split; info_full.sh assigns the
+# right half to max_concurrency before each forwarding call.
 INFO_FULL_DEFAULTS["build_max_concurrency"]="${BUILD_INFO_ALL_DEFAULTS["max_concurrency"]}"
 INFO_FULL_DEFAULTS["bench_max_concurrency"]="${BENCHMARK_INFO_ALL_DEFAULTS["max_concurrency"]}"
 unset INFO_FULL_DEFAULTS["max_concurrency"]
 
 INFO_FULL_ARG_KEYS=("${INFO_FULL_ESSENTIALS[@]}" "${!INFO_FULL_DEFAULTS[@]}")
 
-# info_full_all_games: the sweep around info_full. Inherits info_full's entire key set so a
-# default moves in one place instead of three, then adds its own game-selection flags. The
-# extras are deliberately absent from INFO_FULL_ARG_KEYS, which is what makes the
-# args_to_flags_subset forward drop them on the way down.
-#
-# game is NOT essential here (it is in VLM_ESSENTIALS, hence in INFO_FULL_ESSENTIALS): a
-# sweep discovers its own games, so requiring one would be requiring a value it ignores.
+# game is NOT essential here: a sweep discovers its own games.
 INFO_FULL_ALL_GAMES_ESSENTIALS=("model_name" "vlm_kind" "run_name")   # VLM_ESSENTIALS - game
 declare -A INFO_FULL_ALL_GAMES_DEFAULTS
 populate_dict INFO_FULL_DEFAULTS INFO_FULL_ALL_GAMES_DEFAULTS
-# mode is discovered per game from what is on disk (info_available_sources ->
-# info_sources_to_mode), so it must not be user-settable here. Unsetting it removes it from
-# the sweep's ALLOWED_FLAGS; forwarding still emits it, because the loop assigns
-# ARGS["mode"] before the subset call and args_to_flags_subset keys on presence.
+# mode is discovered per game from what is on disk, so it must not be user-settable here.
 unset INFO_FULL_ALL_GAMES_DEFAULTS["mode"]
-# Accepted and ignored, so the flag set stays uniform with the other pipeline scripts. The
-# loop overwrites it per game. Use --games to restrict the sweep.
+# Accepted and ignored: the loop overwrites it per game. Use --games to restrict the sweep.
 INFO_FULL_ALL_GAMES_DEFAULTS["game"]=none
 INFO_FULL_ALL_GAMES_DEFAULTS["games"]="auto"
 INFO_FULL_ALL_GAMES_DEFAULTS["skip_games"]=none
@@ -577,7 +440,6 @@ INFO_FULL_ALL_GAMES_DEFAULTS["dry_run"]=false
 
 INFO_FULL_ALL_GAMES_ARG_KEYS=("${INFO_FULL_ALL_GAMES_ESSENTIALS[@]}" "${!INFO_FULL_ALL_GAMES_DEFAULTS[@]}")
 
-# curiosity_tasks + curiosity_all_tasks: create_traj → infer_tasks
 # run_name is required (no default) — removed from DEFAULTS after population
 CURIOSITY_TASKS_ESSENTIALS=("run_name")
 populate_array VLM_ESSENTIALS CURIOSITY_TASKS_ESSENTIALS
@@ -590,28 +452,19 @@ unset CURIOSITY_TASKS_DEFAULTS["run_name"]
 
 CURIOSITY_TASKS_ARG_KEYS=("${CURIOSITY_TASKS_ESSENTIALS[@]}" "${!CURIOSITY_TASKS_DEFAULTS[@]}")
 
-# propose_and_attempt + propose_and_attempt_all: propose_zeroshot → attempt_tasks
-# tasks_path is derived (not a user arg)
 PROPOSE_AND_ATTEMPT_ESSENTIALS=()
 populate_array PROPOSE_ZEROSHOT_ESSENTIALS PROPOSE_AND_ATTEMPT_ESSENTIALS
 
 declare -A PROPOSE_AND_ATTEMPT_DEFAULTS
 populate_dict PROPOSE_ZEROSHOT_DEFAULTS PROPOSE_AND_ATTEMPT_DEFAULTS
 populate_dict ATTEMPT_TASKS_DEFAULTS PROPOSE_AND_ATTEMPT_DEFAULTS
-# Not inherited from PROPOSE_ZEROSHOT_DEFAULTS: proposal itself has no run_name (its output
-# path is keyed on game/model only). The curiosity annotation lookup in
-# curiosity_and_zeroshot{,_all}.sh does need one.
+# Not inherited from PROPOSE_ZEROSHOT_DEFAULTS: proposal has no run_name, the curiosity lookup needs one.
 PROPOSE_AND_ATTEMPT_DEFAULTS["run_name"]=all
 PROPOSE_AND_ATTEMPT_DEFAULTS["propose_only"]=false
 PROPOSE_AND_ATTEMPT_DEFAULTS["attempt_only"]=false
 
 PROPOSE_AND_ATTEMPT_ARG_KEYS=("${PROPOSE_AND_ATTEMPT_ESSENTIALS[@]}" "${!PROPOSE_AND_ATTEMPT_DEFAULTS[@]}")
 
-# collect_and_info_all: curiosity_and_zeroshot_all for every train game of --game, then
-# create_all_info_docs for --game itself. One run_name is shared by both stages by design —
-# the curiosity dir the collection leg writes is the one the info leg reads.
-# init_states is deliberately not required (curiosity_and_zeroshot_all does not take it
-# either): the per-game train states come from all_train_states.sh downstream.
 COLLECT_AND_INFO_ALL_ESSENTIALS=()
 populate_array CREATE_ALL_INFO_DOCS_ESSENTIALS COLLECT_AND_INFO_ALL_ESSENTIALS
 
@@ -619,17 +472,13 @@ declare -A COLLECT_AND_INFO_ALL_DEFAULTS
 populate_dict PROPOSE_AND_ATTEMPT_DEFAULTS COLLECT_AND_INFO_ALL_DEFAULTS
 populate_dict CREATE_ALL_INFO_DOCS_DEFAULTS COLLECT_AND_INFO_ALL_DEFAULTS
 COLLECT_AND_INFO_ALL_DEFAULTS["run_name"]="my_run"
-# The two stages want different token budgets from the same key name, so the info leg's is
-# carried separately and swapped in around its call: 1000 truncates a stage-A info document,
-# 3000 is wasteful for proposal/attempt.
+# The two stages want different token budgets, so the info leg's is carried under its own key.
 COLLECT_AND_INFO_ALL_DEFAULTS["max_new_tokens"]="${PROPOSE_AND_ATTEMPT_DEFAULTS["max_new_tokens"]}"
 COLLECT_AND_INFO_ALL_DEFAULTS["info_max_new_tokens"]="${CREATE_ALL_INFO_DOCS_DEFAULTS["max_new_tokens"]}"
 
 COLLECT_AND_INFO_ALL_ARG_KEYS=("${COLLECT_AND_INFO_ALL_ESSENTIALS[@]}" "${!COLLECT_AND_INFO_ALL_DEFAULTS[@]}")
 
-# debug.py: read-only diagnostics over saved artifacts (scripts/debug/*.sh).
-# These map to debug.py's *group* options, which every subcommand shares. Per-subcommand
-# options (n_samples, n_frames, ...) stay local to their own script.
+# debug.py's group options, shared by every subcommand (scripts/debug/*.sh).
 DEBUG_ESSENTIALS=()
 populate_array ESSENTIAL_ARGS DEBUG_ESSENTIALS
 declare -A DEBUG_DEFAULTS=(
@@ -642,9 +491,7 @@ declare -A DEBUG_DEFAULTS=(
 )
 DEBUG_ARG_KEYS=("${DEBUG_ESSENTIALS[@]}" "${!DEBUG_DEFAULTS[@]}")
 
-# Same, plus model_name — required by every debug subcommand except curiosity, whose
-# artifacts are not keyed on a model. model_name is a *subcommand* option in debug.py, so
-# debug_group_flags deliberately does not emit it.
+# Same, plus model_name, a *subcommand* option in debug.py that debug_group_flags does not emit.
 DEBUG_MODEL_ESSENTIALS=("model_name")
 populate_array DEBUG_ESSENTIALS DEBUG_MODEL_ESSENTIALS
 declare -A DEBUG_MODEL_DEFAULTS
@@ -652,39 +499,27 @@ populate_dict DEBUG_DEFAULTS DEBUG_MODEL_DEFAULTS
 
 DEBUG_MODEL_ARG_KEYS=("${DEBUG_MODEL_ESSENTIALS[@]}" "${!DEBUG_MODEL_DEFAULTS[@]}")
 
-# debug_group_flags <assoc_array_name>
-#
-# Build the flag string for debug.py's group options from an ARGS dict. Handles what
-# args_to_flags cannot: --output_dir uses the `none` sentinel and must be omitted when
-# absent. Debug reports are always regenerated, so --overwrite (a click is_flag) is
-# always passed and is not exposed as a script argument.
-#
-# Usage:
-#   group_flags=$(debug_group_flags ARGS)
-#   python debug.py $group_flags curiosity --n_frames 5
+# Build the flag string for debug.py's group options from an ARGS dict. --output_dir and
+# --extra_name are omitted when `none`; --overwrite is always passed.
 function debug_group_flags() {
     local -n _dict="$1"
     local result="--game ${_dict["game"]} --run_name ${_dict["run_name"]} --executor ${_dict["executor"]} --controller_variant ${_dict["controller_variant"]} --mode ${_dict["mode"]} --overwrite"
     if [[ "${_dict["output_dir"]}" != "none" ]]; then
         result+=" --output_dir ${_dict["output_dir"]}"
     fi
-    # Same sentinel rule as run_benchmark.sh: omitted when absent, so the debug tool resolves
-    # the unsuffixed name a run without --extra_name wrote.
     if [[ "${_dict["extra_name"]}" != "none" ]]; then
         result+=" --extra_name ${_dict["extra_name"]}"
     fi
     echo "$result"
 }
 
-# run_benchmark: every option run_benchmark.py declares, group and arm alike.
 RUN_BENCHMARK_ESSENTIALS=()
 populate_array ESSENTIAL_ARGS RUN_BENCHMARK_ESSENTIALS
 
 declare -A RUN_BENCHMARK_DEFAULTS=(
     ["supervisor"]="dummy"
     ["controller_variant"]="low_level"
-    # Free-text discriminator for runs the rest of the identity cannot tell apart. `none`
-    # means absent, and the name is then exactly what it was before the flag existed.
+    # Free-text discriminator appended to the run name. `none` means absent.
     ["extra_name"]="none"
     ["executor"]="single_none"
     ["executor_vlm_model"]="Qwen/Qwen3-VL-8B-Instruct"
@@ -705,35 +540,25 @@ declare -A RUN_BENCHMARK_DEFAULTS=(
     ["parametric_categories"]=10
     ["max_concurrency"]=8
     ["executor_max_new_tokens"]=8000
-    # RL run_name whose world model and observation encoder drive the `world_model`
-    # executor. `none` means absent. Required by that executor and rejected by the others;
-    # it becomes part of the executor's name (world_model_<run_name>), so it names the CSV.
+    # RL run_name whose world model drives the `world_model` executor. `none` means absent.
     ["world_model_run_name"]=none
-    # Game whose checkpoint the `world_model` executor borrows, for titles with no world model
-    # of their own (pokemon_crystal from pokemon_red). `none` means the benchmark game's own.
-    # A different game becomes part of the executor's name: world_model_<game>_<run_name>.
+    # Game whose checkpoint the `world_model` executor borrows. `none` means the benchmark game's own.
     ["world_model_game"]=none
 )
 
 RUN_BENCHMARK_ARG_KEYS=("${RUN_BENCHMARK_ESSENTIALS[@]}" "${!RUN_BENCHMARK_DEFAULTS[@]}")
 
-# run_benchmark_info_retrieval: run_benchmark's info_subgoal_retrieval arm with --info_docs
-# discovered from disk instead of typed by hand.
 RUN_BENCHMARK_INFO_RETRIEVAL_ESSENTIALS=()
 populate_array RUN_BENCHMARK_ESSENTIALS RUN_BENCHMARK_INFO_RETRIEVAL_ESSENTIALS
 
 declare -A RUN_BENCHMARK_INFO_RETRIEVAL_DEFAULTS
 populate_dict RUN_BENCHMARK_DEFAULTS RUN_BENCHMARK_INFO_RETRIEVAL_DEFAULTS
-# Both are derived, not settable: the arm is pinned by the script's identity, and the document
-# list is what the script exists to look up.
+# Both are derived, not settable.
 unset RUN_BENCHMARK_INFO_RETRIEVAL_DEFAULTS["supervisor"]
 unset RUN_BENCHMARK_INFO_RETRIEVAL_DEFAULTS["info_docs"]
 # Which documents to read, NOT which model is benchmarked (that is executor_vlm_model).
-# docs_mode picks the legs (same vocabulary as info_mode_sources).
-# docs_run_name selects the CURIOSITY leg's input (curiosity/<run_name>/trajectory_annotation).
-# docs_executor and docs_controller_variant select the ZEROSHOT leg's input
-# (zeroshot_tasks_<executor>_<controller_variant>_attempts) and nothing else — the curiosity
-# leg is executor-independent.
+# docs_run_name selects the curiosity leg's input; docs_executor and docs_controller_variant
+# select the zeroshot leg's.
 RUN_BENCHMARK_INFO_RETRIEVAL_DEFAULTS["docs_model"]="google/gemma-4-31b-it"
 RUN_BENCHMARK_INFO_RETRIEVAL_DEFAULTS["docs_mode"]="both"
 RUN_BENCHMARK_INFO_RETRIEVAL_DEFAULTS["docs_run_name"]="my_run"

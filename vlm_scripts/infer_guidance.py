@@ -1,17 +1,3 @@
-"""
-Called by scripts/vlm/infer_guidance.sh (via vlm.py infer_guidance). Use --help for CLI options.
-"""
-# Reads from the output JSON and pickle files produced by infer_task.py.
-# For each group, generates a gold step-by-step guidance description on how
-# to accomplish the inferred task, then saves the enriched data to a sibling JSON.
-#
-# Input files (derived from trajectory_path, same as infer_task_cmd):
-#   <trajectory_path>.json  -> {group_idx: task_string}
-#   <trajectory_path>.pkl   -> {group_idx: [trajectory, ...]}
-#
-# Output file:
-#   <trajectory_path>_guidance.json    -> {group_idx: {task, init_state, guidance, goal_condition}}
-
 import json
 import os
 import pickle
@@ -21,10 +7,6 @@ from tqdm import tqdm
 
 from python_scripts import paths
 from utils import log_info, log_warn, log_error, VLM, parse_key_value, HuggingFaceModel
-
-# ---------------------------------------------------------------------------
-# Prompts
-# ---------------------------------------------------------------------------
 
 SLICE_GUIDANCE_PROMPT = """You are an expert player of [GAME]. You are given frames [START_IDX]-[END_IDX] (out of [TOTAL] total frames) from a game trajectory, along with the task being accomplished:
 
@@ -66,13 +48,8 @@ Steps:
 ...
 [STOP]"""
 
-# ---------------------------------------------------------------------------
-# Parse helpers
-# ---------------------------------------------------------------------------
-
 
 def _parse_guidance(text: str) -> dict | None:
-    """Parse Summary, Goal condition, and bullet Steps from GUIDANCE_PROMPT output."""
     text_lower = text.lower()
     stop_idx = text_lower.find("[stop]")
     if stop_idx != -1:
@@ -96,11 +73,6 @@ def _parse_guidance(text: str) -> dict | None:
     return {"summary": summary, "goal_condition": goal_condition, "steps": steps}
 
 
-# ---------------------------------------------------------------------------
-# Core function
-# ---------------------------------------------------------------------------
-
-
 def infer_guidance_for_trajectory(
     trajectory,
     task: str,
@@ -110,8 +82,6 @@ def infer_guidance_for_trajectory(
     max_obs_at_once: int = 8,
     verbose: bool = False,
 ) -> dict | None:
-    """Chunk the full trajectory into non-overlapping slices, get structured guidance
-    for each, then consolidate into a single guidance with a text-only VLM call."""
     observations, actions, high_level_actions, rewards, init_state = trajectory
     total = len(observations)
 
@@ -181,11 +151,6 @@ def infer_guidance_for_trajectory(
     return parsed
 
 
-# ---------------------------------------------------------------------------
-# Click command
-# ---------------------------------------------------------------------------
-
-
 @click.command(name="infer_guidance")
 @click.option(
     "--trajectory_path",
@@ -217,7 +182,6 @@ def infer_guidance_cmd(obj, trajectory_path, max_obs_at_once, max_concurrency):
 
     vlm = VLM(model_name, vlm_kind)
     model_save_name = paths.model_save_name(model_name)
-    # have a guard to ensure we aren't using different models
     if model_save_name not in trajectory_path.lower():
         log_error(
             f"Model name '{model_save_name}' not found in trajectory_path '{trajectory_path}'. "
@@ -260,11 +224,7 @@ def infer_guidance_cmd(obj, trajectory_path, max_obs_at_once, max_concurrency):
     else:
         guidance_output = {}
 
-    # infer_guidance_for_trajectory pipelines are independent across groups, so
-    # submit them all to one shared pool. --verbose runs breakpoint()-style
-    # debugging and HuggingFaceModel isn't safe for concurrent generate() calls —
-    # both fall back to max_workers=1, which processes submitted jobs one at a
-    # time in submission order (i.e. identical to the old sequential loop).
+    # HuggingFaceModel is not safe for concurrent generate() calls.
     effective_workers = (
         1 if (verbose or isinstance(vlm._vlm, HuggingFaceModel)) else max_concurrency
     )
@@ -281,7 +241,6 @@ def infer_guidance_cmd(obj, trajectory_path, max_obs_at_once, max_concurrency):
                 log_warn(f"no trajectories for group {group_idx}, skipping.")
                 continue
 
-            # Use the first available trajectory as the representative example.
             # infer_tasks.py stores a list of trajectories; attempt_tasks.py stores a single tuple.
             trajectory = trajectories[0] if isinstance(trajectories, list) else trajectories
             _, _, _, _, init_state = trajectory

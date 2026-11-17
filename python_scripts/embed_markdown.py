@@ -1,27 +1,4 @@
-"""
-Inline a markdown report's local images and videos into ONE standalone HTML file.
-
-    python python_funcs.py embed_markdown <report.md> [--out report.html] [--tasks a,b]
-
-The debug reports point at frames and videos on ``/project2`` through symlinks in the report
-directory, so the markdown is not portable. This walks the same links, base64s the bytes into
-``data:`` URIs, and emits a single file that renders anywhere with no filesystem and no
-network.
-
-Videos are transcoded to H.264 on the way in
---------------------------------------------
-The emulator records with OpenCV's ``mp4v`` fourcc, which is MPEG-4 Part 2 and which **no
-browser will decode**. Each clip is re-encoded to H.264 / yuv420p before embedding; browsers
-need the 4:2:0 chroma as much as the codec.
-
-ffmpeg comes from ``imageio_ffmpeg``'s bundled binary, so nothing has to be on PATH. Without
-it the original bytes are embedded and a warning says the clip will not play.
-
-Frames are 160x144, so clips are upscaled with nearest-neighbour (``--video-scale``).
-
-A full 50-episode report is ~13 MB; pass ``--tasks`` to cut it down. Targets that are not
-local files (http, mailto, anchors) are left exactly as they are.
-"""
+# Videos are re-encoded to H.264/yuv420p because browsers cannot decode the emulator's mp4v recordings.
 
 import base64
 import mimetypes
@@ -39,7 +16,6 @@ from utils.log_handling import log_error, log_info, log_warn
 
 IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)\)")
 LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\(([^)\s]+)\)")
-#: "## <task>" starts an episode section; used only by --tasks.
 HEADING_RE = re.compile(r"^## (.+)$", re.MULTILINE)
 VIDEO_SUFFIXES = (".mp4", ".webm", ".gif")
 
@@ -75,7 +51,6 @@ blockquote { border-left: 3px solid var(--line); margin-left: 0; padding-left: 1
 
 
 def find_ffmpeg():
-    """The ffmpeg to transcode with, or None. Prefers imageio's bundled build over PATH."""
     try:
         import imageio_ffmpeg
         exe = imageio_ffmpeg.get_ffmpeg_exe()
@@ -91,19 +66,13 @@ def b64(raw: bytes, mime: str) -> str:
 
 
 def data_uri(path: str) -> str:
-    """``data:<mime>;base64,...`` for one local file, bytes unchanged."""
     mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
     with open(path, "rb") as handle:
         return b64(handle.read(), mime)
 
 
 def transcoded_uri(path: str, ffmpeg: str, scale: int):
-    """H.264/yuv420p ``data:`` URI for a video, or None if the transcode failed.
-
-    ``-movflags +faststart`` puts the moov atom first, which matters for a data URI just as
-    much as for a network fetch: a browser will not start playback until it has the index.
-    The scale filter rounds to even dimensions because H.264 4:2:0 cannot encode odd ones.
-    """
+    # The scale filter rounds to even dimensions because H.264 4:2:0 cannot encode odd ones.
     handle = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
     handle.close()
     try:
@@ -127,7 +96,6 @@ def transcoded_uri(path: str, ffmpeg: str, scale: int):
 
 
 def select_tasks(text: str, wanted: list) -> str:
-    """Keep the preamble plus only the ``## <task>`` sections matching *wanted* (substring)."""
     marks = list(HEADING_RE.finditer(text))
     if not marks:
         return text
@@ -166,8 +134,6 @@ def embed_markdown_cmd(report, out, tasks, video_scale, no_transcode) -> int:
     if tasks:
         text = select_tasks(text, [t.strip() for t in tasks.split(",") if t.strip()])
 
-    # Cache keyed on the resolved path: the same frame is often linked twice, and re-encoding
-    # or re-base64ing a multi-megabyte corpus twice over is pure waste.
     cache: dict = {}
     stats = {"img": 0, "video": 0, "transcoded": 0, "raw_video": 0,
              "missing": 0, "skipped": 0}
@@ -209,9 +175,7 @@ def embed_markdown_cmd(report, out, tasks, video_scale, no_transcode) -> int:
         if uri is None:
             return match.group(0)
         stats["video"] += 1
-        # A bare <video>, not wrapped in <figure>: these links sit mid-sentence ("video: [...]")
-        # and <figure> is not phrasing content, so inside the resulting <p> the parser would
-        # close the paragraph and reparent it. <video> on its own is valid there.
+        # A bare <video>, not <figure>: these links sit inside a <p>, where <figure> is invalid.
         return f'<video controls preload="none" src="{uri}"></video>'
 
     text = IMAGE_RE.sub(sub_image, text)
@@ -219,8 +183,7 @@ def embed_markdown_cmd(report, out, tasks, video_scale, no_transcode) -> int:
 
     body = markdown.markdown(
         text,
-        # md_in_html so the fenced code inside the report's <details> blocks still renders as
-        # code rather than being dumped as literal backticks.
+        # md_in_html so fenced code inside <details> blocks still renders as code.
         extensions=["fenced_code", "tables", "md_in_html", "sane_lists"],
     )
     title = os.path.basename(os.path.splitext(out_path)[0])

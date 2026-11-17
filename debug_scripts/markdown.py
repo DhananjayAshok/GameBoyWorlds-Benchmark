@@ -1,11 +1,3 @@
-"""
-Small markdown builders shared by every debug report.
-
-Reports are written to ``<results_dir>/debug/<game>/<stage>/`` and all links are made
-relative to the report's own directory, so the folder stays portable (and renders in
-GitHub / VS Code preview without absolute-path breakage).
-"""
-
 import os
 
 import pandas as pd
@@ -28,7 +20,6 @@ def para(text: str) -> str:
 
 
 def bullets(items) -> str:
-    """Bullet list. Empty input renders an explicit italic marker, never nothing."""
     items = list(items)
     if not items:
         return "_(none)_\n"
@@ -43,7 +34,6 @@ def numbered(items) -> str:
 
 
 def code(text: str, lang: str = "") -> str:
-    """Fenced block. Uses a longer fence when the body itself contains backticks."""
     body = "" if text is None else str(text)
     fence = "```"
     while fence in body:
@@ -52,7 +42,6 @@ def code(text: str, lang: str = "") -> str:
 
 
 def rel(path: str, report_dir: str) -> str:
-    """Path relative to the report directory, as a posix-style markdown link target."""
     return os.path.relpath(path, report_dir).replace(os.sep, "/")
 
 
@@ -65,7 +54,6 @@ def link(text: str, path: str, report_dir: str) -> str:
 
 
 def table(df: pd.DataFrame, floatfmt: str = "{:.2f}") -> str:
-    """GitHub-flavoured markdown table from a DataFrame. Empty frames render a marker."""
     if df is None or len(df) == 0:
         return "_(no rows)_\n"
     formatted = df.copy()
@@ -86,7 +74,6 @@ def table(df: pd.DataFrame, floatfmt: str = "{:.2f}") -> str:
 
 
 def details(summary: str, body: str) -> str:
-    """Collapsible section — used to keep long prompts from drowning a report."""
     return f"<details>\n<summary>{summary}</summary>\n\n{body}\n</details>\n"
 
 
@@ -99,7 +86,6 @@ def warn(text: str) -> str:
 
 
 def write_report(path: str, blocks) -> str:
-    """Join *blocks* with blank lines and write to *path*. Returns the path."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     body = "\n".join(block for block in blocks if block is not None)
     with open(path, "w") as handle:

@@ -1,30 +1,3 @@
-"""
-Paired comparison of two arbitrary benchmark CSVs.
-
-Input
------
-Two CSVs written by any run_benchmark.py arm (baseline / info / plan):
-    game, task, success, n_steps, n_invalid, subgoals_reached, all_subgoals, report,
-    session_dirs
-Unlike ``debug.py benchmark``, the two CSVs are given as **paths**, so any two runs can be
-compared (base vs fine-tuned, two executors, two models, two prompting variants).
-
-Episodes are paired on **row position** — see :func:`~debug_scripts.benchmark._paired_index`
-for why a task string cannot key the join — and split into the four quadrants (both pass,
-both fail, A only, B only); ``--n_examples`` episodes from each are rendered.
-
-Frames
-------
-This command renders **no frames**. Every arm archives a
-:class:`~execution.report.SupervisorReport` to ``<session_dir>/report.pkl.gz``, whose call
-records hold their own images, so frame rendering belongs to a reader of that artifact —
-``debug.py benchmark``. What is left here is the pairing and the quadrants.
-
-Output
-------
-<results_dir>/debug/<game>/compare/<executor>_<controller_variant>/<label_a>__vs__<label_b>.md
-"""
-
 import os
 import re
 
@@ -45,7 +18,6 @@ QUADRANTS = [
 
 
 def _episode_block(label: str, row) -> str:
-    """One side of one paired episode: the numbers the CSV records, and where to look."""
     lines = [md.para(
         f"**{label}** — success: `{bool(row['success'])}` · steps: {row['n_steps']} · "
         f"invalid: {row['n_invalid']} · "
@@ -72,9 +44,6 @@ def debug_compare(obj, csv_a, csv_b, label_a, label_b, n_examples):
         executor=obj["executor"], controller_variant=obj["controller_variant"],
         output_dir=obj["output_dir"], mode=obj["mode"],
     )
-    # Keyed on the executor variant: the same two arms are benchmarked under several executors
-    # for one game (sword_of_hope_2 has single_actions / single_none / single_visual), and the
-    # labels below name the arms only, so without this all of them write one file.
     report_dir = paths.debug_dir("compare", f"{paths.executor}_{paths.controller_variant}")
 
     label_a = label_a or os.path.splitext(os.path.basename(csv_a))[0]

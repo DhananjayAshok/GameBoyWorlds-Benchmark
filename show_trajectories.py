@@ -1,16 +1,4 @@
-"""
-Loads a grouped_high_reward_trajectories.pkl file and renders each trajectory as a sequence
-of PNG images saved to disk. Trajectories are grouped by similarity of final frames;
-images are organized by group and trajectory index. Use --help for CLI options.
-"""
-# trajectories are saved in parameters["storage_dir"]/grouped_trajectories/$game/<path>/grouped_high_reward_trajectories.pkl
-# it is a dictionary with numeric keys and values that are lists of trajectories
-# each trajectory is a list (observations, actions, high_level_actions, rewards)
-# observations is a stack of frames (numpy array) with shape (num_frames, 144, 160, 1)
-# actions is a list of integers with shape (num_frames-1,)
-# high_level_actions is a list of integers with shape (num_frames-1,)
-# rewards is a list of floats with shape (num_frames-1,)
-# the grouping is done by similarity of the final frames of the trajectories
+# observations has shape (num_frames, 144, 160, 1); actions and rewards have length num_frames-1.
 
 import os
 import pickle
@@ -54,7 +42,6 @@ def plot_transitions(observations, save_name, high_level_actions=None):
             draw.text((current_x + 2, total_height - 16), label, fill=fill_bot, font=_FONT)
         current_x += w
     img.save(save_name)
-
 
 
 @click.command()

@@ -1,27 +1,3 @@
-"""
-Entry point for the benchmark_scripts package. Use --help for CLI options.
-
-Five arms, one group, each adding one capability to the one before it::
-
-    run_benchmark.py --game X baseline                  no supervisor reasoning at all
-    run_benchmark.py --game X revision                  short legs, hint revised between them
-    run_benchmark.py --game X subgoal                   a plan from the task alone
-    run_benchmark.py --game X info_subgoal_parametric   planned from the model's own priors
-    run_benchmark.py --game X info_subgoal_retrieval    planned from a distilled document
-
-The subcommand word IS the supervisor's registry key (execution.registry.AVAILABLE_SUPERVISORS)
-and the CSV stem, with the one exception that the control arm's key is ``dummy``.
-
-Called by scripts/benchmark/run_benchmark.sh.
-
-Options shared by every arm live on the group and reach the subcommands through ctx.obj;
-each arm declares only what is its own. Group options must precede the subcommand word.
-
-Every arm's CSV carries a trailing session_dirs column and no n_resets column, so CSVs
-written before this package cannot be resumed — ``load_checkpoint`` refuses them. The fix is
---regenerate, or moving the old file aside.
-"""
-
 import click
 
 from gameboy_worlds import AVAILABLE_GAMES
@@ -45,16 +21,6 @@ def _absent(value) -> bool:
 
 def _resolve_executor(executor: str, world_model_run_name, world_model_game=None,
                       game: str = None):
-    """The executor class this run plays with, resolved before any emulator starts.
-
-    ``world_model`` names a family, not an arm: it resolves to ``world_model_<run_name>``, or
-    ``world_model_<source_game>_<run_name>`` for a borrowed checkpoint. Every other key is
-    already a class named after itself. The class name is what the CSV, the session directory
-    and the archived report are keyed on.
-
-    :return: The executor class.
-    :rtype: type
-    """
     run_name = None if _absent(world_model_run_name) else world_model_run_name
     source_game = None if _absent(world_model_game) else world_model_game
     if executor == WORLD_MODEL_EXECUTOR:
@@ -143,17 +109,14 @@ def main(ctx, game, controller_variant, executor, executor_vlm_model, executor_v
         game=game,
         controller_variant=controller_variant,
         extra_name=extra_name,
-        # The resolved class's name, not the --executor word: for the world-model family the
-        # two differ, and names built from the word would let two checkpoints share a CSV.
+        # The class name, not the --executor word: the word would let two world-model checkpoints share a CSV.
         executor=executor_class.__name__,
         executor_class=executor_class,
         executor_vlm_model=executor_vlm_model,
         executor_vlm_kind=executor_vlm_kind,
-        # Falls back to the executor's. Resolved once here, not per arm.
         supervisor_vlm_model=supervisor_vlm_model or executor_vlm_model,
         supervisor_vlm_kind=supervisor_vlm_kind or executor_vlm_kind,
         supervisor_max_new_tokens=supervisor_max_new_tokens,
-        # Names the CSV and the emulator session directory. Derived once here, not per arm.
         model_save_name=model_save_name(executor_vlm_model),
         save_video=save_video,
         max_steps=max_steps,

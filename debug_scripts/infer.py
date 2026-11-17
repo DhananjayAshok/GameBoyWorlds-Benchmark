@@ -1,33 +1,3 @@
-"""
-Task-inference diagnostics: the tasks infer_tasks distilled from each curiosity group,
-beside a frame strip of the trajectories each task was distilled from.
-
-Input
------
-<storage>/proposed_tasks/<game>/<model>/curiosity/<run_name>/trajectory_annotation.json
-    dict[group_idx -> distilled imperative task string]
-<storage>/proposed_tasks/<game>/<model>/curiosity/<run_name>/trajectory_annotation.pkl
-    dict[group_idx -> list of the trajectory 5-tuples actually used during inference],
-    same 5-tuple shape as grouped_trajectories:
-        (observations[N,144,160,1], actions[N-1], high_level_actions[N-1], rewards[N-1], init_state)
-both produced by scripts/vlm/infer_tasks.sh.
-
-This is a *separate* stage from `curiosity`. The curiosity report covers the grouped
-trajectories that feed infer_tasks (its input); this one covers what infer_tasks produced.
-The grouped trajectories can exist without the annotation (curiosity ran, infer_tasks has
-not), so this is its own report rather than a section of the curiosity one.
-
-Groups that the VLM answered NO TASK for, and groups it could not parse, are absent from
-the annotation entirely — they cannot be counted from this artifact alone. The saved file
-is already post-dedup (infer_tasks merges groups sharing a canonical task string before
-writing), so identical task strings should not appear; a duplicate check is included as a
-sanity signal that dedup ran.
-
-Output
-------
-<results_dir>/debug/<game>/infer/report.md plus frame strips under infer/images/.
-"""
-
 import json
 import os
 import pickle
@@ -43,14 +13,11 @@ from python_scripts.paths import Paths
 
 
 def _canonical_task(task: str) -> str:
-    """Normalise a task string for duplicate detection: lowercase, collapse whitespace,
-    strip surrounding punctuation. Mirrors infer_tasks._canonical_task (reimplemented,
-    not imported, so this read-only report does not pull in the VLM/torch stack)."""
+    # Must match infer_tasks._canonical_task; not imported, to keep the VLM stack out of this report.
     return " ".join(str(task).lower().split()).strip(" .!?\"'")
 
 
 def _traj_length(trajectory) -> int | None:
-    """Frame count of a trajectory 5-tuple, or None if it is not shaped like one."""
     try:
         observations = trajectory[0]
         if isinstance(observations, str) or not hasattr(observations, "__len__"):
@@ -83,7 +50,7 @@ def debug_infer(obj, model_name, n_frames, max_tasks, max_traj_per_task):
 
     json_path = paths.require(paths.curiosity_annotation(), "curiosity")
     with open(json_path) as handle:
-        # json keys are strings; the pkl keeps int group indices — normalise to int.
+        # json keys are strings; the pkl keeps int group indices.
         annotation = {int(gid): task for gid, task in json.load(handle).items()}
 
     pkl_path = json_path.replace(".json", ".pkl")
@@ -98,7 +65,6 @@ def debug_infer(obj, model_name, n_frames, max_tasks, max_traj_per_task):
             "strings without frame strips."
         )
 
-    # --- Summary table: one row per annotated group ---
     summary_rows = []
     for gid in sorted(annotation):
         used = trajectories_by_group.get(gid, [])
@@ -111,7 +77,6 @@ def debug_infer(obj, model_name, n_frames, max_tasks, max_traj_per_task):
         })
     summary = pd.DataFrame(summary_rows)
 
-    # --- Dedup sanity check: the saved file should hold no duplicate canonical tasks ---
     canon = {}
     duplicates = {}
     for gid in sorted(annotation):
@@ -121,7 +86,6 @@ def debug_infer(obj, model_name, n_frames, max_tasks, max_traj_per_task):
         else:
             canon[key] = gid
 
-    # --- Per-task frame strips ---
     sections = []
     for rank, gid in enumerate(sorted(annotation)):
         if max_tasks and rank >= max_tasks:

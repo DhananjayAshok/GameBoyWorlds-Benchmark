@@ -1,17 +1,6 @@
 #!/usr/bin/env bash
-# Runs both data-collection verticals for a game:
-#
-#   leg 1  curiosity — RL exploration -> infer_tasks
-#   leg 2  zeroshot  — propose -> attempt
-#
-# The curiosity annotation is NOT used as a proposal prior. That arm measured near-inert —
-# only ~3% of its proposed task strings carried over verbatim from the prior, because the
-# prior sampled 20 strings from a pool spanning every init_state and the prompt told the
-# model not to use them blindly. It has since been removed from the codebase entirely. The
-# curiosity vertical contributes by producing training data directly, which is both cheaper
-# (its trajectories already exist from RL) and separately measurable.
-#
-# Called by full.sh --mode both.
+# Runs both data-collection verticals for a game: curiosity (RL exploration -> infer_tasks)
+# and zeroshot (propose -> attempt).
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 python "$PROJECT_ROOT/python_funcs.py" task_dictionary || { echo "Could not regenerate train states"; exit 1; }
@@ -23,7 +12,6 @@ REQUIRED_ARGS=()
 populate_array VLM_ESSENTIALS REQUIRED_ARGS
 populate_dict PROPOSE_AND_ATTEMPT_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -58,7 +46,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
@@ -69,8 +56,6 @@ model_save_name=$(model_save_name "${ARGS["model_name"]}")
 curiosity_dir=$(path_of curiosity_dir --game "${ARGS["game"]}" \
                   --model_name "${ARGS["model_name"]}" --run_name "${ARGS["run_name"]}")
 
-# Leg 1 — curiosity. curiosity_all_tasks runs create_traj (skips if grouped trajectories
-# already exist) + infer_tasks (skips if the annotation exists) for every init_state.
 # overwrite=false so existing curiosity output is reused rather than regenerated.
 saved_overwrite="${ARGS["overwrite"]}"
 ARGS["overwrite"]="false"
@@ -83,13 +68,10 @@ if [[ ! -f "$curiosity_dir/trajectory_annotation.json" || ! -f "$curiosity_dir/t
     exit 1
 fi
 
-# Leg 2 — zeroshot, a full leg: propose + attempt.
 ARGS["propose_only"]="false"
 flags=$(args_to_flags_subset ARGS PROPOSE_AND_ATTEMPT_ARG_KEYS)
 bash scripts/pipeline/propose_and_attempt_all.sh $flags || exit 1
 
-# Each leg's terminal artifact is a trajectory stem (<stem>.json + <stem>.pkl), derived the
-# same way its own stage derives it. build_info.sh consumes these.
 executor="${ARGS["executor"]}"
 zeroshot_base=$(path_of zeroshot_dir --game "${ARGS["game"]}" \
                   --model_name "${ARGS["model_name"]}")

@@ -1,7 +1,3 @@
-"""
-One VLM question with retries that tell the model what was wrong with its last reply.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Callable, List, Optional, Tuple
@@ -17,6 +13,7 @@ MAX_PREVIOUS_CHARS = 1500
 
 def ask(vlm_call: Callable[..., str], prompt: str, parse: Parser, stage: str, attempts: int,
         parameters: Optional[dict] = None, **call_kwargs: Any) -> Optional[Any]:
+    """One VLM question; each retry tells the model what was wrong with its last reply."""
     text = prompt
     for attempt in range(attempts):
         output = vlm_call(texts=text, **call_kwargs)

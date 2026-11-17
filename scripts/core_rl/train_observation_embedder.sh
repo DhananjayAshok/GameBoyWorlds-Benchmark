@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# Trains an observation encoder on replay buffer data collected for a given game,
-# saving the resulting embedding model to storage. The encoder is used as a
-# reusable similarity-based feature extractor for curiosity modules in subsequent
-# RL training runs (embedder_load_path argument).
+# Trains an observation encoder on a game's replay buffer data and saves it to storage,
+# for use by curiosity modules in later RL runs (--embedder_load_path).
 
 source scripts/core/utils.sh
 
-# Define Defaults
 declare -A ARGS
 REQUIRED_ARGS=()
 populate_dict ALL_DEFAULTS ARGS
@@ -18,14 +15,11 @@ ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 
 USAGE_STR="Usage: $0"
 
-# Add Required to string
 for req in "${REQUIRED_ARGS[@]}"; do
     USAGE_STR+=" --$req <value>"
 done
 
-# Add Optionals to string
 for opt in "${!ARGS[@]}"; do
-    # Only list if NOT in required (to avoid double listing)
     if [[ ! " ${REQUIRED_ARGS[*]} " =~ " ${opt} " ]]; then
         USAGE_STR+=" [--$opt <value> (default: ${ARGS[$opt]})]"
     fi
@@ -36,11 +30,9 @@ function usage() {
     exit 1
 }
 
-# 3. Parser
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --*)
-            # Extract the name (remove the leading --)
             FLAG=${1#--}
             VALID=false
             for allowed in "${ALLOWED_FLAGS[@]}"; do
@@ -66,7 +58,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 4. Strict Validation
 for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then
         echo "Error: Argument --$req is required."
@@ -76,7 +67,6 @@ done
 
 if [ "$FAILED" = true ]; then usage; fi
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"
@@ -85,7 +75,6 @@ done
 
 cd cleanrl
 
-# Logic here:
 
 subfolder=""
 if [[ "${ARGS["subfolder"]}" != "none" ]]; then

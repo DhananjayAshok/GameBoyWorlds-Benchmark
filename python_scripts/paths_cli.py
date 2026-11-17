@@ -1,21 +1,9 @@
-"""
-One click command per path accessor, for Bash.
-
-Every command here is a two-line forward to :mod:`python_scripts.paths` and prints the result
-with ``click.echo``. The printing lives at this layer, never in the path functions themselves.
-
-Identity flags are declared per command, not on the group, so a command cannot silently accept
-a flag its path does not depend on.
-"""
-
 import click
 
 from python_scripts import paths
 from python_scripts.common import MAYBE_NONE
 from python_scripts.paths import BENCHMARK_SUPERVISORS
 
-
-# --- shared option decorators ------------------------------------------------
 
 def _game(f):
     return click.option("--game", required=True, help="Game name, e.g. deja_vu_1.")(f)
@@ -47,11 +35,8 @@ def _source(f):
 
 
 def _identity(f):
-    """game + model + run_name + executor + controller_variant, the full info-document identity."""
     return _game(_model(_run(_executor(_controller(f)))))
 
-
-# --- name helpers ------------------------------------------------------------
 
 @click.command("model_save_name")
 @_model
@@ -70,8 +55,6 @@ def finetuned_model_name_cmd(game, model_name, run_name, mode):
     click.echo(paths.finetuned_model_name(model_name=model_name, game=game,
                                           run_name=run_name, mode=mode))
 
-
-# --- curiosity / grouping ----------------------------------------------------
 
 @click.command("grouped_dir")
 @_game
@@ -121,8 +104,6 @@ def init_states_cmd(obj, game, run_name):
     for state in paths.init_states(obj["parameters"](), game=game, run_name=run_name):
         click.echo(state)
 
-
-# --- proposal / attempt ------------------------------------------------------
 
 @click.command("proposed_tasks_dir")
 @_game
@@ -211,8 +192,6 @@ def success_trajectories_stem_cmd(obj, game, model_name, executor, controller_va
                                                controller_variant=controller_variant))
 
 
-# --- info documents ----------------------------------------------------------
-
 @click.command("info_source_stem")
 @_identity
 @_source
@@ -262,8 +241,6 @@ def parametric_doc_cmd(obj, game, model_name):
     click.echo(paths.parametric_doc(obj["parameters"](), game=game, model_name=model_name))
 
 
-# --- benchmark ---------------------------------------------------------------
-
 @click.command("benchmark_dir")
 @_game
 @click.pass_obj
@@ -308,10 +285,7 @@ def benchmark_series_csv_cmd(obj, game):
 @_game
 @click.pass_obj
 def train_games_cmd(obj, game):
-    """The games in --game's series that source data can be collected from, one per line.
-
-    Prints nothing when the series marks none, which is what the caller tests for.
-    """
+    """The games in --game's series that source data can be collected from, one per line."""
     for name in paths.train_games(obj["parameters"](), game=game):
         click.echo(name)
 
@@ -341,8 +315,6 @@ def model_checkpoint_dir_cmd(obj, game, model_name, run_name, mode):
                                           mode=mode, model_name=model_name))
 
 
-# --- debug reports -----------------------------------------------------------
-
 @click.command("debug_dir")
 @_game
 @click.option("--stage", required=True, help="Report stage, e.g. info, benchmark, attempt.")
@@ -364,7 +336,6 @@ def debug_frames_dir_cmd(obj, game, stage):
     click.echo(paths.debug_frames_dir(obj["parameters"](), game=game, stage=stage))
 
 
-#: Registered onto the group in python_funcs.py.
 PATH_COMMANDS = [
     model_save_name_cmd,
     finetuned_model_name_cmd,

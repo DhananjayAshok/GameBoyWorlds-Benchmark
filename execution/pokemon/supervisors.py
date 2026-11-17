@@ -118,10 +118,6 @@ class PokemonPlayThroughSupervisor(Supervisor):
         config["max_replans"] = self.MAX_REPLANS
         return config
 
-    # ------------------------------------------------------------------
-    # Screen and prompts
-    # ------------------------------------------------------------------
-
     def _current_frame(self):
         return self._env.get_info()["core"]["current_frame"]
 
@@ -152,10 +148,6 @@ class PokemonPlayThroughSupervisor(Supervisor):
                 .replace("[SCREEN_TILES]", self._screen_tiles)
                 .replace("[PRIMITIVES]", PRIMITIVES)
                 .replace("[PLAN]", plan))
-
-    # ------------------------------------------------------------------
-    # Executors
-    # ------------------------------------------------------------------
 
     def call_executor(self, tag: str, task: str, *, hint: Optional[str] = None,
                       allow_self_termination: bool = False,
@@ -239,10 +231,6 @@ class PokemonPlayThroughSupervisor(Supervisor):
 
     def _process_free(self, report: ExecutorReport) -> Dict[str, Any]:
         return self._result("free", report, report.outcome == FREE_OK)
-
-    # ------------------------------------------------------------------
-    # Supervisor calls
-    # ------------------------------------------------------------------
 
     def _plan_subgoals(self, frame) -> List[str]:
         output = self._vlm_call("plan", texts=self._fill_prompt(PLAYTHROUGH_PLAN_PROMPT), images=[frame])
@@ -353,10 +341,6 @@ class PokemonPlayThroughSupervisor(Supervisor):
     def _battles_lost(self) -> int:
         return self._env.get_info()["pokemon_core"].get("n_battles_lost", 0) - self._losses_at_start
 
-    # ------------------------------------------------------------------
-    # Running one action
-    # ------------------------------------------------------------------
-
     def _run_action(self, action: str, argument: Optional[str], frame) -> Tuple[Dict[str, Any], str]:
         tag, _, default_task = ACTIONS[action]
         task = argument or default_task
@@ -405,10 +389,6 @@ class PokemonPlayThroughSupervisor(Supervisor):
             handled = self.call_executor("free", self.CLEAR_EVENT_INSTRUCTION,
                                          termination=self.CLEAR_EVENT_TERMINATION)
         return state.name.lower(), handled
-
-    # ------------------------------------------------------------------
-    # The playthrough
-    # ------------------------------------------------------------------
 
     def _note(self, entry: str) -> None:
         self.report.narrative.append(entry)

@@ -1,13 +1,3 @@
-"""
-The two axes an executor varies on, as strategy objects rather than subclasses.
-
-- :mod:`.action`   how one decision produces action(s): ``single``, ``scored``, ``sequence``
-- :mod:`.history`  what is remembered between decisions: ``none``, ``actions``, ``visual``
-
-Nine arms come from three plus three plus one loop. The axes are independent: any action
-policy composes with any history policy.
-"""
-
 from execution.executors.policies.action import (
     AVAILABLE_ACTION_POLICIES,
     ActionPolicy,

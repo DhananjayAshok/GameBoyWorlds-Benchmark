@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Uses the VLM to infer task labels from a directory of grouped trajectories
-# produced by group_trajectories.sh. Populates the task store for a given run,
-# feeding into attempt_tasks.sh. Supports sampling multiple trajectories per group
-# and optionally describing observation pairs to improve task quality.
+# Uses the VLM to infer task labels from the grouped trajectories (--trajectory_path)
+# produced by group_trajectories.sh, for a given --run_name.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -12,7 +10,6 @@ REQUIRED_ARGS=()
 populate_array INFER_TASKS_ESSENTIALS REQUIRED_ARGS
 populate_dict INFER_TASKS_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -47,7 +44,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do

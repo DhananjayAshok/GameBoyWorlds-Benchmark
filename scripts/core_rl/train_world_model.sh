@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# Trains a world model on a game's replay buffer, producing a predictive curiosity
-# module for use in subsequent RL training (curiosity_module=world_model). Called
-# between agent iterations in iterative_training.sh to keep the world model fresh
-# as the replay buffer grows.
+# Trains a world model on a game's replay buffer, for use as a curiosity module in later
+# RL training. Called between agent iterations by iterative_training.sh.
 
 source scripts/core/utils.sh
 
-# Define Defaults
 declare -A ARGS
 REQUIRED_ARGS=()
 
@@ -18,14 +15,11 @@ ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 
 USAGE_STR="Usage: $0"
 
-# Add Required to string
 for req in "${REQUIRED_ARGS[@]}"; do
     USAGE_STR+=" --$req <value>"
 done
 
-# Add Optionals to string
 for opt in "${!ARGS[@]}"; do
-    # Only list if NOT in required (to avoid double listing)
     if [[ ! " ${REQUIRED_ARGS[*]} " =~ " ${opt} " ]]; then
         USAGE_STR+=" [--$opt <value> (default: ${ARGS[$opt]})]"
     fi
@@ -36,11 +30,9 @@ function usage() {
     exit 1
 }
 
-# 3. Parser
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --*)
-            # Extract the name (remove the leading --)
             FLAG=${1#--}
             VALID=false
             for allowed in "${ALLOWED_FLAGS[@]}"; do
@@ -66,7 +58,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 4. Strict Validation
 for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then
         echo "Error: Argument --$req is required."
@@ -76,7 +67,6 @@ done
 
 if [ "$FAILED" = true ]; then usage; fi
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"
@@ -84,7 +74,6 @@ done
 
 
 
-# Logic here:
 
 env_arg_str="--game ${ARGS["game"]} --env default --init_state default --controller ${ARGS["controller"]} --max_steps 10"
 train_env_id=$(python "$PROJECT_ROOT/python_funcs.py" strings env_id $env_arg_str)

@@ -1,7 +1,3 @@
-"""
-Planning from retrieved knowledge.
-"""
-
 from __future__ import annotations
 
 import os
@@ -16,18 +12,7 @@ from utils import log_warn, parse_key_value, parse_list, parse_yes_no
 
 
 class InfoSubgoalSupervisor(SubgoalSupervisor):
-    """Select relevant knowledge, then plan and hint from it.
-
-    :param documents: Parsed :class:`~execution.info_doc.InfoDocument` objects, however the
-        arm obtained them.
-    :param max_concurrency: Parallel relevance calls (they are independent).
-
-    :ivar selected_ids: Ids of the entries the relevance pass kept. The durable part: the
-        benchmark CSV stores it per episode, so a plan can be traced back to the exact
-        entries it was synthesised from long after the run.
-    :ivar insights_block: What :meth:`_knowledge` returns — filtered once per episode and
-        reused by the planner, the hint writer and the replanner.
-    """
+    """Select relevant knowledge, then plan and hint from it."""
 
     def __init__(self, *args, documents: Optional[List[Any]] = None,
                  max_concurrency: int = 8, **kwargs) -> None:
@@ -40,8 +25,7 @@ class InfoSubgoalSupervisor(SubgoalSupervisor):
         self.n_insights_kept = 0
         self.n_insights_distilled = 0
         super().__init__(*args, **kwargs)
-        # Built eagerly: the base class's lazy property is an unlocked check-then-set, and
-        # the relevance pass fans out across threads.
+        # Built eagerly: the lazy property is not thread-safe and the relevance pass uses threads.
         _ = self._vlm
 
     def _run_config(self) -> dict:
@@ -50,23 +34,9 @@ class InfoSubgoalSupervisor(SubgoalSupervisor):
                 "n_documents": len(self._documents)}
 
     def _knowledge(self) -> str:
-        """The distilled insights, or nothing if selection found none. Filtered once in
-        :meth:`_resolve_targets` and reused verbatim by the planner, reviser and hint writer.
-
-        :return: The insights block, or ``""``.
-        :rtype: str
-        """
         return self.insights_block
 
     def _resolve_targets(self) -> List[Optional[str]]:
-        """Select knowledge, then plan from it.
-
-        With nothing selected there is no knowledge to plan *from*, but there is still a task
-        to plan for, so this falls through to the ordinary subgoal planner with an empty
-        insights block — :meth:`SubgoalSupervisor.write_plan` already renders that as
-        ``(nothing recorded)``. The episode is then a knowledge-free planned run, which is
-        exactly the ``subgoal`` arm, and ``selected_entry_ids`` is empty on that row to say so.
-        """
         self.selection_log = []
         self.selected_ids = []
         self.insights_block = ""
@@ -90,47 +60,26 @@ class InfoSubgoalSupervisor(SubgoalSupervisor):
                 "n_insights_kept": self.n_insights_kept,
                 "n_insights_distilled": self.n_insights_distilled}
 
-    # -- Knowledge selection --------------------------------------------------
-
     @staticmethod
     def entry_id(entry) -> str:
-        """
-        Stable identifier for one selected entry, for the benchmark CSV and debug reports.
-
-        ``source`` is the provenance label the loader attached — the document's vertical
-        (``zeroshot``, ``curiosity``) for a built document, or ``parametric`` for one written
-        from the model's priors. The category disambiguates entries within a source.
-        """
         return f"{entry.source}#{entry.category}" if entry.source else entry.category
 
     @staticmethod
     def _entry_frame(entry):
         from PIL import Image
 
-        # Stored frame paths are relative to their document's frames_root, so they are not
-        # openable on their own. load_document has already resolved it. A parametric entry
-        # has no frame at all, which lands on the None branch below.
         path = entry.resolved_frame
         if not path or not os.path.exists(path):
             return None
         return Image.open(path).convert("RGB")
 
     def _judge_relevance(self, entry, kind: str, screen) -> tuple:
-        """One yes/no call for a single entry. Returns (is_relevant, reason, records).
-
-        Runs on a worker thread, so it **files nothing**: it goes through
-        :meth:`~execution.supervisors.base.Supervisor._vlm_infer` and hands its call records
-        back for :meth:`_select_entries` to append once the pool has joined. Appending from
-        the worker put the records into ``event_log`` in completion order, which made the
-        supervisor's own record of an episode differ between two runs of the same episode.
-        """
+        # Runs on a worker thread: files nothing and hands its records back, so the log stays ordered.
         images = [screen]
         entry_frame = self._entry_frame(entry)
         if entry_frame is not None:
             images.append(entry_frame)
 
-        # The prompt must describe the images it actually receives; a parametric entry has no
-        # frame.
         if entry_frame is not None:
             frame_note = ("The images are: first the CURRENT screen the player is looking "
                           "at, then the representative frame recorded with this entry.")
@@ -161,8 +110,6 @@ class InfoSubgoalSupervisor(SubgoalSupervisor):
         return verdict is True, reason, records
 
     def _select_entries(self, candidates, screen) -> List[Any]:
-        """Run the relevance pass over (entry, kind) candidates, in parallel.
-        """
         if not candidates:
             return []
 
@@ -196,8 +143,6 @@ class InfoSubgoalSupervisor(SubgoalSupervisor):
         return selected
 
     def _candidates(self):
-        """Every entry of every document, tagged with the kind of thing it describes.
-        """
         from execution.info_doc import IMAGE_SECTION, TASK_SECTION
 
         candidates = []
@@ -207,12 +152,6 @@ class InfoSubgoalSupervisor(SubgoalSupervisor):
         return candidates
 
     def filter_insights(self, selected, screen) -> str:
-        """Prune the selected entries' insights to what could bear on this task, once.
-
-        :return: The insight block to interpolate, grouped by entry. Falls back to the
-            unfiltered block when the reply cannot be parsed — a filter that silently
-            returns nothing is indistinguishable from a document with nothing in it.
-        """
         pairs = [(entry, insight) for entry in selected for insight in entry.insights]
         self.n_insights_candidate = len(pairs)
         self.n_insights_kept = len(pairs)
@@ -259,12 +198,6 @@ class InfoSubgoalSupervisor(SubgoalSupervisor):
         return self.distil_insights(kept, grouped_block, screen)
 
     def distil_insights(self, kept: list, grouped_block: str, screen) -> str:
-        """Consolidate the surviving insights into one concrete, non-redundant list.
-
-        :return: The distilled block, or *grouped_block* unchanged if the reply cannot be
-            parsed — a distillation that silently returns nothing is worse than a verbose
-            but complete briefing.
-        """
         if not kept:
             return grouped_block
 
@@ -286,6 +219,4 @@ class InfoSubgoalSupervisor(SubgoalSupervisor):
 
         self.n_insights_distilled = len(lines)
         self._say(f"  insight distillation: {len(kept)} -> {len(lines)} statements")
-        # parse_list returns bare items; this block goes straight into a prompt that expects
-        # the bullets.
         return "\n".join(f"- {line}" for line in lines)

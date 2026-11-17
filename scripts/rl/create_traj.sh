@@ -1,11 +1,7 @@
-# DELTA TODO 3: Already uncommented the group trajectories below. Make sure the run_name and pathing works.
-
 #!/usr/bin/env bash
-# End-to-end trajectory creation for a single init_state: runs iterative RL agents
-# to collect a replay buffer, then calls group_trajectories.sh to cluster the
-# resulting observations into groups. The clustered trajectories are the input to
-# the VLM task-discovery pipeline (infer_tasks.sh). Use create_all_traj.sh to run
-# this across all init_states for a game.
+# Trajectory creation for a single init_state: runs iterative RL agents to collect a replay
+# buffer, then group_trajectories.sh to cluster it. The grouped trajectories feed
+# infer_tasks.sh. Use create_all_traj.sh to run this across all init_states of a game.
 
 source scripts/core/utils.sh
 
@@ -20,14 +16,11 @@ ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 
 USAGE_STR="Usage: $0"
 
-# Add Required to string
 for req in "${REQUIRED_ARGS[@]}"; do
     USAGE_STR+=" --$req <value>"
 done
 
-# Add Optionals to string
 for opt in "${!ARGS[@]}"; do
-    # Only list if NOT in required (to avoid double listing)
     if [[ ! " ${REQUIRED_ARGS[*]} " =~ " ${opt} " ]]; then
         USAGE_STR+=" [--$opt <value> (default: ${ARGS[$opt]})]"
     fi
@@ -38,11 +31,9 @@ function usage() {
     exit 1
 }
 
-# 3. Parser
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --*)
-            # Extract the name (remove the leading --)
             FLAG=${1#--}
             VALID=false
             for allowed in "${ALLOWED_FLAGS[@]}"; do
@@ -68,7 +59,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 4. Strict Validation
 for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then
         echo "Error: Argument --$req is required."
@@ -78,13 +68,11 @@ done
 
 if [ "$FAILED" = true ]; then usage; fi
 
-# error out if run_name is none or unset
 if [[ -z "${ARGS["run_name"]}" || "${ARGS["run_name"]}" == "none" ]]; then
     echo "Error: --run_name is required and cannot be 'none'."
     usage
 fi
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"
@@ -109,16 +97,13 @@ echo "Setting replay_buffer_save_folder to $replay_buffer_save_folder for iterat
 # z_kind is not an arg here; group_trajectories defaults to global, so the output is always the global file.
 grouped_file=$(path_of grouped_file --game "${ARGS["game"]}" \
                  --run_name "${ARGS["run_name"]}" --init_state "${init_state_group}")
-# Only meaningful when we are actually going to group: with --group_trajectories false the
-# grouped file is not this run's output, so its presence says nothing about whether the
-# replay buffers this run exists to collect are already on disk.
+# Only skip when grouping: with --group_trajectories false the grouped file is not this run's output.
 if [[ "${ARGS["group_trajectories"]}" == "true" \
       && "${ARGS["overwrite"]}" != "true" && -f "$grouped_file" ]]; then
     echo "Grouped trajectories already exist at $grouped_file. Skipping (pass --overwrite true to regenerate)."
     exit 0
 fi
 
-# if skip_training, skip the bottom
 if [ "${ARGS["skip_training"]}" == "true" ]; then
     echo "Skipping training as per --skip_training flag."
 else
@@ -139,9 +124,7 @@ fi
 bash scripts/rl/group_trajectories.sh --game ${ARGS["game"]} --replay_buffer_folder $replay_buffer_save_folder --save_path "$(path_of grouped_dir --game "${ARGS["game"]}" --run_name "${ARGS["run_name"]}")/${init_state_group}/" --z_min ${ARGS["z_min"]}
 group_status=$?
 
-# Only reclaim disk once grouping has succeeded and the grouped file is on disk; the
-# replay buffers and models are just intermediate inputs to grouping, so they are safe
-# to remove afterwards. Bail without deleting if grouping failed.
+# Only reclaim disk once grouping has succeeded and the grouped file is on disk.
 if [[ $group_status -ne 0 || ! -f "$grouped_file" ]]; then
     echo "Grouping failed (exit $group_status) or output missing at $grouped_file; NOT clearing replay buffers/models."
     exit $group_status

@@ -1,29 +1,3 @@
-"""
-Zero-shot task-proposal diagnostics: what the VLM proposed from each init_state's first
-frame, beside the benchmark tasks that actually anchor to that state.
-
-Input
------
-<storage>/proposed_tasks/<game>/<model>/zeroshot/zeroshot_tasks.jsonl
-    produced by scripts/vlm/propose_zeroshot.sh — one JSON object per line,
-    {"init_state": str, "tasks": [str, ...]}
-GameBoyWorlds/benchmark/tests/<series>.csv
-    columns: game, task_category, task, init_state, state_tracker_class,
-             shifted_training_games, can_train_from_init_state
-
-Emulator
---------
-This is the only debug command that constructs an environment. The first frame the VLM
-proposed from exists nowhere on disk, so it is regenerated with the exact call
-propose_tasks_zeroshot.get_first_frame_and_actions makes (that function is imported, not
-copied, so the two cannot drift). CPU + ROM only — no GPU, no VLM. Frames are cached to
-init_state_images/.
-
-Output
-------
-<results_dir>/debug/<game>/zeroshot/report.md, plus init_state_images/<init_state>.jpg.
-"""
-
 import os
 
 import click
@@ -36,7 +10,6 @@ from python_scripts.paths import Paths
 
 
 def _load_tasks(path: str) -> dict[str, list[str]]:
-    """{init_state: [task, ...]} from a proposal jsonl."""
     frame = pd.read_json(path, lines=True)
     if len(frame) == 0:
         return {}
@@ -44,7 +17,6 @@ def _load_tasks(path: str) -> dict[str, list[str]]:
 
 
 def _load_benchmark_tasks(paths: Paths) -> pd.DataFrame:
-    """Benchmark rows for this game only, from the series CSV that contains it."""
     series_csv = paths.benchmark_series_csv()
     frame = pd.read_csv(series_csv)
     return frame[frame["game"] == paths.game].reset_index(drop=True)
@@ -52,7 +24,6 @@ def _load_benchmark_tasks(paths: Paths) -> pd.DataFrame:
 
 def _render_first_frame(paths: Paths, init_state: str, images_dir: str,
                         controller_variant: str, overwrite: bool) -> str | None:
-    """Save (and cache) the init_state's first frame. None if the environment fails."""
     out_path = os.path.join(images_dir, f"{init_state}.jpg")
     if os.path.exists(out_path) and not overwrite:
         return out_path
@@ -98,7 +69,6 @@ def debug_zeroshot(obj, model_name):
         log_warn(f"[zeroshot] {tasks_path} is empty — nothing to report.")
         return
 
-    # Every state either side of the join, so gaps in both directions are visible.
     states = sorted(set(proposed) | set(benchmark_by_state))
 
     summary_rows, sections = [], []

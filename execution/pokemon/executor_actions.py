@@ -1,12 +1,3 @@
-"""
-Pokemon-specific executor actions.
-
-.. warning:: ``PokemonLocateAction`` cannot be instantiated yet: neither it nor
-    :class:`~execution.executor_action.LocateAction` implements ``verbalize`` or
-    ``string_to_kwargs``, both ``@abstractmethod`` on
-    :class:`~execution.executor_action.ExecutorAction`.
-"""
-
 import re
 from typing import Any, Dict, Optional, Tuple
 
@@ -17,8 +8,7 @@ from utils import parse_key_value
 
 
 class PokemonLocateAction(LocateAction):
-    # TODO: cannot be instantiated — `verbalize` and `string_to_kwargs` are abstract on
-    # ExecutorAction and are implemented by neither LocateAction nor this class.
+    # TODO: cannot be instantiated until `verbalize` and `string_to_kwargs` are implemented.
     pre_described_options = {
         "item": "a pixelated, greyscale Poke Ball sprite, recognizable by its circular shape, white center, black band around the top, and grey body",
         "pokeball": "a pixelated, greyscale Poke Ball sprite, recognizable by its circular shape, white center, black band around the top, and grey body",
@@ -36,24 +26,7 @@ class PokemonLocateAction(LocateAction):
 
 
 class CheckInteractionAction(ExecutorAction):
-    """
-    Finds which of the eight cells around the agent holds a target, in one VLM call, from the
-    whole screen plus the tile descriptions of those cells.
-
-    Is Valid When:
-    - In Free Roam State
-    - ``target`` is a non-empty string
-
-    Action Success Interpretation:
-    - -1: The target is not in any of the eight cells around the agent.
-    - 0: The target is in a cardinal cell, so the agent can face it. ``direction`` says which way.
-    - 1: The target is only in a diagonal cell, which cannot be faced or interacted with.
-
-    Action Returns:
-    - `cell` (`Optional[Tuple[int, int]]`): The cell holding the target, or None.
-    - `direction` (`str`): Present for code 0 — the direction to face.
-    - `found_cells` / `found_cells_str`: The same cell, kept for callers that render it.
-    """
+    """Success codes: -1 target not adjacent, 0 in a cardinal cell (faceable), 1 only in a diagonal cell."""
 
     MAX_NEW_TOKENS = 4000
 

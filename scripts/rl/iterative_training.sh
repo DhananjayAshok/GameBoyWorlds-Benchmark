@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
-# Runs multiple rounds of RL training where each agent's curiosity buffer seeds
-# the next, implementing the iterative self-improvement loop. Optionally retrains
-# the world model between rounds (curiosity_module=world_model) and supports
-# sweeping over seeds/gammas/algorithms at each round via sweep.sh. Called by
-# create_traj.sh; can also be invoked directly for training-only runs.
+# Runs multiple rounds of RL training where each agent's curiosity buffer seeds the next.
+# Retrains the world model between rounds when curiosity_module=world_model; --sweep true
+# sweeps each round via sweep.sh. Called by create_traj.sh.
 
 source scripts/core/utils.sh
 
-# Define Defaults for default_rl.sh
 declare -A ARGS
 REQUIRED_ARGS=()
 populate_dict ITERATIVE_TRAINING_DEFAULTS ARGS
@@ -20,14 +17,11 @@ ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 
 USAGE_STR="Usage: $0"
 
-# Add Required to string
 for req in "${REQUIRED_ARGS[@]}"; do
     USAGE_STR+=" --$req <value>"
 done
 
-# Add Optionals to string
 for opt in "${!ARGS[@]}"; do
-    # Only list if NOT in required (to avoid double listing)
     if [[ ! " ${REQUIRED_ARGS[*]} " =~ " ${opt} " ]]; then
         USAGE_STR+=" [--$opt <value> (default: ${ARGS[$opt]})]"
     fi
@@ -38,11 +32,9 @@ function usage() {
     exit 1
 }
 
-# 3. Parser
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --*)
-            # Extract the name (remove the leading --)
             FLAG=${1#--}
             VALID=false
             for allowed in "${ALLOWED_FLAGS[@]}"; do
@@ -68,7 +60,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 4. Strict Validation
 for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then
         echo "Error: Argument --$req is required."
@@ -78,7 +69,6 @@ done
 
 if [ "$FAILED" = true ]; then usage; fi
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"
@@ -148,12 +138,10 @@ function train_world_model(){
     local buffer_save_path="$1"
     ARGS["buffer_save_path"]=$buffer_save_path
     ARGS["buffer_load_path"]="none" # world model will train on all trajectories in the replay buffer folder, so no need to specify a single buffer to load from.
-    # Don't bother with buffer_load_path, this will just make the WM train from scratch on all trajectories in the replay buffer folder. 
     argstring=$(args_to_flags_subset ARGS WORLD_MODEL_ARG_KEYS)
     bash scripts/core_rl/train_world_model.sh $argstring 
 }
 
-## Execution starts here
 
 if [ "$sweeping" = true ]; then
     all_buffer_save_paths=${ARGS["run_name"]}/${ARGS["init_state"]}/${ARGS["observation_embedder"]}/sweep_
@@ -174,13 +162,12 @@ fi
 prev_buffer_load_path=$prev_buffer_save_path
 buffer_save_path=${all_buffer_save_paths}1
 
-# Then, run the actual agent iteratively, updating the world model each time if needed
 for ((i=0; i<${ARGS["n_agents"]}; i++)); do
     echo "Starting iteration $i with buffer load path '$prev_buffer_load_path' and buffer save path '$buffer_save_path'"
 
     call_agent $prev_buffer_load_path $buffer_save_path
 
-    # Don't train world model on the last iteration since we won't be using the buffer again
+    # No world model training on the last iteration: its buffer is not used again.
     if [ $i -lt $((${ARGS["n_agents"]}-1)) ]; then
         if [ "${ARGS["curiosity_module"]}" == "world_model" ]; then
             train_world_model $buffer_save_path    

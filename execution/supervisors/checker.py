@@ -1,7 +1,3 @@
-"""
-Judging a finished trajectory.
-"""
-
 from __future__ import annotations
 
 from typing import Any, Callable, List, Optional, Tuple, Type
@@ -23,28 +19,7 @@ from utils import parse_int, parse_key_value, parse_yes_no, sum_meta, zero_meta,
 
 
 class AttemptCheckerSupervisor(Supervisor):
-    """
-    Runs the executor on a fixed task, then uses a two-stage VLM pipeline to
-    judge whether the task was completed.
-
-    **Not a benchmark supervisor.**; this class is used only by ``vlm_scripts.attempt_tasks``, to label attempted tasks during data generation.
-
-    :param task: Natural-language task the executor should attempt.
-    :param executor_class: :class:`~execution.executors.Executor` subclass to use.
-    :param env: The game environment.
-    :param game: Game name string.
-    :param max_steps: Env-step budget forwarded to the executor.
-    :param evaluation_lookback: Number of final env-step frames passed to the checker VLM.
-    :param goal_condition: Visual description of the state that means the task is done, shown
-        to the judge as a strict guide. ``None`` for a task that has none (a proposed task,
-        say), in which case the judge is told nothing about goal conditions at all.
-    :param supervisor_vlm_model: The one model this supervisor reasons with — both the
-        describe and the judge stage use it.
-    :param supervisor_vlm_kind: VLM kind for that model (``"openai"``, ``"anthropic"``, …).
-    :param max_new_tokens: Token budget for every one of its calls.
-    :param parameters: Optional parameter overrides.
-    :param executor_kwargs: Extra keyword arguments forwarded to the executor constructor.
-    """
+    """Run the executor on a fixed task, then judge completion with a two-stage VLM pipeline."""
 
     def __init__(
         self,
@@ -82,11 +57,6 @@ class AttemptCheckerSupervisor(Supervisor):
         )
 
     def _evaluate(self) -> dict:
-        """Run the executor on the stored task and return the checker's verdict.
-
-        :return: The verdict, with the run's report under ``"report"``.
-        :rtype: dict
-        """
         return self.call_executor(self._task, hint=self._hint,
                                   allow_self_termination=self._allow_self_termination)
 
@@ -151,10 +121,8 @@ class AttemptCheckerSupervisor(Supervisor):
                 **run_meta,
             }
 
-        # Stage 1: describe full trajectory in slices
         description = self._describe_trajectory(env_steps)
 
-        # Stage 2: judge using final k frames + full description
         final_frames = [s.frame_after for s in env_steps[-k:]]
         goal_note = (
             JUDGE_GOAL_CONDITION_NOTE.replace("[GOAL_CONDITION]", self._goal_condition)
@@ -185,23 +153,7 @@ def _frame_to_call_cutoff(
     vlm_call_log: list,
     safe_frame: Optional[int],
 ) -> Optional[int]:
-    """Convert a 1-based env-frame number into a vlm_call_log slice index.
-
-    The judge VLM reports ``safe_success_point`` as a *frame number* — the earliest env
-    frame by which the task is surely complete. Consumers downstream slice the saved call
-    log, so the frame number is converted to "how many leading calls to keep" here.
-
-    NOTE: the returned value is what gets stored under the ``safe_success_point``
-    key (see process_executor_return) — i.e. that key carries a *call-log index*,
-    NOT the original frame number. The frame number is intentionally not
-    preserved.
-
-    Each call owns the steps it produced, so counting env steps per call is a direct
-    walk. A call may own several (a planned sequence), and the cutoff keeps the whole
-    call: the frame that proved completion cannot be separated from the others that call
-    produced without splitting the record it belongs to. Returns ``None`` (no truncation
-    downstream) when ``safe_frame`` is None — the judge couldn't pin down a frame.
-    """
+    # ``safe_frame`` is a 1-based env-frame number; the result is a call-log slice index, not a frame.
     if safe_frame is None:
         return None
     env_frames = 0
@@ -222,16 +174,6 @@ def window_trajectory(
     task: str = "",
     slice_size: int = 8,
 ) -> List[tuple]:
-    """Cut a trajectory into fixed-size windows and describe each in one image call.
-
-    *call* is a callable, not a VLM: this function batches every window into one
-    ``infer`` call, and a supervisor must record that call. Passing
-    ``Supervisor._vlm_caller(stage)`` keeps it on the report; passing a bare VLM would
-    silently lose the whole batch.
-
-    :return: ``[((start, end), raw_output), ...]``, one per window, in order. Empty when
-        there are no steps.
-    """
     frames = [s.frame_after for s in env_steps]
     if not frames:
         return []
@@ -274,14 +216,6 @@ def summarise_trajectory_segments(
     max_new_tokens: int,
     max_frames_per_slice: int = 8,
 ) -> List[str]:
-    """Window a trajectory and summarise each window in one image call per window.
-
-    :func:`window_trajectory` plus this pipeline's own reading of the replies: the answer
-    is expected on a ``Segment summary:`` line, and anything else is taken verbatim.
-
-    :return: One ``"Steps a-b: ..."`` string per window, in order. Empty when there are no
-        steps to summarise.
-    """
     windows = window_trajectory(
         env_steps, slice_prompt, game=game, task=task, call=call,
         max_new_tokens=max_new_tokens, slice_size=max_frames_per_slice,
@@ -308,17 +242,6 @@ def derive_critique_hint(
     previous_hint: str = "",
     max_frames_per_slice: int = 8,
 ) -> Tuple[str, Optional[int], Optional[int]]:
-    """Slice the failed trajectory into fixed-size windows, critique each with images,
-    then consolidate into a single hint with a text-only call.
-
-    Not a supervisor method, so its calls go to the VLM unrecorded and the token counts are
-    returned instead of filed.
-
-    :return: ``(hint, input_tokens, output_tokens)``. The counts cover every call made
-        here, and are ``None`` where the backend did not report usage — distinct from the
-        ``0`` returned on the paths that make no calls at all. The hint falls back to
-        *previous_hint* when there was nothing to critique.
-"""
     if not env_steps:
         empty = zero_meta()
         return previous_hint, empty["input_tokens"], empty["output_tokens"]

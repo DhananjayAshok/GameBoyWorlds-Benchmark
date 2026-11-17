@@ -1,8 +1,3 @@
-"""
-Rendering an executor attempt as text for a supervisor prompt.
-
-"""
-
 from __future__ import annotations
 
 from typing import List, Optional
@@ -13,9 +8,6 @@ from utils import parse_key_value
 
 
 def action_trace(report) -> str:
-    """
-    Each action the executor took, beside the reasoning it gave for taking it.
-    """
     lines, n_actions = [], 0
     for entry in report.vlm_call_log:
         if entry.tag == DONE_CHECK_TAG:
@@ -27,9 +19,6 @@ def action_trace(report) -> str:
         if entry.tag not in ACTION_TAGS:
             continue
         reason = parse_key_value(entry.response, "Reasoning")
-        # A call usually owns one step, but a planned sequence owns several. Each gets its
-        # own numbered line so the count still reads as "actions taken", while the reasoning
-        # is shown once, on the first — it was given once, for the whole sequence.
         for i, step in enumerate(entry.steps or [None]):
             if isinstance(step, EnvironmentStepRecord):
                 name = action_name(step)
@@ -48,10 +37,6 @@ def action_trace(report) -> str:
 def attempt_history_line(report, env_steps: list, summaries: List[str],
                          hint: Optional[str], verdict: str,
                          regression: Optional[str] = None) -> str:
-    """
-    One attempt, described richly enough for the plan reviser to diagnose it.
-
-    """
     return (
         f"{report.termination_reason} after {len(env_steps)} step(s)\n"
         f"       hint given: {hint or '(none — the step text was the only instruction)'}\n"

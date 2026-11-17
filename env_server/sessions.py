@@ -1,13 +1,3 @@
-"""
-Sessions: one live emulator each, opened for one task or one free-play start state.
-
-A task session carries the task's goal and step budget, and reports `success` when the episode ends — the
-benchmark's own check, which `TestEnvironmentMixin` puts in `terminated`. A truncated episode scores 0. Free play
-has no goal, no budget and no success.
-
-Visibility and state are the server's policy (policy.py), fixed when the server starts. A session cannot widen
-them: `want_state` can only narrow what an already-permissive dev server allows.
-"""
 import secrets
 import threading
 import time
@@ -29,6 +19,8 @@ class SessionError(Exception):
 
 
 class Session:
+    """One live emulator, opened for one task or one free-play start state."""
+
     def __init__(self, *, policy: Policy, task_id: Optional[str], game: Optional[str],
                  init_state: Optional[str], want_state: bool, max_steps: Optional[int],
                  record_dir: Optional[str], session_name: Optional[str], parameters: dict) -> None:
@@ -37,23 +29,21 @@ class Session:
         self.task_id = task_id
         self.id = uuid.uuid4().hex[:16]
         self.token = secrets.token_urlsafe(24)
-        # On test, state is not optional: the scored block is what the run is graded on and is always served.
         self.want_state = True if not policy.state_optional else bool(want_state)
         self.success: Optional[float] = None
         self.episode_over = False
-        #: Whether the episode has been started by a reset. On a policy without reset_again, it is the only one.
         self.started = False
+        self.closed = False
         self.last_used = time.time()
         self.lock = threading.Lock()
-        self._handles: dict = {}
+        self._handles: set = set()
 
-        # No `parameters` here on purpose: gameboy_worlds must load its own config, which is where the ROM paths
-        # live. Handing it GameBoyRL's parameters points project_root at the wrong repo and no ROM resolves.
+        # gameboy_worlds loads its own config (ROM paths); it must not be handed this repo's parameters.
         emulator_kwargs = {"headless": True, "session_name": session_name}
         if max_steps is not None:
             emulator_kwargs["max_steps"] = max_steps
         if task_id is not None:
-            row = splits.row_of(task_id=task_id, parameters=parameters)
+            row = splits.row_of(task_id=task_id)
             self.goal = str(row["task"])
             self.game = str(row["game"])
             self.env = get_test_environment(row=row, controller_variant="low_level", **emulator_kwargs)
@@ -85,14 +75,12 @@ class Session:
     def _max_steps(self) -> Optional[int]:
         return None if not self.is_task else int(getattr(self.env._emulator, "max_steps", 0))
 
-    def _payload(self, *, info: Optional[dict], action_success=None, changed=None,
-                 valid: bool = True, error: Optional[str] = None) -> dict:
-        # obs.signals is served in every mode, so the report is read even when `state` is not. Callers that have
-        # one from a step pass it; the rest take the current one, which is what obs describes anyway.
+    def _payload(self, *, info: Optional[dict], action_success=None, valid: bool = True,
+                 error: Optional[str] = None) -> dict:
         report = info if isinstance(info, dict) else self.env.get_info()
         out = codec.public_obs(frame=self.env.get_observation(), goal=self.goal,
                                actions=self._actions(), steps=self._steps(), max_steps=self._max_steps(),
-                               report=report, action_success=action_success, changed=changed)
+                               report=report, action_success=action_success)
         payload = {"obs": out, "valid": valid, "error": error, "done": self.episode_over,
                    "success": self.success, "session": self.id}
         if self.want_state:
@@ -125,6 +113,8 @@ class Session:
         if self.episode_over:
             raise SessionError("the episode is over; reset first" if self.policy.reset_again
                                else "the episode is over", 409)
+        # The emulator is live from construction, so a step starts the episode as much as a reset does.
+        self.started = True
         obs, reward, terminated, truncated, info = self.env.step_str(action)
         if obs is None and info is None:
             return self._payload(info=None, valid=False,
@@ -149,7 +139,7 @@ class Session:
         self.last_used = time.time()
         handle = uuid.uuid4().hex[:16]
         self.env.save_custom_state(handle)
-        self._handles[handle] = True
+        self._handles.add(handle)
         return {"handle": handle}
 
     def load(self, *, handle: str) -> dict:
@@ -164,23 +154,26 @@ class Session:
         return self._payload(info=None)
 
     def close(self) -> None:
-        for handle in list(self._handles):
+        with self.lock:
+            if self.closed:
+                return
+            self.closed = True
+            for handle in self._handles:
+                try:
+                    self.env.delete_custom_state(handle)
+                except Exception as exc:
+                    log_warn(f"deleting save state {handle}: {exc}", parameters=self._parameters)
+            self._handles.clear()
             try:
-                self.env.delete_custom_state(handle)
-            except Exception:
-                pass
-        self._handles.clear()
-        try:
-            self.env.close()
-        except Exception as exc:
-            log_warn(f"closing session {self.id}: {exc}", parameters=self._parameters)
-        if self.recorder:
-            self.recorder.finish(success=self.success)
+                self.env.close()
+            except Exception as exc:
+                log_warn(f"closing session {self.id}: {exc}", parameters=self._parameters)
+            if self.recorder:
+                self.recorder.finish(success=self.success)
 
 
 class Sessions:
-    #: run_benchmark.py's --max_steps, the budget a benchmark task is actually scored against. gameboy_worlds'
-    #: own default is 10000, which is not a benchmark budget.
+    # run_benchmark.py's --max_steps: the budget a benchmark task is scored against.
     DEFAULT_MAX_STEPS = 200
 
     def __init__(self, *, policy: Policy, max_sessions: int, idle_seconds: float,
@@ -194,6 +187,7 @@ class Sessions:
         self.max_steps = self.DEFAULT_MAX_STEPS if max_steps is None else max_steps
         self.session_name = session_name
         self._sessions: dict = {}
+        self._opening = 0
         self._lock = threading.Lock()
 
     def listed(self) -> list:
@@ -208,8 +202,6 @@ class Sessions:
              init_state: Optional[str] = None, want_state: bool = False) -> Session:
         if (task_id is None) == (game is None):
             raise SessionError("pass exactly one of task_id or game (with init_state)")
-        # Nothing to refuse: on test the scored block is served either way, on dev the full report is available.
-        # `want_state` only narrows a dev session that would rather not carry it.
         if task_id is not None:
             if not self.policy.visible(task_id=task_id, parameters=self._parameters):
                 raise SessionError("no such task", 404)
@@ -219,15 +211,21 @@ class Sessions:
             allowed = splits.free_play_states(parameters=self._parameters)
             if game not in allowed or init_state not in allowed[game]:
                 raise SessionError("no such start point", 404)
-        self._reap()
+        self.reap()
         with self._lock:
-            if len(self._sessions) >= self.max_sessions:
+            if len(self._sessions) + self._opening >= self.max_sessions:
                 raise SessionError("too many open sessions; close one first", 429)
-        session = Session(policy=self.policy, task_id=task_id, game=game, init_state=init_state,
-                          want_state=want_state, max_steps=self.max_steps, record_dir=self.record_dir,
-                          session_name=self.session_name, parameters=self._parameters)
-        with self._lock:
-            self._sessions[session.id] = session
+            self._opening += 1
+        session = None
+        try:
+            session = Session(policy=self.policy, task_id=task_id, game=game, init_state=init_state,
+                              want_state=want_state, max_steps=self.max_steps, record_dir=self.record_dir,
+                              session_name=self.session_name, parameters=self._parameters)
+        finally:
+            with self._lock:
+                self._opening -= 1
+                if session is not None:
+                    self._sessions[session.id] = session
         log_info(f"opened session {session.id} ({task_id or f'{game}/{init_state}'})",
                  parameters=self._parameters)
         return session
@@ -258,7 +256,7 @@ class Sessions:
         for session in sessions:
             session.close()
 
-    def _reap(self) -> None:
+    def reap(self) -> None:
         cutoff = time.time() - self.idle_seconds
         with self._lock:
             stale = [s for s in self._sessions.values() if s.last_used < cutoff]

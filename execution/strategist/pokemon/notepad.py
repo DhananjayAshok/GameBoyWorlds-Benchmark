@@ -1,7 +1,3 @@
-"""
-Unstructured thoughts the strategist keeps across episodes.
-"""
-
 from __future__ import annotations
 
 import difflib

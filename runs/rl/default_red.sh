@@ -17,4 +17,3 @@ bash scripts/rl/group_trajectories.sh --game "$game" --replay_buffer_folder $run
 
 python show_trajectories.py --name pokemon_red_default_sweep --trajectory_path $storage_dir/grouped_trajectories/$game/$run_name/grouped_global_high_reward_trajectories.pkl
 
-#sbatch rl

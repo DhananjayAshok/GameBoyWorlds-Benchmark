@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Runs the VLM agent to attempt tasks loaded from a task file (--tasks_path) using
-# a configurable executor. Each task is attempted up to --max_attempts times with
-# --max_steps per attempt. Results are scored and logged for evaluation and
-# potential fine-tuning data collection.
+# Runs the VLM agent on the tasks in --tasks_path with a configurable --executor. Each task
+# is attempted up to --max_attempts times with --max_steps per attempt.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -12,7 +10,6 @@ REQUIRED_ARGS=()
 populate_array ATTEMPT_TASKS_ESSENTIALS REQUIRED_ARGS
 populate_dict ATTEMPT_TASKS_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -47,7 +44,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do

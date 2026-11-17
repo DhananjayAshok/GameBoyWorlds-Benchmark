@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 # Reports zero-shot task proposal: for every init_state, the first frame the proposer saw,
-# the tasks it proposed, and the benchmark tasks actually anchored to that state. Writes
-# <results_dir>/debug/<game>/zeroshot/report.md.
-#
-# This is the only debug script that starts an emulator (the first frame is saved nowhere),
-# so it needs the game's ROM. No GPU and no VLM.
+# the tasks it proposed, and the benchmark tasks anchored to that state. Writes
+# <results_dir>/debug/<game>/zeroshot/report.md. Starts an emulator, so it needs the game's ROM.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -14,7 +11,6 @@ REQUIRED_ARGS=()
 populate_array DEBUG_MODEL_ESSENTIALS REQUIRED_ARGS
 populate_dict DEBUG_MODEL_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -49,9 +45,7 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"

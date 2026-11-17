@@ -1,29 +1,3 @@
-"""
-Curiosity/grouping diagnostics from the grouped-trajectory artifacts.
-
-Input
------
-<storage>/grouped_trajectories/<game>/<run_name>/<init_state>/grouped_global_high_reward_trajectories.pkl
-produced by scripts/rl/create_all_traj.sh. Each file is a list of groups; each group is a
-list of trajectories; each trajectory is the 5-tuple
-    (observations[N,144,160,1], actions[N-1], high_level_actions[N-1], rewards[N-1], init_state)
-
-Z-scores are not reported: they live in <storage>/replay_buffers/..., which create_traj.sh
-deletes once grouping succeeds. The per-trajectory reward arrays inside the grouped pickles
-are used instead.
-
-Memory
-------
-These pickles are enormous (~50 GB across 29 init_states for deja_vu_1/my_run, with a single
-23 GB file) and pickle has no partial-read mode, so each file is loaded whole, one at a time,
-and freed before the next. Files above --max_gb are skipped and reported as such. Per-init_state
-statistics are cached to summary.json, keyed on (size, mtime).
-
-Output
-------
-<results_dir>/debug/<game>/curiosity/report.md plus figures and frame strips beside it.
-"""
-
 import gc
 import json
 import os
@@ -46,7 +20,6 @@ GB = 1024 ** 3
 
 
 def gini(values) -> float:
-    """Gini coefficient of a non-negative array. 0 = perfectly even, →1 = all mass in one bin."""
     array = np.sort(np.asarray(values, dtype=float))
     n = len(array)
     if n == 0 or array.sum() == 0:
@@ -56,7 +29,6 @@ def gini(values) -> float:
 
 
 def lorenz_points(values):
-    """Cumulative-share points for a Lorenz curve, prefixed with the origin."""
     array = np.sort(np.asarray(values, dtype=float))
     if array.sum() == 0:
         return np.array([0.0, 1.0]), np.array([0.0, 1.0])
@@ -66,7 +38,7 @@ def lorenz_points(values):
 
 
 def _histogram(values, bins=60):
-    """Pre-binned histogram so the cache never stores per-trajectory arrays."""
+    # Pre-binned so the cache never stores per-trajectory arrays.
     values = np.asarray(values, dtype=float)
     if values.size == 0:
         return {"counts": [], "edges": []}
@@ -75,14 +47,7 @@ def _histogram(values, bins=60):
 
 
 def _is_trajectory(obj) -> bool:
-    """
-    True for the ``(observations, actions, high_level_actions, rewards, init_state)`` 5-tuple.
-    Discriminated on the trailing ``init_state`` string, since a group of five trajectories is
-    also length 5.
-
-    :return: Whether *value* is a trajectory.
-    :rtype: bool
-"""
+    # Discriminated on the trailing init_state string, since a group of five trajectories is also length 5.
     return (
         isinstance(obj, (tuple, list))
         and len(obj) == 5
@@ -93,14 +58,6 @@ def _is_trajectory(obj) -> bool:
 
 
 def classify(payload):
-    """
-    Work out what a ``grouped_*_high_reward_trajectories.pkl`` actually contains. Not every
-    such file holds trajectories; some are an index of paths to others.
-
-    :return: ``("groups", list[list[traj]])``, ``("trajectories", list[traj])``
-        (a flat file, treated as one group), ``("manifest", list[str])``, or
-        ``("unknown", None)``.
-    """
     if isinstance(payload, dict):
         payload = list(payload.values())
     if not isinstance(payload, (list, tuple)) or len(payload) == 0:
@@ -116,13 +73,11 @@ def classify(payload):
 
 
 def _summarise(groups) -> dict:
-    """Per-init_state counts, lengths and rewards. Returns only aggregates (cache-safe)."""
     sizes = [len(group) for group in groups]
     lengths, total_rewards, max_rewards = [], [], []
     malformed = 0
     for group in groups:
         for trajectory in group:
-            # One odd entry must not lose a whole init_state.
             if not _is_trajectory(trajectory):
                 malformed += 1
                 continue
@@ -152,7 +107,6 @@ def _summarise(groups) -> dict:
 
 
 def _expected_strips(images_dir, state, group_sizes, max_groups, max_traj_per_group):
-    """Strip paths a full render would produce, from cached group sizes alone."""
     expected = []
     for group_i, size in enumerate(group_sizes):
         if max_groups and group_i >= max_groups:
@@ -176,7 +130,6 @@ def _plot_cached_hist(ax, hist, colour, xlabel, title):
 
 
 def _merge_hists(stats, key):
-    """Sum pre-binned histograms across init_states onto a shared grid."""
     usable = [stats[s][key] for s in stats if stats[s][key]["counts"]]
     if not usable:
         return {"counts": [], "edges": []}

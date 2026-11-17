@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # Benchmark sweep over a locally served (vLLM) model. One log file per arm under logs/.
-#
-# Absorbs the former benchmark_vllm.sh and benchmark_vllm_qwen.sh, which differed only in how
-# the model reached them. Does NOT start the server — bring it up first, or use
-# runs/pipeline/gemma_sweep.sh, which owns a server for the whole sweep.
+# Does NOT start the server — bring it up first with scripts/core/serve_vllm.sh.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 source configs/config.env || { echo "Could not source configs/config.env"; exit 1; }
@@ -21,7 +18,6 @@ ARGS["executor_max_new_tokens"]=16000
 ARGS["supervisor_max_new_tokens"]=10000
 ARGS["log_dir"]="logs/benchmark_vllm"
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -56,7 +52,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do

@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\blued\\\\OneDrive\\\\Desktop\\\\Projects\\\\GameBoyRL\\\\GameBoyWorlds\\\\src\" -Recurse -File)",
-      "Bash(Select-Object -ExpandProperty FullName)"
-    ]
-  }
-}

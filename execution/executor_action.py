@@ -8,7 +8,6 @@ from gameboy_worlds.emulation.parser import StateParser
 def _get_quadrants(
     grid_cells: Dict[Tuple[int, int], np.ndarray],
 ) -> Dict[str, Dict]:
-    """Split grid_cells into four quadrants and stitch each into a screen image."""
     coords = grid_cells.keys()
     xs = sorted(set(c[0] for c in coords))
     ys = sorted(set(c[1] for c in coords))
@@ -49,14 +48,7 @@ def coords_to_string(coords: List[Tuple[int, int]]) -> str:
 
 
 class ExecutorAction(ABC):
-    """
-    Passive (non-interactive) actions an Executor calls to understand the game state. Unlike
-    HighLevelAction, ExecutorAction does NOT call ``emulator.step``.
-
-    :param vlm_call: The owning executor's recording VLM entry point
-        (:meth:`~execution.executors.Executor._vlm_call`).
-    :param parameters: The owning executor's resolved parameters.
-    """
+    """Passive action an Executor calls to read the game state; never calls ``emulator.step``."""
 
     def __init__(self, vlm_call: Callable[..., Any], parameters: Dict[str, Any]) -> None:
         self._vlm_call = vlm_call
@@ -64,85 +56,23 @@ class ExecutorAction(ABC):
 
     @abstractmethod
     def _execute(self, info: Dict[str, Dict[str, Any]], **kwargs) -> Tuple[Dict[str, Any], int]:
-        """
-        Executes the specified executor action.
-
-        :param info: Full state information from the environment, as returned by
-            :meth:`~gameboy_worlds.interface.Environment.get_info`.
-        :type info: Dict[str, Dict[str, Any]]
-        :param kwargs: Additional arguments required for the specific executor action.
-        :return: A tuple containing:
-
-            - A dictionary with execution return information.
-            - An integer representing the action success code.
-        :rtype: Tuple[Dict[str, Any], int]
-        """
         raise NotImplementedError
 
     def is_valid(self, info: Dict[str, Dict[str, Any]], **kwargs) -> Tuple[bool, Optional[str]]:
-        """
-        Validates the game state and arguments before execution. Valid by default.
-        Subclasses may override to reject invalid calls early.
-
-        :param info: Full state information from the environment.
-        :type info: Dict[str, Dict[str, Any]]
-        :return: ``(valid, reason)``, where ``reason`` explains a rejection and is
-            ``None`` when the call is valid.
-        :rtype: Tuple[bool, Optional[str]]
-        """
         return True, None
 
     @classmethod
     @abstractmethod
     def verbalize(cls) -> str:
-        """
-        Prompt-ready description of this tool call, in the exact format the VLM is expected
-        to reproduce. Must stay in sync with :meth:`string_to_kwargs`.
-
-        Include the tool name, every parameter with its type, and one concrete example. The
-        invocation syntax must not contain ``:`` — use ``=`` for arguments.
-
-        Example return value::
-
-            "locate(target=<str>) — find a named object on the current screen.\\n"
-            "  target — the object to search for (e.g. 'pokémon center door').\\n"
-            "  Example: locate(target=pokémon center door)"
-
-        :return: Prompt-ready description of the tool and its call syntax.
-        :rtype: str
-        """
+        # The invocation syntax must not contain ``:``; use ``=`` for arguments.
         raise NotImplementedError
 
     @classmethod
     @abstractmethod
     def string_to_kwargs(cls, action_str: str) -> Dict[str, Any]:
-        """
-        Parse a tool-call string (in the format declared by :meth:`verbalize`)
-        into a ``kwargs`` dictionary suitable for passing to :meth:`execute`. Must stay in
-        sync with :meth:`verbalize`.
-
-        :param action_str: Raw action string as output by the VLM, matching the
-            format advertised in :meth:`verbalize`.
-        :type action_str: str
-        :return: Keyword arguments to forward to :meth:`execute`.
-        :rtype: Dict[str, Any]
-        """
         raise NotImplementedError
 
     def execute(self, info: Dict[str, Dict[str, Any]], **kwargs) -> Tuple[Optional[Dict[str, Any]], Optional[int]]:
-        """
-        Public entry point. Validates arguments then delegates to :meth:`_execute`.
-
-        :param info: Full state information from the environment.
-        :type info: Dict[str, Dict[str, Any]]
-        :param kwargs: Additional arguments forwarded to :meth:`_execute`.
-        :return: A tuple containing:
-
-            - A dictionary with execution return information, or ``{"invalid": reason}``
-              if the call was rejected by :meth:`is_valid`.
-            - An integer success code, or ``None`` if the call was rejected.
-        :rtype: Tuple[Dict[str, Any], Optional[int]]
-        """
         valid, reason = self.is_valid(info, **kwargs)
         if not valid:
             return {"invalid": reason or "invalid call"}, None
@@ -150,30 +80,7 @@ class ExecutorAction(ABC):
 
 
 class LocateAction(ExecutorAction):
-    """
-    Locates a target in the current screen by recursively searching quadrants.
-
-    Divides the screen into grid cells, then recursively narrows down which
-    quadrant contains the target using VLM-based object detection. Returns both
-    high-confidence (definitive) and lower-confidence (potential) cell coordinates.
-
-    The target can be a key in ``pre_described_options`` (uses a curated description)
-    or any free-form string (used directly as the VLM description).
-
-    Action Success Codes:
-    - -1: Object not found
-    -  0: Exactly one definitive match
-    -  1: Multiple definitive matches
-    -  2: Exactly one potential match (no definitives)
-    -  3: Multiple potential matches (no definitives)
-
-    Action Returns:
-    - ``found`` (bool): whether the target was found at any level.
-    - ``potential_cells`` (List[Tuple[int, int]]): grid coords that may contain the target.
-    - ``definitive_cells`` (List[Tuple[int, int]]): grid coords that with high confidence contain the target.
-    - ``potential_cells_str`` (str): human-readable form of potential_cells.
-    - ``definitive_cells_str`` (str): human-readable form of definitive_cells.
-    """
+    """Success codes: -1 not found, 0 one definitive, 1 many definitive, 2 one potential, 3 many potential."""
 
     pre_described_options: Dict[str, str] = {}
     """Maps known target names to VLM-ready descriptions. Subclasses override to add entries."""
@@ -205,16 +112,6 @@ class LocateAction(ExecutorAction):
         grid_cells: Dict[Tuple[int, int], np.ndarray],
         description: str,
     ) -> Tuple[bool, List[Tuple[int, int]], List[Tuple[int, int]]]:
-        """
-        Recursively divides the grid cells into quadrants and checks each quadrant for the target.
-
-        :param grid_cells: The dict of the subset of grid cells to search over.
-        :type grid_cells: Dict[Tuple[int, int], np.ndarray]
-        :param description: VLM-ready description of the target.
-        :type description: str
-        :return: ``(found, potential_cells, definitive_cells)``
-        :rtype: Tuple[bool, List[Tuple[int, int]], List[Tuple[int, int]]]
-        """
         quadrant_keys = ["tl", "tr", "bl", "br"]
         if len(grid_cells) == 1:
             screen = list(grid_cells.values())[0]
@@ -258,16 +155,6 @@ class LocateAction(ExecutorAction):
     def do_location(
         self, info: Dict[str, Any], description: str
     ) -> Tuple[Dict[str, Any], int]:
-        """
-        Performs the locate action to find the target described by ``description`` in the current screen.
-
-        :param info: Full state information from the environment.
-        :type info: Dict[str, Any]
-        :param description: VLM-ready description of the target to locate.
-        :type description: str
-        :return: Result dict and action success code.
-        :rtype: Tuple[Dict[str, Any], int]
-        """
         frame = info["core"]["current_frame"]
         grid_cells = StateParser.capture_grid_cells(frame)
         found, potential_cells, definitive_cells = self.get_cells_found(grid_cells, description)

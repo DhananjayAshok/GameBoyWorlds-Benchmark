@@ -1,21 +1,15 @@
-# DELTA TODO: 2: Change this to not loop over init state groups but just use init state name as init state group names. Do not gather trajectories here.
-# This becomes the curiosity exploration only vertical for task discovery.
-
 #!/usr/bin/env bash
-# Batch wrapper that runs create_traj.sh for every init_state registered for a
-# game in TRAIN_STATES. Regenerates the state dictionary from GameBoyWorlds before
-# iterating, so it always reflects the current set of available training states.
+# Batch wrapper that runs create_traj.sh for every init_state registered for a game in
+# TRAIN_STATES, regenerating the state dictionary from GameBoyWorlds first.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 python "$PROJECT_ROOT/python_funcs.py" task_dictionary || { echo "Could not regenerate train states"; exit 1; }
 source scripts/core/all_train_states.sh
 
-# Script-specific defaults and required args
 declare -A ARGS
 REQUIRED_ARGS=()
 populate_array CREATE_TRAJ_ESSENTIALS REQUIRED_ARGS
-# init_state is supplied by the TRAIN_STATES loop below, not the CLI, so drop it from
-# REQUIRED_ARGS (keeping game and any other create_traj essentials required).
+# init_state comes from the TRAIN_STATES loop below, not the CLI.
 for i in "${!REQUIRED_ARGS[@]}"; do
     [[ "${REQUIRED_ARGS[$i]}" == "init_state" ]] && unset 'REQUIRED_ARGS[$i]'
 done
@@ -23,7 +17,6 @@ REQUIRED_ARGS=("${REQUIRED_ARGS[@]}")
 populate_dict CREATE_TRAJ_DEFAULTS ARGS
 
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -58,14 +51,12 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"
 done
 
-# error out if run_name is not set, is default or is iterative
 if [[ -z "${ARGS["run_name"]}" ]] || [[ "${ARGS["run_name"]}" == "default" ]] || [[ "${ARGS["run_name"]}" == "iterative" ]]; then
     echo "Error: --run_name is required and cannot be 'default' or 'iterative'."
     usage

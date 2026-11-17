@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# Every playthrough, in sequence, on one model. The four Pokemon titles the strategist
-# plays; see runs/games.sh POKEMON_GAMES.
-#
-# Sequential on purpose: each playthrough owns an emulator and a long wall clock, so these
-# are normally one slurm job each (slurm/playthrough_*.sh). This driver is for running the
-# set on one node.
+# Every Pokemon playthrough (runs/games.sh POKEMON_GAMES), one after another, on one model.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 source configs/config.env || { echo "Could not source configs/config.env"; exit 1; }
@@ -15,10 +10,9 @@ REQUIRED_ARGS=("model")
 
 ARGS["games"]=none
 ARGS["vlm_kind"]="openrouter"
-ARGS["max_episodes"]=75
+ARGS["max_episodes"]=400
 ARGS["name_suffix"]="none"
 ARGS["init_state"]="initial"
-ARGS["resume"]=true
 
 # --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
@@ -64,9 +58,7 @@ done
 
 mapfile -t games < <(resolve_games POKEMON_GAMES "${ARGS["games"]}") || exit 1
 
-# A playthrough's --name keys its state directory, so it has to be stable across resumes and
-# distinct per (game, model). "<title>_<suffix>" — red_flash, brown_gemma — is the convention
-# the existing runs use.
+# --name keys the state directory: stable across resumes, distinct per (game, model).
 suffix="${ARGS["name_suffix"]}"
 if [[ "$suffix" == "none" ]]; then
     suffix=$(model_save_name "${ARGS["model"]}")
@@ -86,8 +78,7 @@ for game in "${games[@]}"; do
             --model "${ARGS["model"]}" \
             --vlm_kind "${ARGS["vlm_kind"]}" \
             --max_episodes "${ARGS["max_episodes"]}" \
-            --init_state "${ARGS["init_state"]}" \
-            --resume "${ARGS["resume"]}"; then
+            --init_state "${ARGS["init_state"]}"; then
         echo "FAILED: $game | $name"
         FAILED_RUNS+="$name "
     fi

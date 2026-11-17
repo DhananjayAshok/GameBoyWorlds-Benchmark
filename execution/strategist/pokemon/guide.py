@@ -1,8 +1,3 @@
-"""
-Rules of thumb the strategist follows when something happens in the game: seeded by hand, and added
-to by the strategist as it plays.
-"""
-
 from __future__ import annotations
 
 import os
@@ -30,6 +25,7 @@ DEFEAT_FRAMES_LINE = ("The first image is the battle screen when the player star
                       "the last battle screen before the defeat.")
 DEFEAT_NO_FRAMES_LINE = ("No screenshots of the battle were recorded, so judge it from the report and the battle "
                          "log above.")
+
 
 @dataclass
 class GuideRule:
@@ -72,6 +68,8 @@ def door_trigger(gmap: GlobalMap, source: int, destination: int) -> Optional[str
 
 
 class StrategyGuide(StrategistArtifact):
+    """Rules of thumb keyed by game events: seeded from guide_seeds.yaml, extended by the strategist."""
+
     def __init__(self) -> None:
         self.rules: List[GuideRule] = []
         self.removed: List[GuideRule] = []
@@ -233,9 +231,7 @@ def _parse_reflection(guide: StrategyGuide):
 def reflect_on_defeat(guide: StrategyGuide, task: str, goal: str, where: str, digest: str, battle: str,
                       images: List[Any], vlm_call, game: str, episode: int,
                       parameters: Optional[dict] = None) -> Optional[Dict[str, Any]]:
-    # A defeat is not always fought through a CombatExecutor, so there is not always a battle frame to show. The
-    # prompt has to say which case it is in, and the call must leave `images` out rather than pass an empty list:
-    # the inference layer rejects `images=[]`, which used to end the run on the first such defeat.
+    # Not every defeat has battle frames, and the inference layer rejects images=[], so the key is left out.
     frames = (DEFEAT_FRAMES_LINE if images else DEFEAT_NO_FRAMES_LINE)
     prompt = (P.DEFEAT_REFLECTION_PROMPT.replace("[GAME]", game).replace("[TASK]", task).replace("[GOAL]", goal)
               .replace("[WHERE]", where).replace("[DIGEST]", digest).replace("[BATTLE]", battle)

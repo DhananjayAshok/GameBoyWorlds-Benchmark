@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# Loads a trained model by experiment name and evaluates it on a test environment
-# without further training. The test game/init_state can differ from the training
-# environment, making this useful for out-of-distribution evaluation. Invoked
-# directly or as the evaluation phase of default_rl.sh.
+# Loads a trained model by --exp_name and evaluates it on a test environment, which may
+# differ from the training one. Also the evaluation phase of default_rl.sh.
 
 source scripts/core/utils.sh
 
-# Define Defaults
 declare -A ARGS
 declare -A ARGS
 
@@ -19,14 +16,11 @@ ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 
 USAGE_STR="Usage: $0"
 
-# Add Required to string
 for req in "${REQUIRED_ARGS[@]}"; do
     USAGE_STR+=" --$req <value>"
 done
 
-# Add Optionals to string
 for opt in "${!ARGS[@]}"; do
-    # Only list if NOT in required (to avoid double listing)
     if [[ ! " ${REQUIRED_ARGS[*]} " =~ " ${opt} " ]]; then
         USAGE_STR+=" [--$opt <value> (default: ${ARGS[$opt]})]"
     fi
@@ -37,11 +31,9 @@ function usage() {
     exit 1
 }
 
-# 3. Parser
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --*)
-            # Extract the name (remove the leading --)
             FLAG=${1#--}
             VALID=false
             for allowed in "${ALLOWED_FLAGS[@]}"; do
@@ -67,7 +59,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 4. Strict Validation
 for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then
         echo "Error: Argument --$req is required."
@@ -77,19 +68,16 @@ done
 
 if [ "$FAILED" = true ]; then usage; fi
 
-# Print active variables
 echo "Script $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"
 done
 
-# if the curiosity_module is not combinationbuffer, force ocr_alpha to be 0.0
 if [[ "${ARGS["curiosity_module"]}" != "combinationbuffer" ]]; then
     ARGS["ocr_alpha"]=0.0
 fi
 
 
-# Logic here:
 exp_name="${ARGS["exp_name"]}"
 test_env_id=$(get_string_from_args "env_id" ARGS)
 if [[ -z "$test_env_id" ]]; then

@@ -1,8 +1,3 @@
-"""
-What the strategist is trying to achieve: a tree of goals, and the standing goals it can
-fall back on.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
@@ -77,18 +72,8 @@ class GoalSubtree:
     def nodes(self) -> List[GoalNode]:
         return [tree.root for tree in self.walk()]
 
-    def leaves(self) -> List["GoalSubtree"]:
-        return [tree for tree in self.walk() if not tree.subtrees]
-
-    def find(self, description: str) -> Optional["GoalSubtree"]:
-        wanted = description.strip().lower()
-        return next((tree for tree in self.walk()
-                     if tree.root.description.strip().lower() == wanted), None)
-
-    def open_leaves(self) -> List["GoalSubtree"]:
-        return [tree for tree in self.leaves() if tree.root.status in OPEN_STATUSES]
-
     def frontier(self) -> Optional["GoalSubtree"]:
+        """The deepest open goal, following the first open child at each level."""
         if self.root.status not in OPEN_STATUSES:
             return None
         for subtree in self.subtrees:
@@ -117,13 +102,6 @@ class GoalSubtree:
             return self
         return next((found for subtree in self.subtrees if (found := subtree.at(path[1:])) is not None), None)
 
-    def render(self, indent: int = 0) -> str:
-        details = f" -- {self.root.details}" if self.root.details else ""
-        lines = [f"{'  ' * indent}- {self.root.description} [{self.root.status}]{details}"]
-        for subtree in self.subtrees:
-            lines.append(subtree.render(indent + 1))
-        return "\n".join(lines)
-
 
 class GoalTree(StrategistArtifact):
     frontier_path: Optional[GoalPath] = None
@@ -143,13 +121,6 @@ class GoalTree(StrategistArtifact):
 
     def path_to(self, subtree: GoalSubtree) -> Optional[GoalPath]:
         return self.tree.path_to(subtree)
-
-    @update
-    def add_subtree(self, subtree: GoalSubtree) -> GoalSubtree:
-        frontier = self.frontier()
-        if frontier is None:
-            log_error(f"No incomplete goal to attach {subtree.root.description!r} under.")
-        return frontier.add(subtree)
 
     @update
     def add_under(self, path: GoalPath, child) -> GoalSubtree:
@@ -176,9 +147,6 @@ class GoalTree(StrategistArtifact):
     def set_frontier(self, path: GoalPath, since: int) -> None:
         self._at(path).root.frontier_since = since
         self.frontier_path = path
-
-    def render(self) -> str:
-        return self.tree.render()
 
     def diff(self, old: "GoalTree") -> Dict[str, Any]:
         new_nodes = self.tree.paths()
@@ -230,24 +198,12 @@ class PokemonGoalTree(GoalTree):
         super().__init__(tree)
 
 
-def default_goals() -> List[GoalNode]:
-    return [
-        GoalNode(description="Explore", details="Speak to everyone in the area.",
-                 source="default"),
-        GoalNode(description="Train", details="Level up your Pokemon",
-                 source="default"),
-        GoalNode(description="Progress", details="Journey to the next unvisited city",
-                 source="default"),
-    ]
-
-
-# ----------------------------------------------------------------------------
-# Prompt pieces
-# ----------------------------------------------------------------------------
+def goal_path_text(path: GoalPath) -> str:
+    return " > ".join(path[1:] or path)
 
 
 def _goal_text(path: GoalPath, subtree: GoalSubtree) -> str:
-    text = " > ".join(path[1:] or path)
+    text = goal_path_text(path)
     if subtree.root.details:
         text += f"\nDetails: {subtree.root.details}"
     return text
@@ -258,10 +214,6 @@ def frontier_text(goals: GoalTree) -> str:
     if subtree is None:
         return "(every goal is finished)"
     return _goal_text(goals.path_to(subtree), subtree)
-
-
-def goal_path_text(path: GoalPath) -> str:
-    return " > ".join(path[1:] or path)
 
 
 def _children_block(subtree: GoalSubtree) -> str:
@@ -303,11 +255,6 @@ def _goal_prompt(template: str, game: str, path: GoalPath, subtree: GoalSubtree,
     return (template.replace("[GAME]", game)
             .replace("[GOAL]", _goal_text(path, subtree))
             .replace("[NOTEPAD]", _notepad_text(notepad)))
-
-
-# ----------------------------------------------------------------------------
-# Parsers
-# ----------------------------------------------------------------------------
 
 
 def _distinct(values: List[str], key: str) -> Tuple[Optional[List[str]], Optional[str]]:
@@ -413,11 +360,6 @@ def _parse_decision(choices: Tuple[str, ...], siblings: List[str]) -> Parser:
     return parse
 
 
-# ----------------------------------------------------------------------------
-# Subgoal creation
-# ----------------------------------------------------------------------------
-
-
 def create_subgoals(goals: GoalTree, knowledge: KnowledgeTree, current: str, explore: str, notepad: str,
                     navigator: Callable[[str], Optional[str]], vlm_caller: VLMCaller, game: str,
                     episode_number: int, unsuccessful_for: int = 0, parameters: Optional[dict] = None) -> None:
@@ -470,11 +412,6 @@ def create_subgoals(goals: GoalTree, knowledge: KnowledgeTree, current: str, exp
             goals.add_under(path, subgoal, episode_number=episode_number)
         goals.edit(path, achievable_without_subgoals=None, episode_number=episode_number)
         goals.set_frontier(goals.path_to(goals.frontier()), episode_number, episode_number=episode_number)
-
-
-# ----------------------------------------------------------------------------
-# Completion check
-# ----------------------------------------------------------------------------
 
 
 def check_goals(goals: GoalTree, digest: str, notepad: str, vlm_caller: VLMCaller, game: str,

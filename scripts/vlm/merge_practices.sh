@@ -1,15 +1,7 @@
 #!/usr/bin/env bash
-# Merges the train/validation datasets of several practice dirs into one pair, tagging every
-# row with the practice dir it came from (a `source` column). Used by
-# curiosity_and_zeroshot_all.sh to combine the curiosity and zeroshot verticals into
-# a single fine-tuning set.
-#
-# Images are referenced, not copied — the dataset CSVs hold absolute paths into each source's
-# images/ dir, so the merged CSV points at the originals.
-#
-# NOTE: "none" is a legitimate value of --balance here (no downsampling), not the usual
-# "argument absent" sentinel. There is no --overwrite: the merge always regenerates, since it
-# costs seconds against upstream legs that take days, and a stale merge would be trained on.
+# Merges the train/validation datasets of several practice dirs (--practice_paths) into one
+# pair at --save_path, tagging every row with its source. Images are referenced, not copied.
+# "none" is a legitimate value of --balance (no downsampling). The merge always regenerates.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -19,7 +11,6 @@ REQUIRED_ARGS=()
 populate_array MERGE_PRACTICES_ESSENTIALS REQUIRED_ARGS
 populate_dict MERGE_PRACTICES_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -54,9 +45,7 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"

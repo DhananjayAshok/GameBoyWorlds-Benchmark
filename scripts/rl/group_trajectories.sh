@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Post-processes a collected replay buffer by clustering trajectories based on
-# observation similarity (z-score gating via --z_min). Writes grouped trajectory
-# files to --save_path for downstream VLM task inference. Called at the end of
-# create_traj.sh and can be run standalone to re-cluster without retraining.
+# Clusters the trajectories of a collected replay buffer by observation similarity
+# (z-score gating via --z_min) and writes the groups to --save_path. Called by create_traj.sh.
 
 source scripts/core/utils.sh
 
@@ -18,14 +16,11 @@ ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 
 USAGE_STR="Usage: $0"
 
-# Add Required to string
 for req in "${REQUIRED_ARGS[@]}"; do
     USAGE_STR+=" --$req <value>"
 done
 
-# Add Optionals to string
 for opt in "${!ARGS[@]}"; do
-    # Only list if NOT in required (to avoid double listing)
     if [[ ! " ${REQUIRED_ARGS[*]} " =~ " ${opt} " ]]; then
         USAGE_STR+=" [--$opt <value> (default: ${ARGS[$opt]})]"
     fi
@@ -36,11 +31,9 @@ function usage() {
     exit 1
 }
 
-# 3. Parser
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --*)
-            # Extract the name (remove the leading --)
             FLAG=${1#--}
             VALID=false
             for allowed in "${ALLOWED_FLAGS[@]}"; do
@@ -66,7 +59,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 4. Strict Validation
 for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then
         echo "Error: Argument --$req is required."
@@ -76,13 +68,11 @@ done
 
 if [ "$FAILED" = true ]; then usage; fi
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"
 done
 
-# error out if replay_buffer_folder is none
 if [[ "${ARGS["replay_buffer_folder"]}" == "none" ]]; then
     echo "Error: Argument --replay_buffer_folder cannot be none."
     exit 1

@@ -1,67 +1,3 @@
-"""
-Called by scripts/vlm/attempt_tasks.sh (via vlm.py attempt_tasks). Use --help for CLI options.
-
-Input
------
-A JSONL file produced by propose_tasks_zeroshot.py.
-Each line: {"init_state": <str>, "tasks": [<task_str>, ...]}
-
-Processing
-----------
-For each line (line_number = 0-indexed position in the JSONL):
-  1. Create ONE environment for that init_state (controller_variant="low_level").
-     Do not reuse or reset this env across different init_states.
-  2. For each task in tasks (task_index = 0-indexed position in the task list):
-       group_idx  = f"{line_number}_{task_index}"
-       Reset env to init_state, then run AttemptCheckerSupervisor(
-           task          = task_str,
-           executor_class = <click option>,
-           env           = env for this init_state,
-           ...
-       ).evaluate()
-       Collect result dict (report, success, safe_success_point, description, reasoning,
-       termination_reason, n_env_steps, max_steps). The calls and steps behind it are
-       reached through result["report"], not carried as separate keys.
-  3. Checkpoint after each group_idx (see below).
-
-CLI options
------------
-  --tasks_path        Path to the input JSONL file (required)
-  --executor          Short name of the executor class (default: single_actions)
-  --max_steps         Env-step budget per task attempt (default: 50)
-  --lookback          Frames passed to checker VLM (default: 8)
-  (game, model_name, vlm_kind, overwrite, verbose come from the parent click group)
-
-Output
-------
-Directory: same path as tasks_path, minus extension and _attempts.
-  e.g. ".../zeroshot_tasks.jsonl" -> ".../zeroshot_tasks_attempts/"
-
-Inside that directory:
-  all_trajectories.csv
-    Columns: group_idx, init_state, task_string, success, n_tries
-    One row per (init_state x task) attempted.
-
-  success_trajectories.json
-    dict[str, str] — group_idx -> task_string for only those that succeeded, matching the structure of infer_task.py
-
-
-  success_trajectories.pkl
-    dict[str, tuple] — group_idx -> (observations, actions, high_level_actions, rewards, init_state)
-    observations: np.ndarray of shape (n_steps+1, H, W, C) — frame_before of step 0 + all frame_afters
-    actions:            list[Type[HighLevelAction]] — one per step (executor produces high-level only)
-    high_level_actions: list[tuple[Type[HighLevelAction], dict]] — (action_class, kwargs) per step
-    rewards:            list[float] — one per step
-
-Checkpointing
--------------
-  checkpoint.json — dict[group_idx -> {init_state, task_string, success, description, reasoning}]
-  checkpoint.pkl  — dict[group_idx -> trajectory tuple]
-  On startup: if checkpoint files exist and --overwrite not set, load them and skip
-  any group_idx already present.
-  On completion: delete checkpoint files and write final outputs.
-"""
-
 import json
 import os
 import pickle
@@ -81,13 +17,7 @@ from python_scripts import paths
 from utils import log_info, log_warn, log_error, sum_optional, VLM, HuggingFaceModel
 
 
-# The critique prompts and the slice-then-consolidate implementation live in
-# execution/supervisors/checker.py so every caller derives hints from identical prompts.
-
-
 def _reconstruct_trajectory(env_steps: list, init_state: str) -> tuple:
-    """Build a (observations, actions, high_level_actions, rewards, init_state) tuple
-    from a list of EnvironmentStepRecords produced by an executor run."""
     if not env_steps:
         return None
     # observations[i] is the frame before action i; observations[-1] is the final frame
@@ -96,7 +26,7 @@ def _reconstruct_trajectory(env_steps: list, init_state: str) -> tuple:
     )
     actions = [
         None for s in env_steps
-    ]  # executor produces only high-level actions, so low-level is None
+    ]  # executors produce only high-level actions
     high_level_actions = [(s.action_class, s.kwargs) for s in env_steps]
     rewards = [s.reward for s in env_steps]
     return (observations, actions, high_level_actions, rewards, init_state)
@@ -120,7 +50,6 @@ def _attempt_task(
     parameters: dict,
     verbose: bool,
 ) -> tuple[dict, tuple | None]:
-    """Run all attempts for one (init_state, task) pair in its own env, then close it."""
     env = get_environment(
         game=game,
         controller_variant=controller_variant,
@@ -197,21 +126,11 @@ def _attempt_task(
         "description": result.get("description", ""),
         "reasoning": result.get("reasoning", ""),
         "n_tries": attempt + 1,
-        # The hint in force on the final attempt. n_tries alone says a hint was derived but
-        # not what it said, and this is the information the retained trajectory was actually
-        # produced under.
         "final_hint": hint,
-        # How the final attempt's executor stopped, and how much budget it left. With
-        # allow_self_termination on, "agent_done" is the executor's own claim to have
-        # finished; `success` above is the checker judging the same trajectory
-        # independently. Keeping both is what lets `debug.py attempt` report how often the
-        # completion check is wrong — the failure that silently truncates a trajectory and
-        # then ships it forward as a success.
+        # "agent_done" is the executor's own claim; success above is the checker's independent verdict.
         "termination_reason": result.get("termination_reason"),
         "n_env_steps": result.get("n_env_steps"),
         "max_steps": result.get("max_steps"),
-        # What hint derivation cost across every attempt. Nothing else records it: these
-        # calls are made outside any supervisor, so they land on no SupervisorReport.
         "critique_input_tokens": critique_input_tokens,
         "critique_output_tokens": critique_output_tokens,
     }
@@ -287,8 +206,6 @@ def attempt_tasks_cmd(
     if not os.path.exists(tasks_path):
         log_error(f"tasks_path '{tasks_path}' does not exist.", parameters)
 
-    # The stem rule lives in paths.py, which also exposes the identity-keyed twin
-    # (paths.attempts_dir) that the debug tools and Bash use to find what this writes.
     out_dir = paths.attempts_dir_from_stem(tasks_path, executor=executor_name,
                                            controller_variant=controller_variant)
     os.makedirs(out_dir, exist_ok=True)
@@ -306,22 +223,11 @@ def attempt_tasks_cmd(
     if os.path.exists(checkpoint_json) and not overwrite:
         with open(checkpoint_json, "r") as f:
             results = json.load(f)
-        # An absent pkl means every result is unpaired, which the reconciliation below
-        # turns into a full recompute. Reading it unconditionally would instead be a
-        # FileNotFoundError on a resume where the small json write landed and the large
-        # pkl write did not (SIGTERM between the two, or a /project2 quota failure).
         trajectories = {}
         if os.path.exists(checkpoint_pkl):
             with open(checkpoint_pkl, "rb") as f:
                 trajectories = pickle.load(f)
-        # A group is "done" only when BOTH its result and its trajectory are on disk.
-        # The two checkpoints are separate non-atomic writes (json first), so a run
-        # killed between them resumes with a result whose trajectory never landed. The
-        # skip check below keys off `results` alone, so without this that group would be
-        # skipped forever and its frames lost silently — and since
-        # success_trajectories.{json,pkl} are derived from these two different dicts, the
-        # json would claim a success the pkl has no trajectory for. Dropping the unpaired
-        # results makes the pair the unit of truth and the mismatch self-healing.
+        # A group is done only when both its result and its trajectory are on disk: the two writes are not atomic.
         unpaired = [group_idx for group_idx in results if group_idx not in trajectories]
         for group_idx in unpaired:
             del results[group_idx]
@@ -352,11 +258,7 @@ def attempt_tasks_cmd(
                 continue
             jobs.append((group_idx, init_state, task_str))
 
-    # (init_state, task) attempt pipelines each create and close their own env,
-    # so they're independent and can run concurrently. --verbose runs interleaved
-    # print debugging and HuggingFaceModel isn't safe for concurrent generate()
-    # calls — both fall back to max_workers=1, which processes jobs one at a time
-    # in submission order (i.e. identical to the old sequential loop).
+    # HuggingFaceModel is not safe for concurrent generate() calls.
     effective_workers = (
         1 if (verbose or isinstance(critique_vlm._vlm, HuggingFaceModel)) else max_concurrency
     )
@@ -396,8 +298,7 @@ def attempt_tasks_cmd(
             with open(checkpoint_pkl, "wb") as f:
                 pickle.dump(trajectories, f)
 
-    # all_trajectories.csv goes first and unconditionally: checkpoint.json, the only other
-    # copy of description/reasoning/final_hint, is deleted below on a successful run.
+    # Written first and unconditionally: checkpoint.json, the only other copy of these fields, is deleted below.
     pd.DataFrame([
         {
             "group_idx": group_idx,
@@ -420,8 +321,7 @@ def attempt_tasks_cmd(
     success_trajectories = {gid: traj for gid, traj in trajectories.items() if results.get(gid, {}).get("success")}
     success_json = {gid: res["task_string"] for gid, res in results.items() if res.get("success")}
 
-    # The success files are NOT written, so build_info fails loudly on a missing input. The
-    # checkpoints are left for inspection.
+    # The success files are not written, so build_info fails loudly on a missing input.
     if not success_json:
         log_error(
             f"attempt_tasks: 0 of {len(results)} attempted tasks succeeded, so there are no "

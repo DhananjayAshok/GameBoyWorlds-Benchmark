@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The gemma no-doc subgoal sweep followed by the info-parametric sweep, with one vLLM server
-# held for both. Was runs/runner.sh.
+# held for both.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 source configs/config.env || { echo "Could not source configs/config.env"; exit 1; }

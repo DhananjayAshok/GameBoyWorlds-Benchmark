@@ -1,14 +1,7 @@
 #!/usr/bin/env bash
-# Data collection followed by info-document construction, for one benchmark game.
-#
-#   stage 1  curiosity_and_zeroshot_all.sh — run once per TRAIN game of --game, producing
-#            the curiosity annotation and the zeroshot success trajectories the documents
-#            are distilled from.
-#   stage 2  create_all_info_docs.sh — run once for --game itself; it re-derives the same
-#            train-game list and builds a document per (train game, source).
-#
-# Stage 1 loops the train games rather than delegating: curiosity_and_zeroshot_all takes a
-# single --game and knows nothing about the train/bench split.
+# Data collection followed by info-document construction, for one benchmark game:
+# curiosity_and_zeroshot_all.sh once per train game of --game, then create_all_info_docs.sh
+# once for --game itself.
 
 source scripts/core/utils.sh || { echo "Could not source utils"; exit 1; }
 
@@ -18,7 +11,6 @@ REQUIRED_ARGS=()
 populate_array COLLECT_AND_INFO_ALL_ESSENTIALS REQUIRED_ARGS
 populate_dict COLLECT_AND_INFO_ALL_DEFAULTS ARGS
 
-# --- Argument parsing (copy verbatim) ---
 ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 USAGE_STR="Usage: $0"
 for req in "${REQUIRED_ARGS[@]}"; do
@@ -53,7 +45,6 @@ for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then echo "Error: --$req is required."; FAILED=true; fi
 done
 if [ "$FAILED" = true ]; then usage; fi
-# --- End argument parsing ---
 
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
@@ -106,8 +97,7 @@ echo "############################################################"
 echo "# $game  —  create all info docs"
 echo "############################################################"
 
-# The info leg's own token budget (see COLLECT_AND_INFO_ALL_DEFAULTS): both legs spell the
-# flag --max_new_tokens, and 1000 silently truncates a stage-A document.
+# Swap in the info leg's own token budget: both legs spell the flag --max_new_tokens.
 ARGS["max_new_tokens"]="${ARGS["info_max_new_tokens"]}"
 flags=$(args_to_flags_subset ARGS CREATE_ALL_INFO_DOCS_ARG_KEYS)
 bash scripts/vlm/create_all_info_docs.sh $flags || exit 1

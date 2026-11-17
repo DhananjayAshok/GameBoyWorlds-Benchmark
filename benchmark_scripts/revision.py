@@ -1,8 +1,3 @@
-"""
-The revision arm: run the task in short legs, critiquing and re-hinting between them.
-
-"""
-
 from __future__ import annotations
 
 import json

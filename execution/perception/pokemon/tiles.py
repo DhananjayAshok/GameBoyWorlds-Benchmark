@@ -114,8 +114,7 @@ def verbalize_neighbourhood(identified: Dict[TileKey, Tile]) -> str:
 
 
 class TileRecognizer(StrategistArtifact):
-    #: Not picklable -- it closes over the strategist's bound VLM call. Callers must
-    #: call set_vlm_call() again after load().
+    # Not picklable: callers must call set_vlm_call() again after load().
     _TRANSIENT = ("vlm_call",)
 
     def __init__(

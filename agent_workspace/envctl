@@ -13,7 +13,8 @@ to obs/<session>/<n>.json, then prints a one-line summary.
     envctl observe | reset | save | load <handle> | info | actions | close
     envctl use <session>                          attach to a session opened for you
 
-The current session lives in .envctl/current.json in the working directory.
+The current session lives in .envctl/current.json in the working directory. When $ENVCTL_SESSION is set, a session
+has already been opened for you: every command uses it, and there is nothing to open.
 """
 import argparse
 import json
@@ -35,7 +36,10 @@ def save_current(session_id, n=0):
 
 def load_current():
     if not os.path.exists(CURRENT):
-        sys.exit("no current session: envctl open ... first")
+        assigned = os.environ.get("ENVCTL_SESSION")
+        if not assigned:
+            sys.exit("no current session: envctl open ... first")
+        save_current(assigned)
     with open(CURRENT) as f:
         return json.load(f)
 
@@ -127,10 +131,7 @@ def main():
                     described["seconds_left"] = round(seconds_left())
                 print(json.dumps(described, indent=1))
             elif a.cmd == "actions":
-                names = sorted(f for f in os.listdir(os.path.join("obs", cur["session"]))
-                               if f.endswith(".json"))
-                with open(os.path.join("obs", cur["session"], names[-1])) as f:
-                    print(json.dumps(json.load(f)["obs"].get("actions"), indent=1))
+                print(json.dumps(s.observe()["obs"].get("actions"), indent=1))
             elif a.cmd == "close":
                 s.close()
                 os.remove(CURRENT)

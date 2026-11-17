@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# Orchestrates a full train-then-evaluate cycle: calls train.sh then enjoy.sh on
-# the resulting model. Supports --train_only and --eval_only flags to run just one
-# half of the pipeline. The test environment can be overridden independently of the
-# training environment via --test_env and --test_init_state.
+# Train-then-evaluate cycle: calls train.sh then enjoy.sh on the resulting model.
+# --train_only / --eval_only run one half; --test_env / --test_init_state override the test env.
 
 source scripts/core/utils.sh
 
-# Define Defaults
 declare -A ARGS
 ARGS["test_env"]="none"
 ARGS["test_init_state"]="none"
@@ -14,7 +11,6 @@ ARGS["train_only"]="false"
 ARGS["eval_only"]="false"
 
 
-# Define Required Keys
 REQUIRED_ARGS=()
 
 
@@ -25,14 +21,11 @@ ALLOWED_FLAGS=("${REQUIRED_ARGS[@]}" "${!ARGS[@]}")
 
 USAGE_STR="Usage: $0"
 
-# Add Required to string
 for req in "${REQUIRED_ARGS[@]}"; do
     USAGE_STR+=" --$req <value>"
 done
 
-# Add Optionals to string
 for opt in "${!ARGS[@]}"; do
-    # Only list if NOT in required (to avoid double listing)
     if [[ ! " ${REQUIRED_ARGS[*]} " =~ " ${opt} " ]]; then
         USAGE_STR+=" [--$opt <value> (default: ${ARGS[$opt]})]"
     fi
@@ -43,11 +36,9 @@ function usage() {
     exit 1
 }
 
-# 3. Parser
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --*)
-            # Extract the name (remove the leading --)
             FLAG=${1#--}
             VALID=false
             for allowed in "${ALLOWED_FLAGS[@]}"; do
@@ -73,7 +64,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 4. Strict Validation
 for req in "${REQUIRED_ARGS[@]}"; do
     if [[ -z "${ARGS[$req]}" ]]; then
         echo "Error: Argument --$req is required."
@@ -83,13 +73,11 @@ done
 
 if [ "$FAILED" = true ]; then usage; fi
 
-# Print active variables
 echo "Script: $0 Active variables:"
 for key in "${!ARGS[@]}"; do
     echo "  -$key = ${ARGS[$key]}"
 done
 
-# Logic here:
 
 
 train_env_id=$(get_string_from_args "env_id" ARGS)
@@ -105,7 +93,6 @@ if [[ -z "$exp_name" ]]; then
     exit 1
 fi
 
-# check eval only flag, if true then skip training and go to evaluation
 if [[ "${ARGS["eval_only"]}" == "true" || "${ARGS["eval_only"]}" == "yes" || "${ARGS["eval_only"]}" == "y" ]]; then
     echo "Eval only flag is set. Skipping training and going to evaluation."
 else
@@ -113,7 +100,6 @@ else
     bash scripts/core_rl/train.sh $arg_string || exit 1
 fi
 
-# if test_env and test_init_state are empty, set them to train values:
 if [[ -z "${ARGS["test_env"]}" ]]; then
     ARGS["test_env"]="${ARGS["env"]}"
 fi
@@ -121,7 +107,6 @@ if [[ -z "${ARGS["test_init_state"]}" ]]; then
     ARGS["test_init_state"]="${ARGS["init_state"]}"
 fi
 
-# if train_only is true, t, yes or y then exit here:
 if [[ "${ARGS["train_only"]}" == "true" || "${ARGS["train_only"]}" == "yes" || "${ARGS["train_only"]}" == "y" ]]; then
     echo "Train only flag is set. Exiting after training."
     exit 0

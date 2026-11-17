@@ -21,7 +21,7 @@
 
 ![](assets/GameBoyWorldsTeaser.gif)
 
-This repository established two things:
+This repository establishes two things:
 
 - **Execution.** When deployed without a harness, frontier VLMs fail more often than not on short-horizon execution tasks. Over 500 tasks, no frontier model achieves more than a 50% task success rate. Standard implementations of self-improvement methods **hurt** performance, suggesting that autonomous multimodal-grounding remains difficult. 
 
@@ -212,21 +212,39 @@ python run_playthrough.py \
     --max_episodes 400
 ```
 
-`--name` is the identity of the playthrough. State is resumed by default, so re-running the same name continues where it left off rather than starting over. `--init_state starter` begins at the point where the first party member is chosen; `initial` is the true start of the game. You can override the model per layer with `--strategist_vlm_model`, `--supervisor_vlm_model` and `--executor_vlm_model`.
+`--name` is the identity of the playthrough. State is resumed by default, so re-running the same name continues where it left off rather than starting over. `--init_state starter` begins at the point where the first party member is chosen; `initial` is the true start of the game. You can override the model per layer with `--strategist_vlm_model`, `--supervisor_vlm_model` and `--executor_vlm_model`. `--resume_run <other name>` forks another playthrough's latest state into a new `--name`, which is how you replay from a point of interest without touching the original.
+
+### How the harness works
+
+The agent sees only the screen. Three layers sit between the model and the buttons:
+
+- The **strategist** (`execution/strategist/`) owns the long game. Each episode it writes one short task.
+- A **supervisor** (`execution/pokemon/supervisors.py`) carries that task out in at most `--supervisor_max_steps` steps, choosing an executor for each.
+- **Executors** (`execution/pokemon/executors.py`) turn a step into button presses: walking, menus, dialogue, battles.
+
+One episode runs like this:
+
+1. **Perceive.** The tile recognizer labels the tiles on screen, and the frame is placed on the global map.
+2. **Stuck check.** If recent episodes found nothing new or kept failing, the strategist is asked whether it is stuck. If so, exploration overrides the next task and the failing plan is abandoned.
+3. **Plan.** The current goal is re-planned into subgoals every `--subgoal_every` episodes it stays open, using what the knowledge tree and the map say.
+4. **Dispatch.** One call turns the goal, notepad, active guide rules and the map around the player into a task and guidance.
+5. **Execute.** The supervisor runs the task. Every step it takes also updates the map.
+6. **Review.** New areas are named, goals are checked off or revised, facts go into the knowledge tree, the notepad is updated, and guide rules are added or rewritten. A lost battle triggers a reflection that can add a "prepare first" subgoal.
 
 ### Where the artifacts go
 
-The playthrough's memory lives at `<storage_dir>/playthrough_artifacts/<game>/strategist/<name>/`, and it is the point of the whole exercise. Five artifacts, each saved per episode:
+The playthrough's memory lives at `<storage_dir>/playthrough_artifacts/<game>/strategist/<name>/episode_<n>/`. Six artifacts, each saved in the episodes where it changed:
 
 | Artifact | What it holds |
 |----------|---------------|
 | `goals` | The goal tree — what the strategist is trying to do, and how it decomposed it |
-| `locations` | The map it has built: places it has seen, and how they connect |
-| `knowledge` | What it believes about the game's mechanics and its own situation |
-| `tiles` | The tile recognizer, shared across playthroughs of the same game |
+| `globalmap` | The map it has built from screens alone: areas, doors between them, and where it has walked |
+| `knowledge` | What it believes about the game's world, mechanics and its own situation, organised by topic |
+| `guide` | Rules of thumb tied to events (entering a building, reaching a town, battles), seeded by `guide_seeds.yaml` and extended as it plays |
+| `tiles` | The tile recognizer: the tile images it has seen and what it decided they are |
 | `notepad` | Free-text thoughts it wrote to itself |
 
-Alongside them, `provenance_<stamp>.json` records the settings each process ran under, and the per-episode `report.pkl.gz` files hold the same full call records as Execution. Video goes to GameBoyWorlds' `sessions/<game>/strategist/<name>/videos/`.
+Alongside them, each episode directory holds a `report.pkl.gz` with every model call of that episode (`--report_detail` sets how deep it goes), and `provenance_<stamp>.json` in the run directory records the settings each process ran under and where its video is. Video goes to GameBoyWorlds' `sessions/<game>/strategist/<name>/<stamp>/`. The emulator save state for each episode is kept by GameBoyWorlds, which is what lets a run resume mid-game.
 
 ### Looking at what happened
 
@@ -238,15 +256,89 @@ python debug.py --game pokemon_red playthrough view --name gemini_run --episode 
 python debug.py --game pokemon_red playthrough diff --name gemini_run
 ```
 
-`diff` shows you the moment the agent discovered a route, revised a belief, or spent forty episodes re-deriving something it already knew. Add `--artifact locations` (or `goals`, `knowledge`, `tiles`, `notepad`) to narrow it to one.
+`diff` shows you the moment the agent discovered a route, revised a belief, or spent forty episodes re-deriving something it already knew. Add `--artifact globalmap` (or `goals`, `knowledge`, `guide`, `tiles`, `notepad`) to narrow it to one. `bash runs/playthrough/playthrough.sh --name gemini_run --model google/gemini-3.6-flash` runs a playthrough and both reports in one go.
 
 ### Results
 
 ![Pokémon Red versus Pokémon Brown](assets/red_vs_brown.png)
 
-The same system, the same number of episodes. In Pokémon Red — a game with two decades of walkthroughs in every pretraining corpus — it makes steady progress through the initial parts of the game. In Pokémon Brown, a fan-made game of comparable difficulty with poorer documentation has been written about, it never leaves the starter town. 
+The same system, the same number of episodes. In Pokémon Red — a game with two decades of walkthroughs in every pretraining corpus — it makes steady progress through the initial parts of the game. In Pokémon Brown, a fan-made game of comparable difficulty about which far less has been written, it never leaves the starter town. 
 
 Solving GameBoyWorlds-Playthrough will require agents that can actively acquire information, conduct motivated exploration and self-improve continually, mid-deployment. 
+
+---
+
+## Bring your own agent
+
+The harness above is ours. To evaluate a different agent — a coding agent, say, that writes its own harness — run it in the sandbox. The agent gets a workspace and a command-line client for the games, and nothing else: no network, no ROMs, no held-out tasks, no API key.
+
+### The pieces
+
+- **The environment server** (`run_env_server.py`, `env_server/`) runs on the host and owns the emulators. It serves sessions over HTTP: open a task, step it, get back the screen as a PNG, the goal, and whether the task is done.
+- **The splits** (`configs/splits/`) divide the benchmark's tasks into `train`, `val`, `test` (held-out tasks in the training games) and `test_env` (every task of a held-out game). Tasks that share a start state always share a split.
+- **The server's policy** is fixed when it starts and no request can change it:
+
+  | | `--kind dev` | `--kind test` |
+  |---|---|---|
+  | Tasks it opens | `train`, `val` | `test`, `test_env` |
+  | Lists tasks | yes | no |
+  | Free play from a start state | yes | no |
+  | Emulator state returned | full, on request | task success and subgoal progress only |
+  | Save / load | yes | no |
+  | Attempts per session | unlimited resets | one |
+
+- **The model gateway** (`env_server/model_gateway.py`) is the sandbox's only route to a model. It forwards chat completions for the models you allow to OpenRouter and adds your API key on the host, so the key is never inside the sandbox. It strips web-search and fallback-routing fields.
+- **The sandbox image** (`containers/sandbox.def`) is an [Apptainer](https://apptainer.org) image holding a Python runtime and the agent. It runs with no network at all; the server and gateway reach it as two Unix sockets.
+- **The workspace** (`agent_workspace/`) is what the agent starts with: `envctl`, the command-line client, and `envclient.py`, the same thing as a Python module.
+
+### Setup
+
+You need Apptainer with unprivileged `--fakeroot` builds and `--net --network none` allowed. On an HPC system, build on a compute node.
+
+```bash
+# 1. Check the server's policies against live emulators
+python run_env_server.py check
+
+# 2. Build the image (about ten minutes, needs the network), then verify it
+apptainer build --fakeroot <storage_dir>/containers/sandbox.sif containers/sandbox.def
+bash containers/verify_sandbox.sh
+```
+
+`verify_sandbox.sh` checks that the image holds the pinned versions, and that from inside it your home directory, this repository, your storage, the ROMs and the network are all unreachable. It must pass before you trust a run.
+
+The image is looked for at `<storage_dir>/containers/sandbox.sif`; set `SANDBOX_SIF` to keep it elsewhere. Sockets and the agent's home go in `/dev/shm`; set `SANDBOX_RUNTIME_DIR` to change that.
+
+### Running an agent
+
+```bash
+export OPENROUTER_API_KEY=...
+
+# Development: the agent can list and open train/val tasks itself
+bash containers/run_sandbox.sh --kind dev --model google/gemini-3.6-flash \
+    --workspace /path/to/workspace -- \
+    prime-agent --provider gateway --model google/gemini-3.6-flash --cwd /work -p "<your prompt>"
+
+# Evaluation: one held-out task, opened for the agent, one attempt
+bash containers/run_sandbox.sh --kind test --task_id gb.pokemon_red.001 \
+    --model google/gemini-3.6-flash --time_limit 1800 -- \
+    prime-agent --provider gateway --model google/gemini-3.6-flash --cwd /work -p "<your prompt>"
+```
+
+Everything after `--` runs inside the sandbox with `/work` as its directory. The launcher starts the server and the gateway, runs the command, and shuts both down. Logs go to `<results_dir>/sandbox/<stamp>_<kind>/`; a test run also writes `result.json` there with `success` and the steps used. Add `--record_dir <dir>` to keep the full emulator state and every frame, host-side, whatever the agent was shown.
+
+Inside the sandbox the agent drives the game with `envctl`:
+
+```bash
+python envctl tasks                     # dev only: the tasks it may practise on
+python envctl open --task gb.pokemon_red.004
+python envctl step "A"                  # writes obs/<session>/<n>.png and <n>.json
+python envctl actions                   # the action strings this game accepts
+python envctl close
+```
+
+In a test run the session is already open, so the agent starts at `envctl observe` or `envctl step`.
+
+To regenerate the splits after changing `configs/splits/split_config.yaml` or the benchmark's task list, run `python run_env_server.py generate_splits --show`.
 
 ---
 
@@ -390,7 +482,7 @@ bash scripts/benchmark/run_benchmark_info_retrieval.sh \
 
 ![Self-improvement gain](assets/self_improvement_gain.png)
 
-Nothing seems to work well. Self-improvment methods will need actively development to work in the video game domain. 
+Nothing seems to work well. Self-improvement methods will need active development to work in the video game domain. 
 
 ---
 

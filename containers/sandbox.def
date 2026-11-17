@@ -1,79 +1,25 @@
-# The agent sandbox: a Python runtime, prime-agent, and nothing of this project.
+# The agent sandbox image: a Python runtime and prime-agent, with nothing of this project inside.
 #
-# Build on a compute node, never a login node (this cluster has no `debug` partition; use an
-# allocation you already hold, or `isi`). From the repo root:
+# Build from the repo root, on a machine with network access (about ten minutes):
 #
-#     module load apptainer
-#     export APPTAINER_CACHEDIR=/scratch1/$USER/apptainer_cache TMPDIR=/scratch1/$USER/tmp
-#     apptainer build --fakeroot <storage>/containers/sandbox-pa.sif containers/sandbox.def
-#     bash containers/verify_sandbox.sh <storage>/containers/sandbox-pa.sif
+#     apptainer build --fakeroot <storage_dir>/containers/sandbox.sif containers/sandbox.def
+#     bash containers/verify_sandbox.sh <storage_dir>/containers/sandbox.sif
 #
-# One core takes about ten minutes, most of it mksquashfs. The build needs the network.
+# Everything is pinned so that two builds give the same software: the base image by digest
+# (Apptainer rejects a reference with both a tag and a digest), and the rest in versions.env.
+# The installer is vendored and its hash is checked below; it downloads the prime-agent payload
+# and verifies that itself.
 #
-# --fakeroot works here through a root-mapped namespace; this user has no /etc/subuid
-# entry, so the subuid path is not available and that message at build time is expected.
-#
-# BOTH moving parts are pinned, because an unpinned one is a silent confound: two runs
-# weeks apart would use different software with nothing in the record saying so.
-#
-#   - the base, by digest alone (Apptainer rejects a reference carrying both a tag and a
-#     digest, so `python:3.12` survives only as a label). The previous image was built from the floating tag
-#     `python:3.12`, which is not rebuildable; the digest below is the one that image
-#     actually resolved to, read back off it with `apptainer inspect`.
-#   - prime-agent, by PRIME_AGENT_VERSION, which makes the installer skip the `stable`
-#     channel pointer. Unpinned it installs whatever is newest on the day of the build.
-#
-# prime-agent 0.10.3, linux-x64, is
-#     releases/v0.10.3/prime-agent-0.10.3-linux-x64.tar.gz
-#     sha256 811d9f0ec9dff007d5bda9c8435b0e7f46ef7041fa2fc103efc9edc295cb5528
-# as published in <base>/latest.json. The installer verifies this itself against the
-# manifest and SHA256SUMS and dies on a mismatch; it is recorded here so the expected
-# bytes are in version control rather than only on someone's CDN.
-#
-# The installer is vendored (containers/prime_agent_install.sh) rather than fetched in
-# %post, so the build runs the exact bytes that were reviewed:
-#     sha256 75522795d5198152567dcf0c99f26faa4e8b2df0c40d285221bd71313142398c
-#
-# The image still needs the network at build time: the installer downloads the payload
-# from the R2 base. A withdrawn version or an R2 outage fails the build.
-#
-# THE PYTHON KERNEL. prime-agent's python_repl tool runs in a kernel venv that it builds on
-# first use with uv: CPython 3.11, its bundled prime-agent-runtime and skills, and twelve
-# default packages with no versions given. Left to that, every fresh agent home downloads
-# ~100 MB and resolves whatever is newest -- unpinned and network-dependent, per run. And
-# without uv in the image it does not run at all: the kernel fails to start and the agent
-# loses every tool that goes through Python.
-#
-# So the kernel is pinned and built here, at build time:
-#   - uv 0.13.8, system-wide, so it is on PATH and the installer does not fetch an
-#     unpinned one with curl;
-#   - CPython 3.11.18 under /opt/pa-kernel/data/uv/python (read-only at runtime, which a
-#     venv's base interpreter may be). prime-agent strips UV_PYTHON_INSTALL_DIR, UV_PYTHON and
-#     the other interpreter overrides before it runs uv (pa-core kernel/python_env.rs,
-#     sanitize_uv_path), so a checked-out repo cannot redirect the kernel's Python. uv's
-#     default location follows XDG_DATA_HOME instead, which is NOT stripped: it is set for the
-#     build only, and the 3.11.18 put there first makes the bootstrap's own
-#     `uv python install 3.11` -- which on its own means "newest 3.11" -- a no-op;
-#   - the venv, by the installer's own kernel pre-warm (`prime-agent --prime-agent-bootstrap`),
-#     so its .bootstrap-version file is exactly what prime-agent writes, with every package
-#     held to containers/kernel_constraints.txt through UV_CONSTRAINT (which is not stripped);
-#   - prime-agent's six bundled Python skills, which the pre-warm leaves out and a first
-#     session would otherwise install over the network, unpinned. containers/
-#     seed_kernel_skills.py runs prime-agent's own install command for them and records them
-#     as prime-agent does, so a session finds nothing missing.
-# It is built at HOME=/home/agent -- the path the harness mounts the agent home at -- so its
-# absolute paths are the runtime ones, then moved to /opt/pa-kernel/seed-venv. The wrapper
-# containers/prime_agent_wrapper.sh copies it into each fresh agent home on first use. It must
-# be writable there: a read-only kernel (PRIME_AGENT_KERNEL_PYTHON) makes prime-agent disable
-# every Python skill /refine creates, which would quietly break the carry memory mode.
-#
-# Only the kernel survives from that build HOME. Sessions, config and anything else the
-# installer leaves under it are deleted: the kernel is a runtime, agent memory is not.
+# prime-agent builds a Python "kernel" venv on first use, unpinned and over the network. The
+# sandbox has no network, so the kernel is built here instead, at the runtime home path
+# (/home/agent) so its absolute paths stay valid, then kept at /opt/pa-kernel/seed-venv.
+# prime_agent_wrapper.sh copies it into each fresh agent home, where it must be writable.
 
 Bootstrap: docker
 From: python@sha256:cad37dd20c7cac861af9003af8796d03ea7a998ec1e3a664429740fc9d7d2691
 
 %files
+    containers/versions.env /opt/build/versions.env
     containers/prime_agent_install.sh /opt/build/install.sh
     containers/kernel_constraints.txt /opt/build/kernel_constraints.txt
     containers/kernel_skills.json /opt/build/kernel_skills.json
@@ -84,53 +30,53 @@ From: python@sha256:cad37dd20c7cac861af9003af8796d03ea7a998ec1e3a664429740fc9d7d
 
 %post
     set -eux
+    . /opt/build/versions.env
+    echo "$INSTALLER_SHA256  /opt/build/install.sh" | sha256sum -c -
 
-    # /opt/pa, not ~/.local: the image is read-only at runtime. The binary belongs to the
-    # image; the agent's durable state does not.
+    # The image is read-only at runtime, so the binary goes under /opt rather than ~/.local.
     export PRIME_AGENT_RUST_PREFIX=/opt/pa
-    export PRIME_AGENT_VERSION=0.10.3
+    export PRIME_AGENT_VERSION
     export PRIME_AGENT_TELEMETRY=0 DO_NOT_TRACK=1
 
-    # uv, pinned and on PATH before the installer looks for one.
-    python -m pip install --no-cache-dir uv==0.13.8
-    uv --version
+    python -m pip install --no-cache-dir "uv==$UV_VERSION"
 
-    # The kernel's interpreter, pinned, at a fixed read-only path; see the header for why
-    # this is XDG_DATA_HOME and not UV_PYTHON_INSTALL_DIR. Build-time only: at runtime the
-    # agent's data home is its own, writable one.
+    # prime-agent strips UV_PYTHON_INSTALL_DIR before running uv but not XDG_DATA_HOME, so the
+    # pinned interpreter is put where uv looks by default; its own "install 3.11" is then a no-op.
     export XDG_DATA_HOME=/opt/pa-kernel/data
     export UV_CACHE_DIR=/tmp/uv-build-cache
     export UV_CONSTRAINT=/opt/build/kernel_constraints.txt
-    uv python install 3.11.18
+    uv python install "$KERNEL_PYTHON_VERSION"
 
-    # Built at the runtime agent-home path; see the header.
     export HOME=/home/agent
     mkdir -p "$HOME" /opt/pa
-
     sh /opt/build/install.sh
 
-    # The installer's pre-warm is best-effort -- it warns and carries on if the kernel does
-    # not build. Here a missing kernel is a broken image, so require it.
-    /opt/pa/bin/prime-agent --version
-    test -x "$HOME/.prime/agent/kernel-venv/bin/python"
-    "$HOME/.prime/agent/kernel-venv/bin/python" -c "import rlm, dill, numpy, pandas, requests"
-    # The venv's base interpreter must be the pinned one in the image, not one under $HOME,
-    # which is deleted below and shadowed by the agent home at runtime.
-    grep -qx "home = /opt/pa-kernel/data/uv/python/.*" "$HOME/.prime/agent/kernel-venv/pyvenv.cfg"
-    "$HOME/.prime/agent/kernel-venv/bin/python" --version | grep -qx "Python 3.11.18"
+    # The installer only warns if the kernel fails to build; here that is a broken image.
+    kernel="$HOME/.prime/agent/kernel-venv"
+    /opt/pa/bin/prime-agent --version | grep -qF "$PRIME_AGENT_VERSION"
+    "$kernel/bin/python" -c "import rlm, dill, numpy, pandas, requests"
+    "$kernel/bin/python" --version | grep -qx "Python $KERNEL_PYTHON_VERSION"
+    grep -qx "home = /opt/pa-kernel/data/uv/python/.*" "$kernel/pyvenv.cfg"
 
-    python /opt/build/seed_kernel_skills.py "$HOME/.prime/agent/kernel-venv" \
+    python /opt/build/seed_kernel_skills.py "$kernel" \
         /opt/build/kernel_skills.json /opt/pa/share/prime-agent/prime-agent-runtime
 
-    mkdir -p /opt/pa-kernel
-    mv "$HOME/.prime/agent/kernel-venv" /opt/pa-kernel/seed-venv
+    mv "$kernel" /opt/pa-kernel/seed-venv
     uv pip freeze --python /opt/pa-kernel/seed-venv/bin/python > /opt/pa-kernel/freeze.txt
     chmod 0755 /opt/sandbox/bin/prime-agent /opt/sandbox/bin/sandbox-run
 
-    # Of the build data home keep only the interpreter; of the build HOME keep nothing.
+    # Keep only the interpreter from the build data home, and nothing from the build HOME.
     find "$XDG_DATA_HOME" -mindepth 1 -maxdepth 1 ! -name uv -exec rm -rf {} +
     find "$XDG_DATA_HOME/uv" -mindepth 1 -maxdepth 1 ! -name python -exec rm -rf {} +
     rm -rf /opt/build "$HOME" "$UV_CACHE_DIR"
+
+    {
+        echo "prime_agent.version $PRIME_AGENT_VERSION"
+        echo "prime_agent.sha256 $PRIME_AGENT_SHA256"
+        echo "installer.sha256 $INSTALLER_SHA256"
+        echo "kernel.uv $UV_VERSION"
+        echo "kernel.python $KERNEL_PYTHON_VERSION"
+    } >> "${APPTAINER_LABELS:-$SINGULARITY_LABELS}"
 
 %environment
     export PATH=/opt/sandbox/bin:/opt/pa/bin:$PATH
@@ -138,37 +84,15 @@ From: python@sha256:cad37dd20c7cac861af9003af8796d03ea7a998ec1e3a664429740fc9d7d
     export DO_NOT_TRACK=1
 
 %labels
-    prime_agent.version 0.10.3
-    prime_agent.platform linux-x64
-    prime_agent.sha256 811d9f0ec9dff007d5bda9c8435b0e7f46ef7041fa2fc103efc9edc295cb5528
-    prime_agent.prefix /opt/pa
-    installer.sha256 75522795d5198152567dcf0c99f26faa4e8b2df0c40d285221bd71313142398c
-    base.image python:3.12
     base.digest sha256:cad37dd20c7cac861af9003af8796d03ea7a998ec1e3a664429740fc9d7d2691
-    kernel.uv 0.13.8
-    kernel.python 3.11.18
-    kernel.python_dir /opt/pa-kernel/data/uv/python
-    kernel.skills agent_message,attach_image,compact,edit,goal,refine
-    kernel.seed /opt/pa-kernel/seed-venv
-    kernel.freeze /opt/pa-kernel/freeze.txt
-    telemetry off
     sandbox.entry /opt/sandbox/bin/sandbox-run
-    sandbox.network run with --net --network none; channels are bind-mounted unix sockets
 
 %help
-    The agent sandbox for GameBoyRL evaluation runs.
+    The agent sandbox for GameBoyWorlds evaluation runs. Launch it with containers/run_sandbox.sh.
 
-    prime-agent 0.10.3 is on PATH (through /opt/sandbox/bin/prime-agent, which seeds the
-    pinned Python kernel into a fresh agent home). Its durable state (~/.prime, ~/.config) is
-    NOT in the image: it lives in the writable agent home the harness mounts at /home/agent,
-    one per run, which is what makes isolated and carry memory modes different from each other.
-    Telemetry is off.
+    prime-agent is on PATH. Its state (~/.prime) is not in the image: it lives in the writable
+    agent home mounted at /home/agent, one per run. The workspace is mounted at /work.
 
-    Nothing of the GameBoyRL project is in this image. The workspace arrives on /work.
-
-    Run it isolated: --net --network none gives it no network at all, and `sandbox-run`
-    bridges exactly the channels named in SANDBOX_BRIDGE -- bind-mounted unix sockets for the
-    env server (env_server/server.py --unix_socket) and the model gateway
-    (env_server/model_gateway.py), which holds the API key on the host -- onto its private
-    loopback. prime-agent reaches the gateway through a custom provider in
-    ~/.prime/agent/models.json; envctl reaches the env server at ENV_SERVER_URL.
+    Run with --net --network none. `sandbox-run` bridges the Unix sockets named in
+    SANDBOX_BRIDGE (the env server and the model gateway) onto the sandbox's private loopback;
+    those are its only ways out, and the API key stays on the host.
