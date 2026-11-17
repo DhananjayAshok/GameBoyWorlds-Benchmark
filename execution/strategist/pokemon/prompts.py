@@ -371,7 +371,7 @@ The player's report of the episode:
 The battle, as the player fought it:
 [BATTLE]
 
-The first image is the battle screen when the player started fighting it, the second is the last battle screen before the defeat.
+[FRAMES]
 
 You keep battle tips: short rules shown to the player at the start of every battle and on every turn of it. Your battle tips now:
 [TIPS]

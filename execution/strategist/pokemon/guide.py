@@ -26,6 +26,10 @@ SEEDS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "guide_see
 ACTIVE_EPISODES = 5
 MAX_CHANGES = 3
 GUIDE_ATTEMPTS = 2
+DEFEAT_FRAMES_LINE = ("The first image is the battle screen when the player started fighting it, the second is "
+                      "the last battle screen before the defeat.")
+DEFEAT_NO_FRAMES_LINE = ("No screenshots of the battle were recorded, so judge it from the report and the battle "
+                         "log above.")
 
 @dataclass
 class GuideRule:
@@ -229,12 +233,17 @@ def _parse_reflection(guide: StrategyGuide):
 def reflect_on_defeat(guide: StrategyGuide, task: str, goal: str, where: str, digest: str, battle: str,
                       images: List[Any], vlm_call, game: str, episode: int,
                       parameters: Optional[dict] = None) -> Optional[Dict[str, Any]]:
+    # A defeat is not always fought through a CombatExecutor, so there is not always a battle frame to show. The
+    # prompt has to say which case it is in, and the call must leave `images` out rather than pass an empty list:
+    # the inference layer rejects `images=[]`, which used to end the run on the first such defeat.
+    frames = (DEFEAT_FRAMES_LINE if images else DEFEAT_NO_FRAMES_LINE)
     prompt = (P.DEFEAT_REFLECTION_PROMPT.replace("[GAME]", game).replace("[TASK]", task).replace("[GOAL]", goal)
               .replace("[WHERE]", where).replace("[DIGEST]", digest).replace("[BATTLE]", battle)
+              .replace("[FRAMES]", frames)
               .replace("[TIPS]", _rules_text(guide, (BATTLE,))).replace("[MAX_CHANGES]", str(MAX_CHANGES))
               .replace("[MAX_TIPS]", str(MAX_BATTLE_TIPS)))
     answer = ask(vlm_call, prompt, _parse_reflection(guide), "Defeat reflection", GUIDE_ATTEMPTS, parameters,
-                 images=images)
+                 **({"images": images} if images else {}))
     if answer is not None:
         _apply_changes(guide, answer["changes"], episode, parameters)
     return answer

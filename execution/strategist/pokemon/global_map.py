@@ -21,6 +21,7 @@ Only screen pixels are used. Nothing here reads RAM.
 from __future__ import annotations
 
 import re
+import traceback
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
@@ -1140,8 +1141,13 @@ class MappingEnvironment:
     """
     Wraps the environment the supervisor and its executors are handed, so that every step they
     take — moves, button presses, menus, battles — updates the global map. Behaviour is otherwise
-    unchanged: every call is passed straight through, and a failure inside the map is logged and
-    swallowed rather than allowed to disturb the run.
+    unchanged: every call is passed straight through.
+
+    A failure inside the map ends the run. It used to be logged and swallowed, which meant a run
+    could complete with a map that silently stopped updating on step one -- and the map is an
+    input to the dispatch prompt, so the episodes after that point were taken on a stale map with
+    nothing in the record to say so. ``PokemonStrategist._map_opening_screen`` already calls
+    ``on_step`` unguarded, so the same fault was loud there and quiet here.
     """
 
     def __init__(self, env, global_map: GlobalMap, tile_recognizer, parameters: Optional[dict] = None) -> None:
@@ -1162,20 +1168,26 @@ class MappingEnvironment:
             if (info.get("pokemon_core", {}).get("n_battles_lost", 0)
                     > before.get("pokemon_core", {}).get("n_battles_lost", 0)):
                 self._map.record_defeat()
-            if not info.get("invalid_action"):
-                frame = info["core"]["current_frame"]
+            core = info.get("core", {})
+            if not info.get("invalid_action") and core.get("current_frame") is not None:
+                frame = core["current_frame"]
                 free = info.get("pokemon_core", {}).get("agent_state") == AgentState.FREE_ROAM
                 direction, max_steps, reported = _movement(action, kwargs, info)
-                passed = info["core"].get("transition_passed_frames")
+                passed = core.get("transition_passed_frames")
                 faded = passed is not None and any(not has_structure(f) for f in passed)
                 identified = self._tiles.identify_tiles(frame) if free else {}
                 queued = len(self._map.naming_queue)
                 self._map.on_step(frame, identified, free, direction, max_steps, reported, was_free, faded)
                 for entry in self._map.naming_queue[queued:]:
                     entry["marker"] = self.marker() if self.marker is not None else None
-        except Exception as e:                                   # the map must never break a run
-            from utils import log_warn
-            log_warn(f"Global map update failed and was skipped: {type(e).__name__}: {e}", self._parameters)
+        except Exception as e:
+            from utils import log_error
+            # Enough to reproduce from a slurm log without the emulator: which action, what the screen state was,
+            # and where in the map the fault is. log_error raises.
+            name = getattr(action, "__name__", repr(action))
+            log_error(f"Global map update failed on {name}({kwargs}): {type(e).__name__}: {e}\n"
+                      f"was_free={was_free}, segment={self._map.segment}, pos={self._map.pos}, "
+                      f"cells={self._map.n_cells}\n{traceback.format_exc()}", self._parameters)
         return result
 
     @property
