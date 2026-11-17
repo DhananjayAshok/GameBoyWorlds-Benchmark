@@ -1,0 +1,26 @@
+[
+ {
+  "import_name": "agent_message",
+  "package_path": "/opt/pa/share/prime-agent/skills/agent-message"
+ },
+ {
+  "import_name": "attach_image",
+  "package_path": "/opt/pa/share/prime-agent/skills/attach-image"
+ },
+ {
+  "import_name": "compact",
+  "package_path": "/opt/pa/share/prime-agent/skills/compact"
+ },
+ {
+  "import_name": "edit",
+  "package_path": "/opt/pa/share/prime-agent/skills/edit"
+ },
+ {
+  "import_name": "goal",
+  "package_path": "/opt/pa/share/prime-agent/skills/goal"
+ },
+ {
+  "import_name": "refine",
+  "package_path": "/opt/pa/share/prime-agent/skills/refine"
+ }
+]

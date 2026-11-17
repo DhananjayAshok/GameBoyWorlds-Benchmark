@@ -1,0 +1,4002 @@
+{
+ "gb.bomberman_max.000": {
+  "split": "test",
+  "text": "Open the pause menu"
+ },
+ "gb.bomberman_max.001": {
+  "split": "test",
+  "text": "Open the Charabom select screen"
+ },
+ "gb.bomberman_max.002": {
+  "split": "test",
+  "text": "Choose Normal Game"
+ },
+ "gb.bomberman_max.003": {
+  "split": "test",
+  "text": "Get a Game Over"
+ },
+ "gb.bomberman_max.004": {
+  "split": "train",
+  "text": "Pick up a Bomb Up"
+ },
+ "gb.bomberman_max.005": {
+  "split": "val",
+  "text": "Stage 2 Pick up a Bomb Up"
+ },
+ "gb.bomberman_max.006": {
+  "split": "train",
+  "text": "Pick up a Fire Up"
+ },
+ "gb.bomberman_max.007": {
+  "split": "val",
+  "text": "Stage 2 Pick up a Fire Up"
+ },
+ "gb.bomberman_max.008": {
+  "split": "train",
+  "text": "Interact with a Charabom"
+ },
+ "gb.bomberman_max.009": {
+  "split": "test",
+  "text": "Stage 1 Go to the Stage Exit"
+ },
+ "gb.bomberman_max.010": {
+  "split": "train",
+  "text": "Stage 2 Go to the Stage Exit"
+ },
+ "gb.bomberman_max.011": {
+  "split": "train",
+  "text": "Stage 2 Go to the Red Exit"
+ },
+ "gb.bomberman_max.012": {
+  "split": "val",
+  "text": "Stage 3 Go to the Stage Exit"
+ },
+ "gb.bomberman_max.013": {
+  "split": "val",
+  "text": "Stage 2 Defeat an Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.014": {
+  "split": "test",
+  "text": "Stage 3 Defeat an Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.015": {
+  "split": "train",
+  "text": "Stage 12 Defeat an Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.016": {
+  "split": "test",
+  "text": "Defeat the Skull Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.017": {
+  "split": "val",
+  "text": "Defeat the Flower Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.018": {
+  "split": "train",
+  "text": "Stage 1 Defeat an Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.019": {
+  "split": "test",
+  "text": "Choose Pitch Area"
+ },
+ "gb.bomberman_max.020": {
+  "split": "train",
+  "text": "Stage 14 Defeat an Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.021": {
+  "split": "train",
+  "text": "Stage 14 Defeat the Strong Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.022": {
+  "split": "train",
+  "text": "Stage 5 Defeat an Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.023": {
+  "split": "test",
+  "text": "Stage 5 Go to the Stage Exit"
+ },
+ "gb.bomberman_max.024": {
+  "split": "val",
+  "text": "Stage 14 Go to the Stage Exit"
+ },
+ "gb.bomberman_max.025": {
+  "split": "train",
+  "text": "Stage 22 Defeat an Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.026": {
+  "split": "test",
+  "text": "Stage 14 Go to the Blue Exit"
+ },
+ "gb.bomberman_max.027": {
+  "split": "train",
+  "text": "Stage 10 Defeat an Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.028": {
+  "split": "train",
+  "text": "Stage 10 Go to the Stage Exit"
+ },
+ "gb.bomberman_max.029": {
+  "split": "train",
+  "text": "Stage 16 Defeat the Skull Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.030": {
+  "split": "val",
+  "text": "Stage 16 Defeat an Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.031": {
+  "split": "test",
+  "text": "Stage 16 Go to the Stage Exit"
+ },
+ "gb.bomberman_max.032": {
+  "split": "train",
+  "text": "Stage 18 Defeat the Boss Using a Bomb"
+ },
+ "gb.bomberman_max.033": {
+  "split": "train",
+  "text": "Stage 18 Go to the Stage Exit"
+ },
+ "gb.bomberman_max.034": {
+  "split": "train",
+  "text": "Stage 2-1 Go to the Stage Exit"
+ },
+ "gb.bomberman_max.035": {
+  "split": "train",
+  "text": "Stage 2-4 Defeat an Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.036": {
+  "split": "test",
+  "text": "Stage 2-4 Go to the Stage Exit"
+ },
+ "gb.bomberman_max.037": {
+  "split": "train",
+  "text": "Stage 2-12 Defeat an Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.038": {
+  "split": "train",
+  "text": "Stage 22 Defeat an Enemy Using a Bomb"
+ },
+ "gb.bomberman_max.039": {
+  "split": "test",
+  "text": "Stage 22 Go to the Stage Exit"
+ },
+ "gb.bomberman_max.040": {
+  "split": "train",
+  "text": "Stage 2-3 Clear the Block and Defeat the Enemy"
+ },
+ "gb.bomberman_max.041": {
+  "split": "train",
+  "text": "Stage 2-3 Use the Teleport Door to Reach the Blue Exit"
+ },
+ "gb.bomberman_max.042": {
+  "split": "train",
+  "text": "Stage 2-2 Defeat the Green Ninja Using a Bomb"
+ },
+ "gb.bomberman_max.043": {
+  "split": "train",
+  "text": "Stage 2-2 Avoid the Traps and Take the Blue Exit"
+ },
+ "gb.bomberman_max.044": {
+  "split": "val",
+  "text": "Stage 2-9 Defeat the Fire Ninja Using a Bomb"
+ },
+ "gb.bomberman_max.045": {
+  "split": "train",
+  "text": "Stage 2-9 Find and Take the Hidden Exit"
+ },
+ "gb.bomberman_max.046": {
+  "split": "test",
+  "text": "Stage 2-10 Defeat the Fire Ninja Using a Bomb"
+ },
+ "gb.bomberman_max.047": {
+  "split": "val",
+  "text": "Stage 2-5 Jump to the Left and Find the Blue Exit"
+ },
+ "gb.bomberman_max.048": {
+  "split": "val",
+  "text": "Stage 2-7 Go to the Stage Exit"
+ },
+ "gb.bomberman_max.049": {
+  "split": "test",
+  "text": "Stage 2-8 Break the Block and Defeat the Enemy"
+ },
+ "gb.bomberman_pocket.000": {
+  "split": "test_env",
+  "text": "Open the pause menu"
+ },
+ "gb.bomberman_pocket.001": {
+  "split": "test_env",
+  "text": "Kill the Forest Stage Boss and Take the Exit"
+ },
+ "gb.bomberman_pocket.002": {
+  "split": "test_env",
+  "text": "Get a Game Over"
+ },
+ "gb.bomberman_pocket.003": {
+  "split": "test_env",
+  "text": "Pick up a Bomb Up"
+ },
+ "gb.bomberman_pocket.004": {
+  "split": "test_env",
+  "text": "Area 2 Pick up a Bomb Up"
+ },
+ "gb.bomberman_pocket.005": {
+  "split": "test_env",
+  "text": "Area 3 Pick up a Bomb Up"
+ },
+ "gb.bomberman_pocket.006": {
+  "split": "test_env",
+  "text": "Navigate Forest Area 1 to Find and Kill the Enemy"
+ },
+ "gb.bomberman_pocket.007": {
+  "split": "test_env",
+  "text": "Forest Area 1 Navigate to Find and Take the Exit"
+ },
+ "gb.bomberman_pocket.008": {
+  "split": "test_env",
+  "text": "Forest Area 2 Navigate to Find and Take the Exit"
+ },
+ "gb.bomberman_pocket.009": {
+  "split": "test_env",
+  "text": "Forest Area 3 Navigate to Find and Take the Exit"
+ },
+ "gb.bomberman_pocket.010": {
+  "split": "test_env",
+  "text": "Area 2 Kill the Enemy Using a Bomb"
+ },
+ "gb.bomberman_pocket.011": {
+  "split": "test_env",
+  "text": "Navigate Forest Area 3 to Find and Kill the Enemy"
+ },
+ "gb.bomberman_pocket.012": {
+  "split": "test_env",
+  "text": "Navigate to Find and Kill the Strong Enemy"
+ },
+ "gb.bomberman_pocket.013": {
+  "split": "test_env",
+  "text": "Navigate to Find and Kill the Shell"
+ },
+ "gb.bomberman_pocket.014": {
+  "split": "test_env",
+  "text": "Navigate Forest Area 4 to Find and Kill the Enemy"
+ },
+ "gb.bomberman_pocket.015": {
+  "split": "test_env",
+  "text": "Pick up a Bomb Range Up"
+ },
+ "gb.bomberman_pocket.016": {
+  "split": "test_env",
+  "text": "Ocean Area 1 Pick up a Fire Up"
+ },
+ "gb.bomberman_pocket.017": {
+  "split": "test_env",
+  "text": "Enter Jump Game"
+ },
+ "gb.bomberman_pocket.018": {
+  "split": "test_env",
+  "text": "Complete a Jump Game round"
+ },
+ "gb.bomberman_pocket.019": {
+  "split": "test_env",
+  "text": "Pick up a heart"
+ },
+ "gb.bomberman_pocket.020": {
+  "split": "test_env",
+  "text": "Navigate Ocean Area 1 to Find and Kill the Enemy"
+ },
+ "gb.bomberman_pocket.021": {
+  "split": "test_env",
+  "text": "Navigate Ocean Area 1 to Find and Kill the Strong Green Fish"
+ },
+ "gb.bomberman_pocket.022": {
+  "split": "test_env",
+  "text": "Ocean Area 1 Take the Exit"
+ },
+ "gb.bomberman_pocket.023": {
+  "split": "test_env",
+  "text": "Navigate Ocean Area 2 to Find and Kill the Enemy"
+ },
+ "gb.bomberman_pocket.024": {
+  "split": "test_env",
+  "text": "Ocean Area 2 Pick up a Bomb Up"
+ },
+ "gb.bomberman_pocket.025": {
+  "split": "test_env",
+  "text": "Ocean Area 2 Navigate to Find and Take the Exit"
+ },
+ "gb.bomberman_pocket.026": {
+  "split": "test_env",
+  "text": "Ocean Area 3 Pick up a Bomb Up"
+ },
+ "gb.bomberman_pocket.027": {
+  "split": "test_env",
+  "text": "Navigate Ocean Area 3 to Find and Kill the Enemy"
+ },
+ "gb.bomberman_pocket.028": {
+  "split": "test_env",
+  "text": "Ocean Area 3 Navigate to Find the Hidden Exit"
+ },
+ "gb.bomberman_pocket.029": {
+  "split": "test_env",
+  "text": "Ocean Area 4 Pick up a Bomb Up"
+ },
+ "gb.bomberman_pocket.030": {
+  "split": "test_env",
+  "text": "Ocean Area 3 Pick up a Heart"
+ },
+ "gb.bomberman_pocket.031": {
+  "split": "test_env",
+  "text": "Navigate Ocean Area 4 to Find and Kill the Enemy"
+ },
+ "gb.bomberman_pocket.032": {
+  "split": "test_env",
+  "text": "Ocean Area 4 Pick up a Heart"
+ },
+ "gb.bomberman_pocket.033": {
+  "split": "test_env",
+  "text": "Navigate Ocean Area 4 to Find and Kill the Strong Enemy"
+ },
+ "gb.bomberman_pocket.034": {
+  "split": "test_env",
+  "text": "Ocean Area 4 Navigate to Find and Take the Exit"
+ },
+ "gb.bomberman_pocket.035": {
+  "split": "test_env",
+  "text": "Ocean Area 5 Defeat the Boss Using a Bomb"
+ },
+ "gb.bomberman_pocket.036": {
+  "split": "test_env",
+  "text": "Navigate Wind Area 1 to Find and Kill the Enemy"
+ },
+ "gb.bomberman_pocket.037": {
+  "split": "test_env",
+  "text": "Navigate Wind Area 1 to Find and Kill the Strong Enemy"
+ },
+ "gb.bomberman_pocket.038": {
+  "split": "test_env",
+  "text": "Wind Area 1 Navigate to Find and Take the Exit"
+ },
+ "gb.bomberman_pocket.039": {
+  "split": "test_env",
+  "text": "Navigate Wind Area 2 to Find and Kill the Enemy"
+ },
+ "gb.bomberman_pocket.040": {
+  "split": "test_env",
+  "text": "Wind Area 2 Pick up a Heart"
+ },
+ "gb.bomberman_pocket.041": {
+  "split": "test_env",
+  "text": "Wind Area 2 Navigate Up to Find and Take the Exit"
+ },
+ "gb.bomberman_pocket.042": {
+  "split": "test_env",
+  "text": "Navigate Wind Area 3 to Find and Kill the Blue Fish"
+ },
+ "gb.bomberman_pocket.043": {
+  "split": "test_env",
+  "text": "Wind Area 3 Navigate to Break the Block and Avoid the Laser to Take the Exit"
+ },
+ "gb.bomberman_pocket.044": {
+  "split": "test_env",
+  "text": "Navigate Wind Area 4 to Find and Kill the Blue Fish"
+ },
+ "gb.bomberman_pocket.045": {
+  "split": "test_env",
+  "text": "Wind Area 4 Navigate to Find and Take the Exit"
+ },
+ "gb.bomberman_pocket.046": {
+  "split": "test_env",
+  "text": "Wind Area 5 Defeat the Boss Using a Bomb"
+ },
+ "gb.bomberman_pocket.047": {
+  "split": "test_env",
+  "text": "Navigate Cloud Area 1 to Find and Kill the Enemy"
+ },
+ "gb.bomberman_pocket.048": {
+  "split": "test_env",
+  "text": "Navigate the Wind Area 1 Clouds to Find and Kill an Enemy"
+ },
+ "gb.bomberman_pocket.049": {
+  "split": "test_env",
+  "text": "Cloud Area 1 Navigate Up and Take the Exit"
+ },
+ "gb.bomberman_quest.000": {
+  "split": "test_env",
+  "text": "Open the pause menu"
+ },
+ "gb.bomberman_quest.001": {
+  "split": "test_env",
+  "text": "Open the bomb select screen"
+ },
+ "gb.bomberman_quest.002": {
+  "split": "test_env",
+  "text": "Talk to the NPC"
+ },
+ "gb.bomberman_quest.003": {
+  "split": "test_env",
+  "text": "Talk to the Old Man"
+ },
+ "gb.bomberman_quest.004": {
+  "split": "test_env",
+  "text": "Talk to the Girl"
+ },
+ "gb.bomberman_quest.005": {
+  "split": "test_env",
+  "text": "Talk to the Man"
+ },
+ "gb.bomberman_quest.006": {
+  "split": "test_env",
+  "text": "Talk to the Guide"
+ },
+ "gb.bomberman_quest.007": {
+  "split": "test_env",
+  "text": "Read the House Sign"
+ },
+ "gb.bomberman_quest.008": {
+  "split": "test_env",
+  "text": "Read the Danger Sign"
+ },
+ "gb.bomberman_quest.009": {
+  "split": "test_env",
+  "text": "Activate the switch"
+ },
+ "gb.bomberman_quest.010": {
+  "split": "test_env",
+  "text": "Enter the House"
+ },
+ "gb.bomberman_quest.011": {
+  "split": "test_env",
+  "text": "Read the sign"
+ },
+ "gb.bomberman_quest.012": {
+  "split": "test_env",
+  "text": "Get a Game Over"
+ },
+ "gb.bomberman_quest.013": {
+  "split": "test_env",
+  "text": "Start a Charabom battle"
+ },
+ "gb.bomberman_quest.014": {
+  "split": "test_env",
+  "text": "Open the bomb component screen"
+ },
+ "gb.bomberman_quest.015": {
+  "split": "test_env",
+  "text": "Read the sign next to the entrance"
+ },
+ "gb.bomberman_quest.016": {
+  "split": "test_env",
+  "text": "Read the box sign"
+ },
+ "gb.bomberman_quest.017": {
+  "split": "test_env",
+  "text": "Enter the green cave"
+ },
+ "gb.bomberman_quest.018": {
+  "split": "test_env",
+  "text": "Read the sign next to the green cave"
+ },
+ "gb.bomberman_quest.019": {
+  "split": "test_env",
+  "text": "Read the sign at the green cave entrance"
+ },
+ "gb.bomberman_quest.020": {
+  "split": "test_env",
+  "text": "Activate the switch using a bomb"
+ },
+ "gb.bomberman_quest.021": {
+  "split": "test_env",
+  "text": "Pick up the red box"
+ },
+ "gb.bomberman_quest.022": {
+  "split": "test_env",
+  "text": "Talk to the NPC to save the game"
+ },
+ "gb.bomberman_quest.023": {
+  "split": "test_env",
+  "text": "Talk to the librarian"
+ },
+ "gb.bomberman_quest.024": {
+  "split": "test_env",
+  "text": "Talk to the guide on the right"
+ },
+ "gb.bomberman_quest.025": {
+  "split": "test_env",
+  "text": "Talk to the Guide"
+ },
+ "gb.bomberman_quest.026": {
+  "split": "test_env",
+  "text": "Read the Sign near the Forest Entrance"
+ },
+ "gb.bomberman_quest.027": {
+  "split": "test_env",
+  "text": "Read the Sign in the Middle of the Forest"
+ },
+ "gb.bomberman_quest.028": {
+  "split": "test_env",
+  "text": "Read the Cloud Sign"
+ },
+ "gb.bomberman_quest.029": {
+  "split": "test_env",
+  "text": "Enter the Room"
+ },
+ "gb.bomberman_quest.030": {
+  "split": "test_env",
+  "text": "Read the Ruins Sign"
+ },
+ "gb.bomberman_quest.031": {
+  "split": "test_env",
+  "text": "Enter the Ancient Ruins"
+ },
+ "gb.bomberman_quest.032": {
+  "split": "test_env",
+  "text": "Read the Ruins Puzzle Sign"
+ },
+ "gb.bomberman_quest.033": {
+  "split": "test_env",
+  "text": "Jump to the Cliff and Open the Box"
+ },
+ "gb.bomberman_quest.034": {
+  "split": "test_env",
+  "text": "Dodge the Arrows and Enter Combat"
+ },
+ "gb.bomberman_quest.035": {
+  "split": "test_env",
+  "text": "Use the Power Glove to Activate the Switch"
+ },
+ "gb.bomberman_quest.036": {
+  "split": "test_env",
+  "text": "Navigate Down to Enter Combat with the Boss"
+ },
+ "gb.bomberman_quest.037": {
+  "split": "test_env",
+  "text": "Read the Snow Cave Sign"
+ },
+ "gb.bomberman_quest.038": {
+  "split": "test_env",
+  "text": "Jump Off the Cliff and Enter Combat with the Enemy"
+ },
+ "gb.bomberman_quest.039": {
+  "split": "test_env",
+  "text": "Jump Off the Cliff and Read the Sign"
+ },
+ "gb.bomberman_quest.040": {
+  "split": "test_env",
+  "text": "Navigate from the Start to Find the Cave and Enter It"
+ },
+ "gb.bomberman_quest.041": {
+  "split": "test_env",
+  "text": "Navigate from the Forest Entrance to Enter the Ancient Ruins"
+ },
+ "gb.bomberman_quest.042": {
+  "split": "test_env",
+  "text": "Navigate from the Ruins Back to the House"
+ },
+ "gb.bomberman_quest.043": {
+  "split": "test_env",
+  "text": "Navigate from the Cloud Sign Area to Find and Save the Game"
+ },
+ "gb.bomberman_quest.044": {
+  "split": "test_env",
+  "text": "Navigate from the Traps Area to Enter the Ancient Ruins"
+ },
+ "gb.bomberman_quest.045": {
+  "split": "test_env",
+  "text": "Navigate from the Ruins Puzzle Area to Find and Enter the Room"
+ },
+ "gb.bomberman_quest.046": {
+  "split": "test_env",
+  "text": "Navigate from the Electro Boss Area to Find and Enter the Cave"
+ },
+ "gb.bomberman_quest.047": {
+  "split": "test_env",
+  "text": "Navigate from the Snow Cave Area to Find and Enter the House"
+ },
+ "gb.bomberman_quest.048": {
+  "split": "test_env",
+  "text": "Navigate from the Electro Sign to Find and Save the Game"
+ },
+ "gb.bomberman_quest.049": {
+  "split": "test_env",
+  "text": "Navigate from the Under Cliff Area Back to the Camp"
+ },
+ "gb.deja_vu_1.000": {
+  "split": "train",
+  "text": "Take coat from the front door"
+ },
+ "gb.deja_vu_1.001": {
+  "split": "test",
+  "text": "Take gun from the front door"
+ },
+ "gb.deja_vu_1.002": {
+  "split": "train",
+  "text": "Open the door"
+ },
+ "gb.deja_vu_1.003": {
+  "split": "val",
+  "text": "Close the door"
+ },
+ "gb.deja_vu_1.004": {
+  "split": "test",
+  "text": "Open the coat pocket"
+ },
+ "gb.deja_vu_1.005": {
+  "split": "train",
+  "text": "Open the wallet in the coat pocket"
+ },
+ "gb.deja_vu_1.006": {
+  "split": "train",
+  "text": "close the pocket"
+ },
+ "gb.deja_vu_1.007": {
+  "split": "train",
+  "text": "close the wallet"
+ },
+ "gb.deja_vu_1.008": {
+  "split": "train",
+  "text": "check the coat"
+ },
+ "gb.deja_vu_1.009": {
+  "split": "test",
+  "text": "check the gun"
+ },
+ "gb.deja_vu_1.010": {
+  "split": "test",
+  "text": "open the spigot"
+ },
+ "gb.deja_vu_1.011": {
+  "split": "test",
+  "text": "hit the bottle"
+ },
+ "gb.deja_vu_1.012": {
+  "split": "test",
+  "text": "get into cellar"
+ },
+ "gb.deja_vu_1.013": {
+  "split": "val",
+  "text": "enter connecting room"
+ },
+ "gb.deja_vu_1.014": {
+  "split": "val",
+  "text": "go to empty room from map"
+ },
+ "gb.deja_vu_1.015": {
+  "split": "train",
+  "text": "unlock the front"
+ },
+ "gb.deja_vu_1.016": {
+  "split": "test",
+  "text": "meet the mugger"
+ },
+ "gb.deja_vu_1.017": {
+  "split": "train",
+  "text": "hit the mugger"
+ },
+ "gb.deja_vu_1.018": {
+  "split": "val",
+  "text": "unlock the car door"
+ },
+ "gb.deja_vu_1.019": {
+  "split": "train",
+  "text": "open the dashbrd"
+ },
+ "gb.deja_vu_1.020": {
+  "split": "train",
+  "text": "close the dashbrd"
+ },
+ "gb.deja_vu_1.021": {
+  "split": "train",
+  "text": "check the note2"
+ },
+ "gb.deja_vu_1.022": {
+  "split": "train",
+  "text": "check the map"
+ },
+ "gb.deja_vu_1.023": {
+  "split": "train",
+  "text": "check the snapshot"
+ },
+ "gb.deja_vu_1.024": {
+  "split": "train",
+  "text": "go to the newsstand"
+ },
+ "gb.deja_vu_1.025": {
+  "split": "test",
+  "text": "enter taxi"
+ },
+ "gb.deja_vu_1.026": {
+  "split": "val",
+  "text": "talk to the taxi driver"
+ },
+ "gb.deja_vu_1.027": {
+  "split": "train",
+  "text": "go to westend"
+ },
+ "gb.deja_vu_1.028": {
+  "split": "train",
+  "text": "pay for taxi fee"
+ },
+ "gb.deja_vu_1.029": {
+  "split": "val",
+  "text": "go to apartment"
+ },
+ "gb.deja_vu_1.030": {
+  "split": "val",
+  "text": "enter the westend lobby"
+ },
+ "gb.deja_vu_1.031": {
+  "split": "test",
+  "text": "open the elevator door"
+ },
+ "gb.deja_vu_1.032": {
+  "split": "train",
+  "text": "enter elevator"
+ },
+ "gb.deja_vu_1.033": {
+  "split": "test",
+  "text": "close elevator door"
+ },
+ "gb.deja_vu_1.034": {
+  "split": "val",
+  "text": "check the photo"
+ },
+ "gb.deja_vu_1.035": {
+  "split": "train",
+  "text": "shoot the door"
+ },
+ "gb.deja_vu_1.036": {
+  "split": "test",
+  "text": "open the desk"
+ },
+ "gb.deja_vu_1.037": {
+  "split": "train",
+  "text": "enter the sherman"
+ },
+ "gb.deja_vu_1.038": {
+  "split": "train",
+  "text": "go to building office"
+ },
+ "gb.deja_vu_1.039": {
+  "split": "train",
+  "text": "unlock the office door in sherman"
+ },
+ "gb.deja_vu_1.040": {
+  "split": "test",
+  "text": "make a medicine"
+ },
+ "gb.deja_vu_1.041": {
+  "split": "train",
+  "text": "take a medicine"
+ },
+ "gb.deja_vu_1.042": {
+  "split": "val",
+  "text": "shoot the lock"
+ },
+ "gb.deja_vu_1.043": {
+  "split": "train",
+  "text": "open the diary to bookmark"
+ },
+ "gb.deja_vu_1.044": {
+  "split": "test",
+  "text": "shoot the door of Grimy office"
+ },
+ "gb.deja_vu_1.045": {
+  "split": "val",
+  "text": "check the dead man on the floor"
+ },
+ "gb.deja_vu_1.046": {
+  "split": "val",
+  "text": "open the cabinet"
+ },
+ "gb.deja_vu_1.047": {
+  "split": "test",
+  "text": "exit grimy office"
+ },
+ "gb.deja_vu_1.048": {
+  "split": "train",
+  "text": "open the wall safe"
+ },
+ "gb.deja_vu_1.049": {
+  "split": "test",
+  "text": "open the trunk of the car"
+ },
+ "gb.deja_vu_2.000": {
+  "split": "test_env",
+  "text": "open the trench coat pocket"
+ },
+ "gb.deja_vu_2.001": {
+  "split": "test_env",
+  "text": "open the bathroom door"
+ },
+ "gb.deja_vu_2.002": {
+  "split": "test_env",
+  "text": "take gum from trench coat"
+ },
+ "gb.deja_vu_2.003": {
+  "split": "test_env",
+  "text": "open the pants pocket"
+ },
+ "gb.deja_vu_2.004": {
+  "split": "test_env",
+  "text": "take the pants"
+ },
+ "gb.deja_vu_2.005": {
+  "split": "test_env",
+  "text": "close the pants pocket"
+ },
+ "gb.deja_vu_2.006": {
+  "split": "test_env",
+  "text": "put on the trench coat"
+ },
+ "gb.deja_vu_2.007": {
+  "split": "test_env",
+  "text": "put on the pants"
+ },
+ "gb.deja_vu_2.008": {
+  "split": "test_env",
+  "text": "open wallet1"
+ },
+ "gb.deja_vu_2.009": {
+  "split": "test_env",
+  "text": "take newsclip1"
+ },
+ "gb.deja_vu_2.010": {
+  "split": "test_env",
+  "text": "take license1"
+ },
+ "gb.deja_vu_2.011": {
+  "split": "test_env",
+  "text": "close wallet1"
+ },
+ "gb.deja_vu_2.012": {
+  "split": "test_env",
+  "text": "check the newsclip1"
+ },
+ "gb.deja_vu_2.013": {
+  "split": "test_env",
+  "text": "take the ring1"
+ },
+ "gb.deja_vu_2.014": {
+  "split": "test_env",
+  "text": "open the door from map"
+ },
+ "gb.deja_vu_2.015": {
+  "split": "test_env",
+  "text": "close the door from map"
+ },
+ "gb.deja_vu_2.016": {
+  "split": "test_env",
+  "text": "enter the hallway"
+ },
+ "gb.deja_vu_2.017": {
+  "split": "test_env",
+  "text": "buy 2 chips"
+ },
+ "gb.deja_vu_2.018": {
+  "split": "test_env",
+  "text": "return to  cashier"
+ },
+ "gb.deja_vu_2.019": {
+  "split": "test_env",
+  "text": "cash out"
+ },
+ "gb.deja_vu_2.020": {
+  "split": "test_env",
+  "text": "open the door of lobby"
+ },
+ "gb.deja_vu_2.021": {
+  "split": "test_env",
+  "text": "exit the casino"
+ },
+ "gb.deja_vu_2.022": {
+  "split": "test_env",
+  "text": "talk in train station"
+ },
+ "gb.deja_vu_2.023": {
+  "split": "test_env",
+  "text": "visit counter"
+ },
+ "gb.deja_vu_2.024": {
+  "split": "test_env",
+  "text": "check the timetable"
+ },
+ "gb.deja_vu_2.025": {
+  "split": "test_env",
+  "text": "enter the platform on track6"
+ },
+ "gb.deja_vu_2.026": {
+  "split": "test_env",
+  "text": "enter the train"
+ },
+ "gb.deja_vu_2.027": {
+  "split": "test_env",
+  "text": "buy a train ticket"
+ },
+ "gb.deja_vu_2.028": {
+  "split": "test_env",
+  "text": "check the girl in the train"
+ },
+ "gb.deja_vu_2.029": {
+  "split": "test_env",
+  "text": "check the sign"
+ },
+ "gb.deja_vu_2.030": {
+  "split": "test_env",
+  "text": "chat with newspaper seller"
+ },
+ "gb.deja_vu_2.031": {
+  "split": "test_env",
+  "text": "buy newspaper"
+ },
+ "gb.deja_vu_2.032": {
+  "split": "test_env",
+  "text": "take newsclip4"
+ },
+ "gb.deja_vu_2.033": {
+  "split": "test_env",
+  "text": "enter the taxi"
+ },
+ "gb.deja_vu_2.034": {
+  "split": "test_env",
+  "text": "chat with taxi driver"
+ },
+ "gb.deja_vu_2.035": {
+  "split": "test_env",
+  "text": "enter the room in the middle"
+ },
+ "gb.deja_vu_2.036": {
+  "split": "test_env",
+  "text": "load the gun"
+ },
+ "gb.deja_vu_2.037": {
+  "split": "test_env",
+  "text": "open the lock"
+ },
+ "gb.deja_vu_2.038": {
+  "split": "test_env",
+  "text": "hit the board  at fire escape"
+ },
+ "gb.deja_vu_2.039": {
+  "split": "test_env",
+  "text": "open the telephone"
+ },
+ "gb.deja_vu_2.040": {
+  "split": "test_env",
+  "text": "open the box at the alleway behind joe"
+ },
+ "gb.deja_vu_2.041": {
+  "split": "test_env",
+  "text": "open the pocket knife"
+ },
+ "gb.deja_vu_2.042": {
+  "split": "test_env",
+  "text": "use the knife to open the door"
+ },
+ "gb.deja_vu_2.043": {
+  "split": "test_env",
+  "text": "put on flashlight"
+ },
+ "gb.deja_vu_2.044": {
+  "split": "test_env",
+  "text": "enter the Joe's place"
+ },
+ "gb.deja_vu_2.045": {
+  "split": "test_env",
+  "text": "open the lock of slot"
+ },
+ "gb.deja_vu_2.046": {
+  "split": "test_env",
+  "text": "turn of the flashlight"
+ },
+ "gb.deja_vu_2.047": {
+  "split": "test_env",
+  "text": "read the card and get the location in it"
+ },
+ "gb.deja_vu_2.048": {
+  "split": "test_env",
+  "text": "open the bag in vacuum with knife"
+ },
+ "gb.deja_vu_2.049": {
+  "split": "test_env",
+  "text": "ask the clerk about the nametag2"
+ },
+ "gb.harry_potter_chamber_of_secrets.000": {
+  "split": "test_env",
+  "text": "find Dobby in the bedroom"
+ },
+ "gb.harry_potter_chamber_of_secrets.001": {
+  "split": "test_env",
+  "text": "select a card deck before leaving"
+ },
+ "gb.harry_potter_chamber_of_secrets.002": {
+  "split": "test_env",
+  "text": "board the flying car"
+ },
+ "gb.harry_potter_chamber_of_secrets.003": {
+  "split": "test_env",
+  "text": "enter the Burrow"
+ },
+ "gb.harry_potter_chamber_of_secrets.004": {
+  "split": "test_env",
+  "text": "enter a battle in the Burrow"
+ },
+ "gb.harry_potter_chamber_of_secrets.005": {
+  "split": "test_env",
+  "text": "enter Percy's room in the Burrow"
+ },
+ "gb.harry_potter_chamber_of_secrets.006": {
+  "split": "test_env",
+  "text": "enter Ginny's room in the Burrow"
+ },
+ "gb.harry_potter_chamber_of_secrets.007": {
+  "split": "test_env",
+  "text": "enter the Weasley parents' room in the Burrow"
+ },
+ "gb.harry_potter_chamber_of_secrets.008": {
+  "split": "test_env",
+  "text": "enter Fred and George's room in the Burrow"
+ },
+ "gb.harry_potter_chamber_of_secrets.009": {
+  "split": "test_env",
+  "text": "enter Ron's room in the Burrow"
+ },
+ "gb.harry_potter_chamber_of_secrets.010": {
+  "split": "test_env",
+  "text": "talk to Ron in his room (sleep cutscene)"
+ },
+ "gb.harry_potter_chamber_of_secrets.011": {
+  "split": "test_env",
+  "text": "reach the kitchen and trigger Mrs Weasley's quest dialogue"
+ },
+ "gb.harry_potter_chamber_of_secrets.012": {
+  "split": "test_env",
+  "text": "reach the garden and start dialogue with Ron"
+ },
+ "gb.harry_potter_chamber_of_secrets.013": {
+  "split": "test_env",
+  "text": "navigate to left side of white car"
+ },
+ "gb.harry_potter_chamber_of_secrets.014": {
+  "split": "test_env",
+  "text": "learn how to cast a spell"
+ },
+ "gb.harry_potter_chamber_of_secrets.015": {
+  "split": "test_env",
+  "text": "select cast spell in the battle action menu"
+ },
+ "gb.harry_potter_chamber_of_secrets.016": {
+  "split": "test_env",
+  "text": "select card attack in the battle action menu"
+ },
+ "gb.harry_potter_chamber_of_secrets.017": {
+  "split": "test_env",
+  "text": "select use item in the battle action menu"
+ },
+ "gb.harry_potter_chamber_of_secrets.018": {
+  "split": "test_env",
+  "text": "select flee in the battle action menu"
+ },
+ "gb.harry_potter_chamber_of_secrets.019": {
+  "split": "test_env",
+  "text": "select folio bruti in the battle action menu"
+ },
+ "gb.harry_potter_chamber_of_secrets.020": {
+  "split": "test_env",
+  "text": "use the restore all magic card attack"
+ },
+ "gb.harry_potter_chamber_of_secrets.021": {
+  "split": "test_env",
+  "text": "use the broom doom card attack"
+ },
+ "gb.harry_potter_chamber_of_secrets.022": {
+  "split": "test_env",
+  "text": "use a card attack"
+ },
+ "gb.harry_potter_chamber_of_secrets.023": {
+  "split": "test_env",
+  "text": "fight a sprinkler in the lead position"
+ },
+ "gb.harry_potter_chamber_of_secrets.024": {
+  "split": "test_env",
+  "text": "fight a green rat in the lead position"
+ },
+ "gb.harry_potter_chamber_of_secrets.025": {
+  "split": "test_env",
+  "text": "fight a gnome in the top left position"
+ },
+ "gb.harry_potter_chamber_of_secrets.026": {
+  "split": "test_env",
+  "text": "fight a grey hose in the top left position"
+ },
+ "gb.harry_potter_chamber_of_secrets.027": {
+  "split": "test_env",
+  "text": "get to diagon alley"
+ },
+ "gb.harry_potter_chamber_of_secrets.028": {
+  "split": "test_env",
+  "text": "talk to Fred and George for the first time"
+ },
+ "gb.harry_potter_chamber_of_secrets.029": {
+  "split": "test_env",
+  "text": "talk to Fred and George for the second time"
+ },
+ "gb.harry_potter_chamber_of_secrets.030": {
+  "split": "test_env",
+  "text": "talk to the green statue"
+ },
+ "gb.harry_potter_chamber_of_secrets.031": {
+  "split": "test_env",
+  "text": "talk to Mrs Weasley for the first time"
+ },
+ "gb.harry_potter_chamber_of_secrets.032": {
+  "split": "test_env",
+  "text": "talk to Mrs Weasley for the second time"
+ },
+ "gb.harry_potter_chamber_of_secrets.033": {
+  "split": "test_env",
+  "text": "talk to Mr Weasley for the first time"
+ },
+ "gb.harry_potter_chamber_of_secrets.034": {
+  "split": "test_env",
+  "text": "talk to Mr Weasley for the second time"
+ },
+ "gb.harry_potter_chamber_of_secrets.035": {
+  "split": "test_env",
+  "text": "talk to Fred and George for the first time starting from Percy's room"
+ },
+ "gb.harry_potter_chamber_of_secrets.036": {
+  "split": "test_env",
+  "text": "talk to Fred and George for the second time starting from Percy's room"
+ },
+ "gb.harry_potter_chamber_of_secrets.037": {
+  "split": "test_env",
+  "text": "talk to Percy in his room"
+ },
+ "gb.harry_potter_chamber_of_secrets.038": {
+  "split": "test_env",
+  "text": "talk to Mrs Weasley for the first time starting from Percy's room"
+ },
+ "gb.harry_potter_chamber_of_secrets.039": {
+  "split": "test_env",
+  "text": "talk to Mrs Weasley for the second time starting from Percy's room"
+ },
+ "gb.harry_potter_chamber_of_secrets.040": {
+  "split": "test_env",
+  "text": "talk to Mr Weasley for the first time starting from Percy's room"
+ },
+ "gb.harry_potter_chamber_of_secrets.041": {
+  "split": "test_env",
+  "text": "talk to Mr Weasley for the second time starting from Percy's room"
+ },
+ "gb.harry_potter_chamber_of_secrets.042": {
+  "split": "test_env",
+  "text": "talk to the green statue starting from Percy's room"
+ },
+ "gb.harry_potter_chamber_of_secrets.043": {
+  "split": "test_env",
+  "text": "talk to the green statue starting from Ginny's room"
+ },
+ "gb.harry_potter_chamber_of_secrets.044": {
+  "split": "test_env",
+  "text": "talk to Mrs Weasley for the first time starting from Ginny's room"
+ },
+ "gb.harry_potter_chamber_of_secrets.045": {
+  "split": "test_env",
+  "text": "talk to Mrs Weasley for the second time starting from Ginny's room"
+ },
+ "gb.harry_potter_chamber_of_secrets.046": {
+  "split": "test_env",
+  "text": "talk to Mr Weasley for the first time starting from Ginny's room"
+ },
+ "gb.harry_potter_chamber_of_secrets.047": {
+  "split": "test_env",
+  "text": "talk to Mr Weasley for the second time starting from Ginny's room"
+ },
+ "gb.harry_potter_chamber_of_secrets.048": {
+  "split": "test_env",
+  "text": "enter the Burrow starting from the beginning of the game"
+ },
+ "gb.harry_potter_chamber_of_secrets.049": {
+  "split": "test_env",
+  "text": "find Dobby in the bedroom starting from the beginning of the game"
+ },
+ "gb.harry_potter_philosophers_stone.000": {
+  "split": "val",
+  "text": "receive Folio Magi from boy"
+ },
+ "gb.harry_potter_philosophers_stone.001": {
+  "split": "train",
+  "text": "select a card deck (1 of 4)"
+ },
+ "gb.harry_potter_philosophers_stone.002": {
+  "split": "train",
+  "text": "talk to Hagrid inside Gringotts"
+ },
+ "gb.harry_potter_philosophers_stone.003": {
+  "split": "test",
+  "text": "find and beat boss rat"
+ },
+ "gb.harry_potter_philosophers_stone.004": {
+  "split": "test",
+  "text": "level upgrade"
+ },
+ "gb.harry_potter_philosophers_stone.005": {
+  "split": "test",
+  "text": "gain a new spell level"
+ },
+ "gb.harry_potter_philosophers_stone.006": {
+  "split": "train",
+  "text": "find Hagrid after boss / enter vault"
+ },
+ "gb.harry_potter_philosophers_stone.007": {
+  "split": "train",
+  "text": "enter Madam Malkin's"
+ },
+ "gb.harry_potter_philosophers_stone.008": {
+  "split": "test",
+  "text": "open Madam Malkin's buy menu"
+ },
+ "gb.harry_potter_philosophers_stone.009": {
+  "split": "train",
+  "text": "select robes at Madam Malkin's"
+ },
+ "gb.harry_potter_philosophers_stone.010": {
+  "split": "train",
+  "text": "confirm robes purchase at Madam Malkin's"
+ },
+ "gb.harry_potter_philosophers_stone.011": {
+  "split": "train",
+  "text": "enter Flourish and Blotts bookshop"
+ },
+ "gb.harry_potter_philosophers_stone.012": {
+  "split": "train",
+  "text": "buy books at Flourish and Blotts"
+ },
+ "gb.harry_potter_philosophers_stone.013": {
+  "split": "train",
+  "text": "enter the apothecary"
+ },
+ "gb.harry_potter_philosophers_stone.014": {
+  "split": "test",
+  "text": "buy a Potion Kit at the apothecary"
+ },
+ "gb.harry_potter_philosophers_stone.015": {
+  "split": "train",
+  "text": "enter the cauldron shop"
+ },
+ "gb.harry_potter_philosophers_stone.016": {
+  "split": "train",
+  "text": "buy a cauldron at the cauldron shop"
+ },
+ "gb.harry_potter_philosophers_stone.017": {
+  "split": "train",
+  "text": "enter Sugarplums Sweets shop"
+ },
+ "gb.harry_potter_philosophers_stone.018": {
+  "split": "val",
+  "text": "open the Sugarplums buy menu"
+ },
+ "gb.harry_potter_philosophers_stone.019": {
+  "split": "test",
+  "text": "talk to Hagrid in Diagon Alley after shopping"
+ },
+ "gb.harry_potter_philosophers_stone.020": {
+  "split": "test",
+  "text": "bring up the location banner to say you're in Diagon Alley, then open the start menu"
+ },
+ "gb.harry_potter_philosophers_stone.021": {
+  "split": "train",
+  "text": "eat a pumpkin pasty"
+ },
+ "gb.harry_potter_philosophers_stone.022": {
+  "split": "train",
+  "text": "equip the pointed hat and then the plain work robe"
+ },
+ "gb.harry_potter_philosophers_stone.023": {
+  "split": "train",
+  "text": "remove all of your equipped items starting with your hat"
+ },
+ "gb.harry_potter_philosophers_stone.024": {
+  "split": "test",
+  "text": "Try to flee from the rat king but eventually die"
+ },
+ "gb.harry_potter_philosophers_stone.025": {
+  "split": "test",
+  "text": "restore MP to full, utilize your deflect cards in order to defeat the rat king"
+ },
+ "gb.harry_potter_philosophers_stone.026": {
+  "split": "train",
+  "text": "exit gringotts WITHOUT first talking with Hagrid"
+ },
+ "gb.harry_potter_philosophers_stone.027": {
+  "split": "val",
+  "text": "get on the train"
+ },
+ "gb.harry_potter_philosophers_stone.028": {
+  "split": "val",
+  "text": "buy 5 chocolate frogs and confirm you have them in inventory"
+ },
+ "gb.harry_potter_philosophers_stone.029": {
+  "split": "train",
+  "text": "sell one chocolate frog and confirm you have 4 left"
+ },
+ "gb.harry_potter_philosophers_stone.030": {
+  "split": "train",
+  "text": "lose the duel"
+ },
+ "gb.harry_potter_philosophers_stone.031": {
+  "split": "train",
+  "text": "win the duel"
+ },
+ "gb.harry_potter_philosophers_stone.032": {
+  "split": "val",
+  "text": "walk up and down the train 3 times"
+ },
+ "gb.harry_potter_philosophers_stone.033": {
+  "split": "test",
+  "text": "Talk to Hagrid and get on the boat"
+ },
+ "gb.harry_potter_philosophers_stone.034": {
+  "split": "val",
+  "text": "Die"
+ },
+ "gb.harry_potter_philosophers_stone.035": {
+  "split": "val",
+  "text": "fight a small yellow rat then a big yellow monster both in the top left corner in that order"
+ },
+ "gb.harry_potter_philosophers_stone.036": {
+  "split": "val",
+  "text": "fight a bat then a big yellow monster both in the middle of the battlefield in that order"
+ },
+ "gb.harry_potter_philosophers_stone.037": {
+  "split": "val",
+  "text": "find the stone gargoyles on the wall then find another pair further along"
+ },
+ "gb.harry_potter_philosophers_stone.038": {
+  "split": "val",
+  "text": "get to the green dungeon room"
+ },
+ "gb.harry_potter_philosophers_stone.039": {
+  "split": "train",
+  "text": "beat the stone boss in the purple room"
+ },
+ "gb.harry_potter_philosophers_stone.040": {
+  "split": "train",
+  "text": "lose to the stone boss in the purple room"
+ },
+ "gb.harry_potter_philosophers_stone.041": {
+  "split": "test",
+  "text": "find a locked door and get told by the professor to stay down there"
+ },
+ "gb.harry_potter_philosophers_stone.042": {
+  "split": "test",
+  "text": "figure out the number of house points each house currently has"
+ },
+ "gb.harry_potter_philosophers_stone.043": {
+  "split": "test",
+  "text": "stand facing the hourglass near the top of the room then the one at the bottom of the room"
+ },
+ "gb.harry_potter_philosophers_stone.044": {
+  "split": "test",
+  "text": "go to the bottom of the room and stand in the middle then go up and stand in the middle of the seal facing up"
+ },
+ "gb.harry_potter_philosophers_stone.045": {
+  "split": "test",
+  "text": "stand in the corridor between the two gargoyles then return to the middle of the room on the seal facing up"
+ },
+ "gb.harry_potter_philosophers_stone.046": {
+  "split": "train",
+  "text": "receive Folio Magi from boy starting from the beginning of the game"
+ },
+ "gb.harry_potter_philosophers_stone.047": {
+  "split": "train",
+  "text": "select a card deck (1 of 4) starting from the beginning of the game"
+ },
+ "gb.harry_potter_philosophers_stone.048": {
+  "split": "train",
+  "text": "enter Madam Malkin's starting from the beginning of the game"
+ },
+ "gb.harry_potter_philosophers_stone.049": {
+  "split": "train",
+  "text": "enter the apothecary starting from the beginning of the game"
+ },
+ "gb.harvest_moon_1.000": {
+  "split": "test",
+  "text": "enter the cow barn"
+ },
+ "gb.harvest_moon_1.001": {
+  "split": "test",
+  "text": "enter the chicken coop"
+ },
+ "gb.harvest_moon_1.002": {
+  "split": "test",
+  "text": "enter the storage shed"
+ },
+ "gb.harvest_moon_1.003": {
+  "split": "val",
+  "text": "pick up the water can"
+ },
+ "gb.harvest_moon_1.004": {
+  "split": "val",
+  "text": "pick up the cow bell"
+ },
+ "gb.harvest_moon_1.005": {
+  "split": "val",
+  "text": "pick up the sickle"
+ },
+ "gb.harvest_moon_1.006": {
+  "split": "val",
+  "text": "pick up the hoe"
+ },
+ "gb.harvest_moon_1.007": {
+  "split": "val",
+  "text": "pick up the hammer"
+ },
+ "gb.harvest_moon_1.008": {
+  "split": "val",
+  "text": "pick up the grass seeds"
+ },
+ "gb.harvest_moon_1.009": {
+  "split": "test",
+  "text": "go to bed"
+ },
+ "gb.harvest_moon_1.010": {
+  "split": "val",
+  "text": "feed the harvest spirit"
+ },
+ "gb.harvest_moon_1.011": {
+  "split": "train",
+  "text": "help the spirit after earthquake"
+ },
+ "gb.harvest_moon_1.012": {
+  "split": "val",
+  "text": "water only the center of the turnip bud field below without disturbing the others"
+ },
+ "gb.harvest_moon_1.013": {
+  "split": "train",
+  "text": "harvest only the center turnip of the 3x3 crop field without disturbing the others"
+ },
+ "gb.harvest_moon_1.014": {
+  "split": "val",
+  "text": "water only the center turnip of the 3x3 crop field without disturbing the others"
+ },
+ "gb.harvest_moon_1.015": {
+  "split": "val",
+  "text": "harvest only the center potato of the 3x3 crop field without disturbing the others"
+ },
+ "gb.harvest_moon_1.016": {
+  "split": "train",
+  "text": "water only the center potato of the 3x3 crop field above without disturbing the others"
+ },
+ "gb.harvest_moon_1.017": {
+  "split": "test",
+  "text": "break the nearest rock with the hammer while standing to its left"
+ },
+ "gb.harvest_moon_1.018": {
+  "split": "train",
+  "text": "break the rightmost rock in the area with the hammer while standing above it"
+ },
+ "gb.harvest_moon_1.019": {
+  "split": "train",
+  "text": "pull out the bottommost weed while standing above it"
+ },
+ "gb.harvest_moon_1.020": {
+  "split": "train",
+  "text": "cut the bottommost weed with the sickle while standing above it"
+ },
+ "gb.harvest_moon_1.021": {
+  "split": "train",
+  "text": "pull out the topmost weed along the left fence by hand"
+ },
+ "gb.harvest_moon_1.022": {
+  "split": "train",
+  "text": "cut the topmost weed along the left fence with the sickle"
+ },
+ "gb.harvest_moon_1.023": {
+  "split": "val",
+  "text": "harvest the center row of grass from right to left without disturbing the other rows, stopping next to the center potato"
+ },
+ "gb.harvest_moon_1.024": {
+  "split": "test",
+  "text": "pick up the broken fence piece and slot it back into the fence while staying next to the wall"
+ },
+ "gb.harvest_moon_1.025": {
+  "split": "train",
+  "text": "buy material at the carpenter"
+ },
+ "gb.harvest_moon_1.026": {
+  "split": "train",
+  "text": "get an estimate for a home expansion at the carpenter"
+ },
+ "gb.harvest_moon_1.027": {
+  "split": "train",
+  "text": "buy a chicken from the animal shop"
+ },
+ "gb.harvest_moon_1.028": {
+  "split": "test",
+  "text": "buy a cow and name it ABBY"
+ },
+ "gb.harvest_moon_1.029": {
+  "split": "test",
+  "text": "sell the 1st chicken at the animal shop"
+ },
+ "gb.harvest_moon_1.030": {
+  "split": "train",
+  "text": "buy a cow brush from the tool shop"
+ },
+ "gb.harvest_moon_1.031": {
+  "split": "train",
+  "text": "buy a saddlebag from the tool shop"
+ },
+ "gb.harvest_moon_1.032": {
+  "split": "train",
+  "text": "buy a milker from the tool shop"
+ },
+ "gb.harvest_moon_1.033": {
+  "split": "train",
+  "text": "buy a rice ball"
+ },
+ "gb.harvest_moon_1.034": {
+  "split": "train",
+  "text": "buy a croissant"
+ },
+ "gb.harvest_moon_1.035": {
+  "split": "train",
+  "text": "buy a cake"
+ },
+ "gb.harvest_moon_1.036": {
+  "split": "train",
+  "text": "buy a grape juice"
+ },
+ "gb.harvest_moon_1.037": {
+  "split": "train",
+  "text": "go to the church to pray"
+ },
+ "gb.harvest_moon_1.038": {
+  "split": "val",
+  "text": "open the storage item list"
+ },
+ "gb.harvest_moon_1.039": {
+  "split": "test",
+  "text": "find the rainy money"
+ },
+ "gb.harvest_moon_1.040": {
+  "split": "test",
+  "text": "find the lost bird for friend"
+ },
+ "gb.harvest_moon_1.041": {
+  "split": "test",
+  "text": "speak to the girl with long straight blue hair"
+ },
+ "gb.harvest_moon_1.042": {
+  "split": "test",
+  "text": "speak to the girl with short hair"
+ },
+ "gb.harvest_moon_1.043": {
+  "split": "test",
+  "text": "speak to the girl with long curly pink hair"
+ },
+ "gb.harvest_moon_1.044": {
+  "split": "train",
+  "text": "speak to the girl with long straight blue hair at the winter gathering"
+ },
+ "gb.harvest_moon_1.045": {
+  "split": "train",
+  "text": "speak to the girl with long curly pink hair at the winter gathering"
+ },
+ "gb.harvest_moon_1.046": {
+  "split": "train",
+  "text": "speak to the girl with red hair and a high ponytail at the winter gathering"
+ },
+ "gb.harvest_moon_1.047": {
+  "split": "test",
+  "text": "put chicken grass on the leftmost block of the feeding stall"
+ },
+ "gb.harvest_moon_1.048": {
+  "split": "test",
+  "text": "put cow fodder on the upper right feeding stall from the right"
+ },
+ "gb.harvest_moon_1.049": {
+  "split": "train",
+  "text": "place the egg into the incubator while standing against the wall to hatch it"
+ },
+ "gb.harvest_moon_2.000": {
+  "split": "test_env",
+  "text": "enter the cow barn"
+ },
+ "gb.harvest_moon_2.001": {
+  "split": "test_env",
+  "text": "enter the chicken coop"
+ },
+ "gb.harvest_moon_2.002": {
+  "split": "test_env",
+  "text": "find the lucky money from the clock"
+ },
+ "gb.harvest_moon_2.003": {
+  "split": "test_env",
+  "text": "enter the hospital"
+ },
+ "gb.harvest_moon_2.004": {
+  "split": "test_env",
+  "text": "enter the tool shop"
+ },
+ "gb.harvest_moon_2.005": {
+  "split": "test_env",
+  "text": "enter the carpenter"
+ },
+ "gb.harvest_moon_2.006": {
+  "split": "test_env",
+  "text": "enter the animal shop"
+ },
+ "gb.harvest_moon_2.007": {
+  "split": "test_env",
+  "text": "enter the library"
+ },
+ "gb.harvest_moon_2.008": {
+  "split": "test_env",
+  "text": "enter the flower shop"
+ },
+ "gb.harvest_moon_2.009": {
+  "split": "test_env",
+  "text": "enter the restaurant"
+ },
+ "gb.harvest_moon_2.010": {
+  "split": "test_env",
+  "text": "get an estimate for building a bridge"
+ },
+ "gb.harvest_moon_2.011": {
+  "split": "test_env",
+  "text": "buy a milker from the tool shop"
+ },
+ "gb.harvest_moon_2.012": {
+  "split": "test_env",
+  "text": "buy a food set"
+ },
+ "gb.harvest_moon_2.013": {
+  "split": "test_env",
+  "text": "buy a beverage set"
+ },
+ "gb.harvest_moon_2.014": {
+  "split": "test_env",
+  "text": "buy today's special"
+ },
+ "gb.harvest_moon_2.015": {
+  "split": "test_env",
+  "text": "go to bed"
+ },
+ "gb.harvest_moon_2.016": {
+  "split": "test_env",
+  "text": "read the secret garden sign"
+ },
+ "gb.harvest_moon_2.017": {
+  "split": "test_env",
+  "text": "read the crop field sign"
+ },
+ "gb.harvest_moon_2.018": {
+  "split": "test_env",
+  "text": "cross the 500m line in the cherry cup race"
+ },
+ "gb.harvest_moon_2.019": {
+  "split": "test_env",
+  "text": "cross the 1000m line in the cherry cup race"
+ },
+ "gb.harvest_moon_2.020": {
+  "split": "test_env",
+  "text": "equip the sickle replacig empty hands"
+ },
+ "gb.harvest_moon_2.021": {
+  "split": "test_env",
+  "text": "equip the hammer replacig empty hands"
+ },
+ "gb.harvest_moon_2.022": {
+  "split": "test_env",
+  "text": "equip the fishing rod replacig empty hands"
+ },
+ "gb.harvest_moon_2.023": {
+  "split": "test_env",
+  "text": "exchange the axe with the net"
+ },
+ "gb.harvest_moon_2.024": {
+  "split": "test_env",
+  "text": "exchange the axe with the rosemary seeds"
+ },
+ "gb.harvest_moon_2.025": {
+  "split": "test_env",
+  "text": "exchange the sprinkler with the sickle"
+ },
+ "gb.harvest_moon_2.026": {
+  "split": "test_env",
+  "text": "exchange the hoe with the fishing net"
+ },
+ "gb.harvest_moon_2.027": {
+  "split": "test_env",
+  "text": "harvest only the center eggplant of the 3x3 crop field without disturbing the others"
+ },
+ "gb.harvest_moon_2.028": {
+  "split": "test_env",
+  "text": "harvest only the center carrot of the 3x3 winter crop field without disturbing the others"
+ },
+ "gb.harvest_moon_2.029": {
+  "split": "test_env",
+  "text": "water only the center potato of the 3x3 crop field without disturbing the others"
+ },
+ "gb.harvest_moon_2.030": {
+  "split": "test_env",
+  "text": "water only the center asparagus of the 3x3 crop field without disturbing the others"
+ },
+ "gb.harvest_moon_2.031": {
+  "split": "test_env",
+  "text": "water the 3x3 corn field with the sprinkler while standing at the center"
+ },
+ "gb.harvest_moon_2.032": {
+  "split": "test_env",
+  "text": "cut only the center corn bud of the 3x3 field with the sickle without disturbing the others"
+ },
+ "gb.harvest_moon_2.033": {
+  "split": "test_env",
+  "text": "water the 3x3 cabbage field with the sprinkler while standing at the center"
+ },
+ "gb.harvest_moon_2.034": {
+  "split": "test_env",
+  "text": "learn how to use computers from the billboard"
+ },
+ "gb.harvest_moon_2.035": {
+  "split": "test_env",
+  "text": "learn how to clean boulders from the billboard"
+ },
+ "gb.harvest_moon_2.036": {
+  "split": "test_env",
+  "text": "learn how to sell crops from the billboard"
+ },
+ "gb.harvest_moon_2.037": {
+  "split": "test_env",
+  "text": "remove the leftmost weed against the wall"
+ },
+ "gb.harvest_moon_2.038": {
+  "split": "test_env",
+  "text": "pick a berry from the left while standing against the treetop"
+ },
+ "gb.harvest_moon_2.039": {
+  "split": "test_env",
+  "text": "pick the berry from above without disturbing the surrounding weeds"
+ },
+ "gb.harvest_moon_2.040": {
+  "split": "test_env",
+  "text": "speak to the girl with blue twin tails by the billboard"
+ },
+ "gb.harvest_moon_2.041": {
+  "split": "test_env",
+  "text": "speak to the person with short purple hair standing by the wall"
+ },
+ "gb.harvest_moon_2.042": {
+  "split": "test_env",
+  "text": "speak to the person with short curly blonde hair"
+ },
+ "gb.harvest_moon_2.043": {
+  "split": "test_env",
+  "text": "place the egg in the incubator to hatch the chick"
+ },
+ "gb.harvest_moon_2.044": {
+  "split": "test_env",
+  "text": "buy a cow and name it LUNA"
+ },
+ "gb.harvest_moon_2.045": {
+  "split": "test_env",
+  "text": "sell the cow at the animal shop"
+ },
+ "gb.harvest_moon_2.046": {
+  "split": "test_env",
+  "text": "sell the chicken at the animal shop"
+ },
+ "gb.harvest_moon_2.047": {
+  "split": "test_env",
+  "text": "get an estimate for building a hothouse"
+ },
+ "gb.harvest_moon_2.048": {
+  "split": "test_env",
+  "text": "buy a chicken from the animal shop"
+ },
+ "gb.harvest_moon_2.049": {
+  "split": "test_env",
+  "text": "put chicken grass on the leftmost block"
+ },
+ "gb.harvest_moon_3.000": {
+  "split": "test_env",
+  "text": "enter the chicken coop"
+ },
+ "gb.harvest_moon_3.001": {
+  "split": "test_env",
+  "text": "place the egg in the incubator to hatch the chick"
+ },
+ "gb.harvest_moon_3.002": {
+  "split": "test_env",
+  "text": "put chicken grass on the topmost feeding block"
+ },
+ "gb.harvest_moon_3.003": {
+  "split": "test_env",
+  "text": "read the secret garden sign"
+ },
+ "gb.harvest_moon_3.004": {
+  "split": "test_env",
+  "text": "read the morning market sign"
+ },
+ "gb.harvest_moon_3.005": {
+  "split": "test_env",
+  "text": "take the ferry back to the village"
+ },
+ "gb.harvest_moon_3.006": {
+  "split": "test_env",
+  "text": "read the storage sign"
+ },
+ "gb.harvest_moon_3.007": {
+  "split": "test_env",
+  "text": "speak to Kirk (the ferry staff) in the village"
+ },
+ "gb.harvest_moon_3.008": {
+  "split": "test_env",
+  "text": "talk to Joe (morning market staff)"
+ },
+ "gb.harvest_moon_3.009": {
+  "split": "test_env",
+  "text": "talk to Lukia (flower shop staff)"
+ },
+ "gb.harvest_moon_3.010": {
+  "split": "test_env",
+  "text": "talk to Lucus (tool shop staff)"
+ },
+ "gb.harvest_moon_3.011": {
+  "split": "test_env",
+  "text": "talk to Lyla (library staff)"
+ },
+ "gb.harvest_moon_3.012": {
+  "split": "test_env",
+  "text": "put cow fodder on the rightmost block"
+ },
+ "gb.harvest_moon_3.013": {
+  "split": "test_env",
+  "text": "enter the farm"
+ },
+ "gb.harvest_moon_3.014": {
+  "split": "test_env",
+  "text": "enter the village"
+ },
+ "gb.harvest_moon_3.015": {
+  "split": "test_env",
+  "text": "enter the grassland"
+ },
+ "gb.harvest_moon_3.016": {
+  "split": "test_env",
+  "text": "enter the forest"
+ },
+ "gb.harvest_moon_3.017": {
+  "split": "test_env",
+  "text": "enter the cliff"
+ },
+ "gb.harvest_moon_3.018": {
+  "split": "test_env",
+  "text": "enter the mountain"
+ },
+ "gb.harvest_moon_3.019": {
+  "split": "test_env",
+  "text": "enter the shopping mall"
+ },
+ "gb.harvest_moon_3.020": {
+  "split": "test_env",
+  "text": "go to the second floor of the shopping mall"
+ },
+ "gb.harvest_moon_3.021": {
+  "split": "test_env",
+  "text": "enter the farmer's union"
+ },
+ "gb.harvest_moon_3.022": {
+  "split": "test_env",
+  "text": "enter the aquarium"
+ },
+ "gb.harvest_moon_3.023": {
+  "split": "test_env",
+  "text": "enter the theatre"
+ },
+ "gb.harvest_moon_3.024": {
+  "split": "test_env",
+  "text": "buy a meal set"
+ },
+ "gb.harvest_moon_3.025": {
+  "split": "test_env",
+  "text": "buy a flower vase"
+ },
+ "gb.harvest_moon_3.026": {
+  "split": "test_env",
+  "text": "buy a horse saddle"
+ },
+ "gb.harvest_moon_3.027": {
+  "split": "test_env",
+  "text": "choose tea to buy"
+ },
+ "gb.harvest_moon_3.028": {
+  "split": "test_env",
+  "text": "choose asparagus seeds to buy"
+ },
+ "gb.harvest_moon_3.029": {
+  "split": "test_env",
+  "text": "choose coffee to buy"
+ },
+ "gb.harvest_moon_3.030": {
+  "split": "test_env",
+  "text": "read the ferry sign"
+ },
+ "gb.harvest_moon_3.031": {
+  "split": "test_env",
+  "text": "find secret savings"
+ },
+ "gb.harvest_moon_3.032": {
+  "split": "test_env",
+  "text": "choose potato seeds to buy"
+ },
+ "gb.harvest_moon_3.033": {
+  "split": "test_env",
+  "text": "choose turnip seeds to buy"
+ },
+ "gb.harvest_moon_3.034": {
+  "split": "test_env",
+  "text": "enter the hot spring"
+ },
+ "gb.harvest_moon_3.035": {
+  "split": "test_env",
+  "text": "break the rock in between the two stumps with the hammer while standing to its left"
+ },
+ "gb.harvest_moon_3.036": {
+  "split": "test_env",
+  "text": "remove the weed against the fence while standing to its left"
+ },
+ "gb.harvest_moon_3.037": {
+  "split": "test_env",
+  "text": "pick up the cherry while standing against the weed"
+ },
+ "gb.harvest_moon_3.038": {
+  "split": "test_env",
+  "text": "pick up the berry while standing above it and against the tree on the left"
+ },
+ "gb.harvest_moon_3.039": {
+  "split": "test_env",
+  "text": "sell the chicken at the farmer's union"
+ },
+ "gb.harvest_moon_3.040": {
+  "split": "test_env",
+  "text": "buy and only buy a fodder set at the farmer's union"
+ },
+ "gb.harvest_moon_3.041": {
+  "split": "test_env",
+  "text": "buy and only buy horse medicine at the farmer's union"
+ },
+ "gb.harvest_moon_3.042": {
+  "split": "test_env",
+  "text": "speak to Kate (the girl in the light blue skirt) by the cliff and watch fireworks together"
+ },
+ "gb.harvest_moon_3.043": {
+  "split": "test_env",
+  "text": "water only the center sweet potato of the 3x3 field without disturbing the others"
+ },
+ "gb.harvest_moon_3.044": {
+  "split": "test_env",
+  "text": "water only the center watermelon plant of the 3x3 field without disturbing the others"
+ },
+ "gb.harvest_moon_3.045": {
+  "split": "test_env",
+  "text": "harvest only the top-center potato of the 3x3 field while standing below it without disturbing the others"
+ },
+ "gb.harvest_moon_3.046": {
+  "split": "test_env",
+  "text": "harvest only the center eggplant of the top 3x3 field without disturbing the others"
+ },
+ "gb.harvest_moon_3.047": {
+  "split": "test_env",
+  "text": "harvest only the center turnip of the 3x3 turnip field on the left that has 8 turnips planted without disturbing the others"
+ },
+ "gb.harvest_moon_3.048": {
+  "split": "test_env",
+  "text": "read through \"Living with Animals\" Chapter 2"
+ },
+ "gb.harvest_moon_3.049": {
+  "split": "test_env",
+  "text": "check how much money the player May currently has"
+ },
+ "gb.legend_of_zelda_links_awakening.000": {
+  "split": "train",
+  "text": "The character is stuck behind the bed inside the initial spawning room and it has to get out of that room"
+ },
+ "gb.legend_of_zelda_links_awakening.001": {
+  "split": "train",
+  "text": "talk to tarin inside the spawn house to get the shield"
+ },
+ "gb.legend_of_zelda_links_awakening.002": {
+  "split": "train",
+  "text": "pick up the sword from the shore"
+ },
+ "gb.legend_of_zelda_links_awakening.003": {
+  "split": "train",
+  "text": "open inventory by pressing enter"
+ },
+ "gb.legend_of_zelda_links_awakening.004": {
+  "split": "train",
+  "text": "open inventory by pressing enter and remove sword"
+ },
+ "gb.legend_of_zelda_links_awakening.005": {
+  "split": "train",
+  "text": "equip the sword"
+ },
+ "gb.legend_of_zelda_links_awakening.006": {
+  "split": "val",
+  "text": "talk to kids outside the library"
+ },
+ "gb.legend_of_zelda_links_awakening.007": {
+  "split": "train",
+  "text": "talk to the statue"
+ },
+ "gb.legend_of_zelda_links_awakening.008": {
+  "split": "train",
+  "text": "read the sign board"
+ },
+ "gb.legend_of_zelda_links_awakening.009": {
+  "split": "test",
+  "text": "go inside the shop"
+ },
+ "gb.legend_of_zelda_links_awakening.010": {
+  "split": "train",
+  "text": "make a call"
+ },
+ "gb.legend_of_zelda_links_awakening.011": {
+  "split": "test",
+  "text": "go inside the dark forest by chopping bushes"
+ },
+ "gb.legend_of_zelda_links_awakening.012": {
+  "split": "train",
+  "text": "go inside the tunnel"
+ },
+ "gb.legend_of_zelda_links_awakening.013": {
+  "split": "train",
+  "text": "in dark forest and kill all the bats to acquire money from the chest"
+ },
+ "gb.legend_of_zelda_links_awakening.014": {
+  "split": "val",
+  "text": "take the heart"
+ },
+ "gb.legend_of_zelda_links_awakening.015": {
+  "split": "train",
+  "text": "take the shroom"
+ },
+ "gb.legend_of_zelda_links_awakening.016": {
+  "split": "val",
+  "text": "swap shroom with sword"
+ },
+ "gb.legend_of_zelda_links_awakening.017": {
+  "split": "val",
+  "text": "swap shroom with shield"
+ },
+ "gb.legend_of_zelda_links_awakening.018": {
+  "split": "test",
+  "text": "make another call from the chest shop"
+ },
+ "gb.legend_of_zelda_links_awakening.019": {
+  "split": "test",
+  "text": "go inside the skeleton house"
+ },
+ "gb.legend_of_zelda_links_awakening.020": {
+  "split": "test",
+  "text": "go underground"
+ },
+ "gb.legend_of_zelda_links_awakening.021": {
+  "split": "train",
+  "text": "talk to diamond kid"
+ },
+ "gb.legend_of_zelda_links_awakening.022": {
+  "split": "train",
+  "text": "go inside the 2 door house"
+ },
+ "gb.legend_of_zelda_links_awakening.023": {
+  "split": "train",
+  "text": "go inside the pot room"
+ },
+ "gb.legend_of_zelda_links_awakening.024": {
+  "split": "test",
+  "text": "go near sign"
+ },
+ "gb.legend_of_zelda_links_awakening.025": {
+  "split": "test",
+  "text": "go in the water"
+ },
+ "gb.legend_of_zelda_links_awakening.026": {
+  "split": "val",
+  "text": "go and see the pond"
+ },
+ "gb.legend_of_zelda_links_awakening.027": {
+  "split": "val",
+  "text": "go inside the weird tunnel"
+ },
+ "gb.legend_of_zelda_links_awakening.028": {
+  "split": "val",
+  "text": "talk to witch"
+ },
+ "gb.legend_of_zelda_links_awakening.029": {
+  "split": "train",
+  "text": "keep going right until the screen changes completely"
+ },
+ "gb.legend_of_zelda_links_awakening.030": {
+  "split": "test",
+  "text": "go near calling booth"
+ },
+ "gb.legend_of_zelda_links_awakening.031": {
+  "split": "val",
+  "text": "go left to see the grandma then cross the boundary and go to the well"
+ },
+ "gb.legend_of_zelda_links_awakening.032": {
+  "split": "train",
+  "text": "get off the carpet"
+ },
+ "gb.legend_of_zelda_links_awakening.033": {
+  "split": "train",
+  "text": "get off the track"
+ },
+ "gb.legend_of_zelda_links_awakening.034": {
+  "split": "test",
+  "text": "leave the house"
+ },
+ "gb.legend_of_zelda_links_awakening.035": {
+  "split": "test",
+  "text": "go up and take a right from the chicken house to see overgrown grass"
+ },
+ "gb.legend_of_zelda_links_awakening.036": {
+  "split": "test",
+  "text": "go left see the blue house and then go up to the fan house"
+ },
+ "gb.legend_of_zelda_links_awakening.037": {
+  "split": "test",
+  "text": "climb the stairs"
+ },
+ "gb.legend_of_zelda_links_awakening.038": {
+  "split": "train",
+  "text": "push the heavy stone"
+ },
+ "gb.legend_of_zelda_links_awakening.039": {
+  "split": "train",
+  "text": "finish dialogue"
+ },
+ "gb.legend_of_zelda_links_awakening.040": {
+  "split": "train",
+  "text": "head to the grass"
+ },
+ "gb.legend_of_zelda_links_awakening.041": {
+  "split": "test",
+  "text": "head to the grass 2"
+ },
+ "gb.legend_of_zelda_links_awakening.042": {
+  "split": "train",
+  "text": "keep going right then go down near the signboard"
+ },
+ "gb.legend_of_zelda_links_awakening.043": {
+  "split": "train",
+  "text": "finish dialogue"
+ },
+ "gb.legend_of_zelda_links_awakening.044": {
+  "split": "train",
+  "text": "jump"
+ },
+ "gb.legend_of_zelda_links_awakening.045": {
+  "split": "test",
+  "text": "jump2"
+ },
+ "gb.legend_of_zelda_links_awakening.046": {
+  "split": "test",
+  "text": "stay there and get hurt by the monster"
+ },
+ "gb.legend_of_zelda_links_awakening.047": {
+  "split": "val",
+  "text": "keep going down until you see the chicken"
+ },
+ "gb.legend_of_zelda_links_awakening.048": {
+  "split": "train",
+  "text": "visit the signboard and then go up"
+ },
+ "gb.legend_of_zelda_links_awakening.049": {
+  "split": "val",
+  "text": "read sign board near the potholes"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.000": {
+  "split": "test_env",
+  "text": "go near the crowd"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.001": {
+  "split": "test_env",
+  "text": "talk to the girl after start"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.002": {
+  "split": "test_env",
+  "text": "jump from flowers"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.003": {
+  "split": "test_env",
+  "text": "talk to farmer"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.004": {
+  "split": "test_env",
+  "text": "go inside the library"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.005": {
+  "split": "test_env",
+  "text": "go inside the library and talk to parrot"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.006": {
+  "split": "test_env",
+  "text": "fall from the bridge"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.007": {
+  "split": "test_env",
+  "text": "hang out and watch the water"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.008": {
+  "split": "test_env",
+  "text": "read the signboard outside horror villlage"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.009": {
+  "split": "test_env",
+  "text": "go inside the shop"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.010": {
+  "split": "test_env",
+  "text": "talk to the shop person"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.011": {
+  "split": "test_env",
+  "text": "go to the girl house"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.012": {
+  "split": "test_env",
+  "text": "go to the girl house and move pots"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.013": {
+  "split": "test_env",
+  "text": "go inside the old man's tunnel"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.014": {
+  "split": "test_env",
+  "text": "talk to the artist"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.015": {
+  "split": "test_env",
+  "text": "go to the chicken house"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.016": {
+  "split": "test_env",
+  "text": "traverse the jiggly part and keep moving forward"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.017": {
+  "split": "test_env",
+  "text": "talk to the fairy"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.018": {
+  "split": "test_env",
+  "text": "open the gate by interacting with the block and then get in the top gate"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.019": {
+  "split": "test_env",
+  "text": "open inventory"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.020": {
+  "split": "test_env",
+  "text": "read signboard outside clock tower"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.021": {
+  "split": "test_env",
+  "text": "climb stairs"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.022": {
+  "split": "test_env",
+  "text": "go to girl's house and talk to her"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.023": {
+  "split": "test_env",
+  "text": "go see the ginger root at the platform"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.024": {
+  "split": "test_env",
+  "text": "go to the pier"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.025": {
+  "split": "test_env",
+  "text": "visit cat"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.026": {
+  "split": "test_env",
+  "text": "say meow"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.027": {
+  "split": "test_env",
+  "text": "talk to owner"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.028": {
+  "split": "test_env",
+  "text": "walk the bridge"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.029": {
+  "split": "test_env",
+  "text": "go see the dog"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.030": {
+  "split": "test_env",
+  "text": "go left and see the dog"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.031": {
+  "split": "test_env",
+  "text": "step off the grass"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.032": {
+  "split": "test_env",
+  "text": "avoid the building and see the shop"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.033": {
+  "split": "test_env",
+  "text": "go up inside the clock tower and see the clocks then get out and visit mickey on the left"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.034": {
+  "split": "test_env",
+  "text": "go right to see the arcade"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.035": {
+  "split": "test_env",
+  "text": "go inside joystick house"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.036": {
+  "split": "test_env",
+  "text": "go near red snake"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.037": {
+  "split": "test_env",
+  "text": "go near blue snake"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.038": {
+  "split": "test_env",
+  "text": "red snake talk"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.039": {
+  "split": "test_env",
+  "text": "blue snake talk"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.040": {
+  "split": "test_env",
+  "text": "go read the blue book"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.041": {
+  "split": "test_env",
+  "text": "go read the red book"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.042": {
+  "split": "test_env",
+  "text": "go to the lava floor"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.043": {
+  "split": "test_env",
+  "text": "go off track then go down"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.044": {
+  "split": "test_env",
+  "text": "go left into the gloomy place"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.045": {
+  "split": "test_env",
+  "text": "stay still and get hurt"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.046": {
+  "split": "test_env",
+  "text": "get off green carpet"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.047": {
+  "split": "test_env",
+  "text": "go up to see the trunk and then take the path to the right of the trunk"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.048": {
+  "split": "test_env",
+  "text": "go down near holes"
+ },
+ "gb.legend_of_zelda_the_oracle_of_seasons.049": {
+  "split": "test_env",
+  "text": "go left to see the bush near the bridge"
+ },
+ "gb.pokemon_crystal.000": {
+  "split": "test_env",
+  "text": "Enter the Cherrygrove Pokemon Center"
+ },
+ "gb.pokemon_crystal.001": {
+  "split": "test_env",
+  "text": "Watch TV"
+ },
+ "gb.pokemon_crystal.002": {
+  "split": "test_env",
+  "text": "Look into the mirror"
+ },
+ "gb.pokemon_crystal.003": {
+  "split": "test_env",
+  "text": "Talk to the child"
+ },
+ "gb.pokemon_crystal.004": {
+  "split": "test_env",
+  "text": "Obtain a berry"
+ },
+ "gb.pokemon_crystal.005": {
+  "split": "test_env",
+  "text": "Take Dragonair's item back"
+ },
+ "gb.pokemon_crystal.006": {
+  "split": "test_env",
+  "text": "Make Pidgeot hold a Cleanse Tag"
+ },
+ "gb.pokemon_crystal.007": {
+  "split": "test_env",
+  "text": "Open Typhlosion's Pokedex entry"
+ },
+ "gb.pokemon_crystal.008": {
+  "split": "test_env",
+  "text": "Exit the cave"
+ },
+ "gb.pokemon_crystal.009": {
+  "split": "test_env",
+  "text": "Fish until you catch a Pokemon"
+ },
+ "gb.pokemon_crystal.010": {
+  "split": "test_env",
+  "text": "Read Elm's computer"
+ },
+ "gb.pokemon_crystal.011": {
+  "split": "test_env",
+  "text": "Talk to Prof. Elm's aide"
+ },
+ "gb.pokemon_crystal.012": {
+  "split": "test_env",
+  "text": "Immediately escape the tower"
+ },
+ "gb.pokemon_crystal.013": {
+  "split": "test_env",
+  "text": "Talk to the gym leader ahead"
+ },
+ "gb.pokemon_crystal.014": {
+  "split": "test_env",
+  "text": "Buy one Antidote"
+ },
+ "gb.pokemon_crystal.015": {
+  "split": "test_env",
+  "text": "Sell one Revive"
+ },
+ "gb.pokemon_crystal.016": {
+  "split": "test_env",
+  "text": "Teach Pidgeot Toxic"
+ },
+ "gb.pokemon_crystal.017": {
+  "split": "test_env",
+  "text": "Get the boy's phone number"
+ },
+ "gb.pokemon_crystal.018": {
+  "split": "test_env",
+  "text": "Interact with a tree that can be cut"
+ },
+ "gb.pokemon_crystal.019": {
+  "split": "test_env",
+  "text": "Pick up the item"
+ },
+ "gb.pokemon_crystal.020": {
+  "split": "test_env",
+  "text": "Read the book"
+ },
+ "gb.pokemon_crystal.021": {
+  "split": "test_env",
+  "text": "Speak to the gym leader ahead"
+ },
+ "gb.pokemon_crystal.022": {
+  "split": "test_env",
+  "text": "Enter the burned tower"
+ },
+ "gb.pokemon_crystal.023": {
+  "split": "test_env",
+  "text": "Refuse to give the Miltank a berry"
+ },
+ "gb.pokemon_crystal.024": {
+  "split": "test_env",
+  "text": "Get a fishing rod"
+ },
+ "gb.pokemon_crystal.025": {
+  "split": "test_env",
+  "text": "Enter the lighthouse"
+ },
+ "gb.pokemon_crystal.026": {
+  "split": "test_env",
+  "text": "Talk to the red haired girl"
+ },
+ "gb.pokemon_crystal.027": {
+  "split": "test_env",
+  "text": "Make Pidgeot forget Gust"
+ },
+ "gb.pokemon_crystal.028": {
+  "split": "test_env",
+  "text": "Exit via the ice path below"
+ },
+ "gb.pokemon_crystal.029": {
+  "split": "test_env",
+  "text": "Reach the other side of the ice maze"
+ },
+ "gb.pokemon_crystal.030": {
+  "split": "test_env",
+  "text": "Defeat Golbat with a super effective attack"
+ },
+ "gb.pokemon_crystal.031": {
+  "split": "test_env",
+  "text": "Catch Delibird"
+ },
+ "gb.pokemon_crystal.032": {
+  "split": "test_env",
+  "text": "Encounter a Tangela"
+ },
+ "gb.pokemon_crystal.033": {
+  "split": "test_env",
+  "text": "Talk to a Slowpoke"
+ },
+ "gb.pokemon_crystal.034": {
+  "split": "test_env",
+  "text": "Get some charcoal from the kiln"
+ },
+ "gb.pokemon_crystal.035": {
+  "split": "test_env",
+  "text": "Speak to the gym leader"
+ },
+ "gb.pokemon_crystal.036": {
+  "split": "test_env",
+  "text": "Get a Fast Ball from Kurt"
+ },
+ "gb.pokemon_crystal.037": {
+  "split": "test_env",
+  "text": "Commission Kurt to make a Poke Ball for you"
+ },
+ "gb.pokemon_crystal.038": {
+  "split": "test_env",
+  "text": "Try to fly out of the forest"
+ },
+ "gb.pokemon_crystal.039": {
+  "split": "test_env",
+  "text": "Headbutt a tree"
+ },
+ "gb.pokemon_crystal.040": {
+  "split": "test_env",
+  "text": "Take a picture of Suicune"
+ },
+ "gb.pokemon_crystal.041": {
+  "split": "test_env",
+  "text": "Surf onto the water"
+ },
+ "gb.pokemon_crystal.042": {
+  "split": "test_env",
+  "text": "Visit the Poke Seer and ask her about Alakazam"
+ },
+ "gb.pokemon_crystal.043": {
+  "split": "test_env",
+  "text": "Open your mailbox through the PC"
+ },
+ "gb.pokemon_crystal.044": {
+  "split": "test_env",
+  "text": "Call your mom"
+ },
+ "gb.pokemon_crystal.045": {
+  "split": "test_env",
+  "text": "Catch Ponyta"
+ },
+ "gb.pokemon_crystal.046": {
+  "split": "test_env",
+  "text": "Light up Silver Cave"
+ },
+ "gb.pokemon_crystal.047": {
+  "split": "test_env",
+  "text": "Get an explanation for the Battle Tower"
+ },
+ "gb.pokemon_crystal.048": {
+  "split": "test_env",
+  "text": "Defeat Will"
+ },
+ "gb.pokemon_crystal.049": {
+  "split": "test_env",
+  "text": "Defeat Koga"
+ },
+ "gb.pokemon_red.000": {
+  "split": "val",
+  "text": "Enter the Pokemon Center"
+ },
+ "gb.pokemon_red.001": {
+  "split": "test",
+  "text": "Exit the cave using the exit on the bottom right"
+ },
+ "gb.pokemon_red.002": {
+  "split": "test",
+  "text": "Speak to Bill"
+ },
+ "gb.pokemon_red.003": {
+  "split": "train",
+  "text": "Pick up the item"
+ },
+ "gb.pokemon_red.004": {
+  "split": "val",
+  "text": "Read the sign below you"
+ },
+ "gb.pokemon_red.005": {
+  "split": "test",
+  "text": "Speak to the aide inside the gym"
+ },
+ "gb.pokemon_red.006": {
+  "split": "train",
+  "text": "Defeat Gym Leader Brock"
+ },
+ "gb.pokemon_red.007": {
+  "split": "test",
+  "text": "Defeat Trainer Lass"
+ },
+ "gb.pokemon_red.008": {
+  "split": "test",
+  "text": "Catch Pidgey"
+ },
+ "gb.pokemon_red.009": {
+  "split": "train",
+  "text": "Catch Pikachu"
+ },
+ "gb.pokemon_red.010": {
+  "split": "val",
+  "text": "Open the Map"
+ },
+ "gb.pokemon_red.011": {
+  "split": "val",
+  "text": "Use a Potion on Charmander"
+ },
+ "gb.pokemon_red.012": {
+  "split": "train",
+  "text": "Buy a Potion"
+ },
+ "gb.pokemon_red.013": {
+  "split": "val",
+  "text": "Use a not very effective attack on seaking"
+ },
+ "gb.pokemon_red.014": {
+  "split": "train",
+  "text": "Try to purchase a bike"
+ },
+ "gb.pokemon_red.015": {
+  "split": "train",
+  "text": "Discover the secret of the volcanobadge"
+ },
+ "gb.pokemon_red.016": {
+  "split": "train",
+  "text": "Open the map on the wall"
+ },
+ "gb.pokemon_red.017": {
+  "split": "val",
+  "text": "Defeat Blue"
+ },
+ "gb.pokemon_red.018": {
+  "split": "train",
+  "text": "Click a secret switch"
+ },
+ "gb.pokemon_red.019": {
+  "split": "test",
+  "text": "Get onto the water"
+ },
+ "gb.pokemon_red.020": {
+  "split": "test",
+  "text": "Sell exactly 1 Psychic TM"
+ },
+ "gb.pokemon_red.021": {
+  "split": "train",
+  "text": "Encounter a ghost"
+ },
+ "gb.pokemon_red.022": {
+  "split": "test",
+  "text": "Get Mew's nickname rated"
+ },
+ "gb.pokemon_red.023": {
+  "split": "train",
+  "text": "Read the letter"
+ },
+ "gb.pokemon_red.024": {
+  "split": "train",
+  "text": "Challenge the Elite Four"
+ },
+ "gb.pokemon_red.025": {
+  "split": "test",
+  "text": "Use the Super Rod properly"
+ },
+ "gb.pokemon_red.026": {
+  "split": "test",
+  "text": "Look into the binoculars above"
+ },
+ "gb.pokemon_red.027": {
+  "split": "train",
+  "text": "Speak to Pikachu"
+ },
+ "gb.pokemon_red.028": {
+  "split": "test",
+  "text": "Exit the building"
+ },
+ "gb.pokemon_red.029": {
+  "split": "train",
+  "text": "Go through the backdoor of the house that was robbed"
+ },
+ "gb.pokemon_red.030": {
+  "split": "test",
+  "text": "Leave Mewtwo in daycare"
+ },
+ "gb.pokemon_red.031": {
+  "split": "train",
+  "text": "Read about Saffron City"
+ },
+ "gb.pokemon_red.032": {
+  "split": "train",
+  "text": "Play the game above"
+ },
+ "gb.pokemon_red.033": {
+  "split": "train",
+  "text": "Toss an Ultra Ball"
+ },
+ "gb.pokemon_red.034": {
+  "split": "train",
+  "text": "Exit Seafoam Islands"
+ },
+ "gb.pokemon_red.035": {
+  "split": "train",
+  "text": "Get to Pallet Town without using Surf"
+ },
+ "gb.pokemon_red.036": {
+  "split": "val",
+  "text": "Withdraw Staryu from the box"
+ },
+ "gb.pokemon_red.037": {
+  "split": "train",
+  "text": "Read the sign"
+ },
+ "gb.pokemon_red.038": {
+  "split": "val",
+  "text": "Poison Pidgeotto"
+ },
+ "gb.pokemon_red.039": {
+  "split": "val",
+  "text": "Switch to your weakest Pokemon"
+ },
+ "gb.pokemon_red.040": {
+  "split": "test",
+  "text": "Catch Pidgey"
+ },
+ "gb.pokemon_red.041": {
+  "split": "train",
+  "text": "Catch a Goldeen"
+ },
+ "gb.pokemon_red.042": {
+  "split": "train",
+  "text": "Try to teach Staryu Toxic"
+ },
+ "gb.pokemon_red.043": {
+  "split": "train",
+  "text": "Play the PokeFlute"
+ },
+ "gb.pokemon_red.044": {
+  "split": "train",
+  "text": "Open Squirtle's Pokedex page"
+ },
+ "gb.pokemon_red.045": {
+  "split": "train",
+  "text": "Open Blastoise's status page"
+ },
+ "gb.pokemon_red.046": {
+  "split": "train",
+  "text": "Open Charizard's move list"
+ },
+ "gb.pokemon_red.047": {
+  "split": "test",
+  "text": "Speak to the gym leader"
+ },
+ "gb.pokemon_red.048": {
+  "split": "test",
+  "text": "Reach the gym leader"
+ },
+ "gb.pokemon_red.049": {
+  "split": "val",
+  "text": "Read the blackboard in the school nearby"
+ },
+ "gb.runes_of_virtue_1.000": {
+  "split": "train",
+  "text": "Open the inventory menu"
+ },
+ "gb.runes_of_virtue_1.001": {
+  "split": "val",
+  "text": "Talk to the king for the first time"
+ },
+ "gb.runes_of_virtue_1.002": {
+  "split": "train",
+  "text": "Talk to Chuckles"
+ },
+ "gb.runes_of_virtue_1.003": {
+  "split": "test",
+  "text": "Talk to Gnu Gnu at the 1st store"
+ },
+ "gb.runes_of_virtue_1.004": {
+  "split": "test",
+  "text": "Talk to Gnu Gnu at the 2nd store"
+ },
+ "gb.runes_of_virtue_1.005": {
+  "split": "train",
+  "text": "Talk to Sherry"
+ },
+ "gb.runes_of_virtue_1.006": {
+  "split": "train",
+  "text": "Enter the Cavern of Hatred"
+ },
+ "gb.runes_of_virtue_1.007": {
+  "split": "train",
+  "text": "Enter the Cavern of Deceit"
+ },
+ "gb.runes_of_virtue_1.008": {
+  "split": "train",
+  "text": "Enter the Cavern of Cowardice"
+ },
+ "gb.runes_of_virtue_1.009": {
+  "split": "test",
+  "text": "Cavern of Cowardice enter floor 2"
+ },
+ "gb.runes_of_virtue_1.010": {
+  "split": "train",
+  "text": "Cavern of Cowardice enter floor 3"
+ },
+ "gb.runes_of_virtue_1.011": {
+  "split": "val",
+  "text": "Cavern of Cowardice floor 3 open chest"
+ },
+ "gb.runes_of_virtue_1.012": {
+  "split": "val",
+  "text": "Cavern of Cowardice enter floor 4"
+ },
+ "gb.runes_of_virtue_1.013": {
+  "split": "val",
+  "text": "Cavern of Cowardice talk to sherry floor 4"
+ },
+ "gb.runes_of_virtue_1.014": {
+  "split": "val",
+  "text": "Cavern of Cowardice take stew floor 4"
+ },
+ "gb.runes_of_virtue_1.015": {
+  "split": "val",
+  "text": "Cavern of Cowardice obtain coin floor 4"
+ },
+ "gb.runes_of_virtue_1.016": {
+  "split": "val",
+  "text": "Cavern of Cowardice enter floor 5"
+ },
+ "gb.runes_of_virtue_1.017": {
+  "split": "val",
+  "text": "Cavern of Cowardice obtain the key from Dr. Cat floor 5"
+ },
+ "gb.runes_of_virtue_1.018": {
+  "split": "train",
+  "text": "Cavern of Cowardice enter floor 6"
+ },
+ "gb.runes_of_virtue_1.019": {
+  "split": "test",
+  "text": "Cavern of Cowardice enter secret door floor 6"
+ },
+ "gb.runes_of_virtue_1.020": {
+  "split": "val",
+  "text": "Cavern of Cowardice talk to Sherry floor 6"
+ },
+ "gb.runes_of_virtue_1.021": {
+  "split": "test",
+  "text": "Cavern of Cowardice talk to Chuckles floor 6"
+ },
+ "gb.runes_of_virtue_1.022": {
+  "split": "train",
+  "text": "Cavern of Cowardice obtain magic rope floor 6"
+ },
+ "gb.runes_of_virtue_1.023": {
+  "split": "train",
+  "text": "Cavern of Deceit Talk to Dr. Cat"
+ },
+ "gb.runes_of_virtue_1.024": {
+  "split": "train",
+  "text": "Cavern of Deceit Talk to Finn Floor 1"
+ },
+ "gb.runes_of_virtue_1.025": {
+  "split": "train",
+  "text": "Cavern of Deceit enter east door floor 1"
+ },
+ "gb.runes_of_virtue_1.026": {
+  "split": "train",
+  "text": "Cavern of Deceit enter floor 2"
+ },
+ "gb.runes_of_virtue_1.027": {
+  "split": "test",
+  "text": "Cavern of Deceit enter floor 3"
+ },
+ "gb.runes_of_virtue_1.028": {
+  "split": "train",
+  "text": "Cavern of Deceit Talk to Kador Floor 3"
+ },
+ "gb.runes_of_virtue_1.029": {
+  "split": "test",
+  "text": "Cavern of Deceit Talk to Finn Floor 3"
+ },
+ "gb.runes_of_virtue_1.030": {
+  "split": "train",
+  "text": "Cavern of Deceit enter floor 4"
+ },
+ "gb.runes_of_virtue_1.031": {
+  "split": "test",
+  "text": "Talk to Dr. Cat in the Cat's Lair"
+ },
+ "gb.runes_of_virtue_1.032": {
+  "split": "test",
+  "text": "Buy two cakes"
+ },
+ "gb.runes_of_virtue_1.033": {
+  "split": "test",
+  "text": "Cavern of Hatred open chest floor 1"
+ },
+ "gb.runes_of_virtue_1.034": {
+  "split": "test",
+  "text": "Cavern of Hatred enter floor 2"
+ },
+ "gb.runes_of_virtue_1.035": {
+  "split": "train",
+  "text": "Cavern of Hatred Talk to Sherry Floor 2"
+ },
+ "gb.runes_of_virtue_1.036": {
+  "split": "train",
+  "text": "Cavern of Hatred Choose Door with Sherry"
+ },
+ "gb.runes_of_virtue_1.037": {
+  "split": "train",
+  "text": "Cavern of Hatred Choose Right Door and Talk with Melissa"
+ },
+ "gb.runes_of_virtue_1.038": {
+  "split": "test",
+  "text": "Cavern of Hatred enter floor 3"
+ },
+ "gb.runes_of_virtue_1.039": {
+  "split": "train",
+  "text": "Cavern of Hatred enter floor 4"
+ },
+ "gb.runes_of_virtue_1.040": {
+  "split": "test",
+  "text": "Cavern of Hatred enter floor 5"
+ },
+ "gb.runes_of_virtue_1.041": {
+  "split": "train",
+  "text": "Cavern of Hatred talk to Klop floor 5"
+ },
+ "gb.runes_of_virtue_1.042": {
+  "split": "train",
+  "text": "Cavern of Hatred talk to Klip floor 5"
+ },
+ "gb.runes_of_virtue_1.043": {
+  "split": "train",
+  "text": "Cavern of Hatred obtain axe floor 5"
+ },
+ "gb.runes_of_virtue_1.044": {
+  "split": "val",
+  "text": "Exit the Cavern of Hatred"
+ },
+ "gb.runes_of_virtue_1.045": {
+  "split": "train",
+  "text": "Ride the ship"
+ },
+ "gb.runes_of_virtue_1.046": {
+  "split": "test",
+  "text": "Unlock the basement ladder"
+ },
+ "gb.runes_of_virtue_1.047": {
+  "split": "test",
+  "text": "Open the basement chest"
+ },
+ "gb.runes_of_virtue_1.048": {
+  "split": "train",
+  "text": "Access the telescope"
+ },
+ "gb.runes_of_virtue_1.049": {
+  "split": "train",
+  "text": "Die"
+ },
+ "gb.runes_of_virtue_2.000": {
+  "split": "test_env",
+  "text": "Open the inventory menu"
+ },
+ "gb.runes_of_virtue_2.001": {
+  "split": "test_env",
+  "text": "Read a book"
+ },
+ "gb.runes_of_virtue_2.002": {
+  "split": "test_env",
+  "text": "Talk to Nystul"
+ },
+ "gb.runes_of_virtue_2.003": {
+  "split": "test_env",
+  "text": "Talk to blacksmith and fail to buy shield"
+ },
+ "gb.runes_of_virtue_2.004": {
+  "split": "test_env",
+  "text": "Talk to Sherry the mouse"
+ },
+ "gb.runes_of_virtue_2.005": {
+  "split": "test_env",
+  "text": "Talk to Sandy the cook"
+ },
+ "gb.runes_of_virtue_2.006": {
+  "split": "test_env",
+  "text": "Talk to Lord Whitsaber"
+ },
+ "gb.runes_of_virtue_2.007": {
+  "split": "test_env",
+  "text": "Enter the Cavern of Dishonour"
+ },
+ "gb.runes_of_virtue_2.008": {
+  "split": "test_env",
+  "text": "Cavern of Dishonour enter floor 2"
+ },
+ "gb.runes_of_virtue_2.009": {
+  "split": "test_env",
+  "text": "Cavern of Dishonour enter floor 3"
+ },
+ "gb.runes_of_virtue_2.010": {
+  "split": "test_env",
+  "text": "Cavern of Dishonour equip rod floor 3"
+ },
+ "gb.runes_of_virtue_2.011": {
+  "split": "test_env",
+  "text": "Cavern of Dishonour enter floor 3 blocked"
+ },
+ "gb.runes_of_virtue_2.012": {
+  "split": "test_env",
+  "text": "Cavern of Dishonour enter floor 4"
+ },
+ "gb.runes_of_virtue_2.013": {
+  "split": "test_env",
+  "text": "Cavern of Dishonour Lord Whitsaber floor 4"
+ },
+ "gb.runes_of_virtue_2.014": {
+  "split": "test_env",
+  "text": "Exit the Cavern of Dishonour"
+ },
+ "gb.runes_of_virtue_2.015": {
+  "split": "test_env",
+  "text": "Obtain the Rune of Honour"
+ },
+ "gb.runes_of_virtue_2.016": {
+  "split": "test_env",
+  "text": "Enter the City of Yew"
+ },
+ "gb.runes_of_virtue_2.017": {
+  "split": "test_env",
+  "text": "Read the welcome sign city of Yew"
+ },
+ "gb.runes_of_virtue_2.018": {
+  "split": "test_env",
+  "text": "Talk to Mandrake the Bard"
+ },
+ "gb.runes_of_virtue_2.019": {
+  "split": "test_env",
+  "text": "Enter the Cavern of Injustice"
+ },
+ "gb.runes_of_virtue_2.020": {
+  "split": "test_env",
+  "text": "Cavern of Injustice enter floor 2"
+ },
+ "gb.runes_of_virtue_2.021": {
+  "split": "test_env",
+  "text": "Cavern of Injustice enter floor 3"
+ },
+ "gb.runes_of_virtue_2.022": {
+  "split": "test_env",
+  "text": "Cavern of Injustice enter east portal floor 3"
+ },
+ "gb.runes_of_virtue_2.023": {
+  "split": "test_env",
+  "text": "Cavern of Injustice enter floor 4"
+ },
+ "gb.runes_of_virtue_2.024": {
+  "split": "test_env",
+  "text": "Cavern of Injustice enter floor 5"
+ },
+ "gb.runes_of_virtue_2.025": {
+  "split": "test_env",
+  "text": "Cavern of Injustice talk to Zoltan floor 4"
+ },
+ "gb.runes_of_virtue_2.026": {
+  "split": "test_env",
+  "text": "Cavern of Injustice read hint floor 5"
+ },
+ "gb.runes_of_virtue_2.027": {
+  "split": "test_env",
+  "text": "Cavern of Injustice talk to Terry floor 5"
+ },
+ "gb.runes_of_virtue_2.028": {
+  "split": "test_env",
+  "text": "Cavern of Injustice enter floor 6"
+ },
+ "gb.runes_of_virtue_2.029": {
+  "split": "test_env",
+  "text": "Cavern of Injustice enter floor 7"
+ },
+ "gb.runes_of_virtue_2.030": {
+  "split": "test_env",
+  "text": "Grab cheese from kitchen"
+ },
+ "gb.runes_of_virtue_2.031": {
+  "split": "test_env",
+  "text": "Give cheese to Sherry"
+ },
+ "gb.runes_of_virtue_2.032": {
+  "split": "test_env",
+  "text": "Climb ladder behind locked door"
+ },
+ "gb.runes_of_virtue_2.033": {
+  "split": "test_env",
+  "text": "Interact with map on the table"
+ },
+ "gb.runes_of_virtue_2.034": {
+  "split": "test_env",
+  "text": "Find a ladder back from the castle"
+ },
+ "gb.runes_of_virtue_2.035": {
+  "split": "test_env",
+  "text": "Enter the Cavern of Hatred"
+ },
+ "gb.runes_of_virtue_2.036": {
+  "split": "test_env",
+  "text": "Unlock gate 1 in the Cavern of Hatred"
+ },
+ "gb.runes_of_virtue_2.037": {
+  "split": "test_env",
+  "text": "Cavern of Hatred enter blocked room"
+ },
+ "gb.runes_of_virtue_2.038": {
+  "split": "test_env",
+  "text": "Enter Cave of Hatred ladder room 2"
+ },
+ "gb.runes_of_virtue_2.039": {
+  "split": "test_env",
+  "text": "Cavern of Hatred enter floor 3"
+ },
+ "gb.runes_of_virtue_2.040": {
+  "split": "test_env",
+  "text": "Cavern of Hatred grab key"
+ },
+ "gb.runes_of_virtue_2.041": {
+  "split": "test_env",
+  "text": "Cavern of Hatred enter floor 4"
+ },
+ "gb.runes_of_virtue_2.042": {
+  "split": "test_env",
+  "text": "Cavern of Hatred enter floor 5"
+ },
+ "gb.runes_of_virtue_2.043": {
+  "split": "test_env",
+  "text": "Cavern of Hatred enter floor 6"
+ },
+ "gb.runes_of_virtue_2.044": {
+  "split": "test_env",
+  "text": "Cavern of Hatred enter floor 7"
+ },
+ "gb.runes_of_virtue_2.045": {
+  "split": "test_env",
+  "text": "Unlock door and save Tholden"
+ },
+ "gb.runes_of_virtue_2.046": {
+  "split": "test_env",
+  "text": "Find a ladder out of Cavern of Hatred"
+ },
+ "gb.runes_of_virtue_2.047": {
+  "split": "test_env",
+  "text": "Bring Tholden back to king"
+ },
+ "gb.runes_of_virtue_2.048": {
+  "split": "test_env",
+  "text": "Attend the ceremony in the castle"
+ },
+ "gb.runes_of_virtue_2.049": {
+  "split": "test_env",
+  "text": "Die"
+ },
+ "gb.survival_kids_1.000": {
+  "split": "train",
+  "text": "Open the inventory"
+ },
+ "gb.survival_kids_1.001": {
+  "split": "train",
+  "text": "Pick up the item"
+ },
+ "gb.survival_kids_1.002": {
+  "split": "train",
+  "text": "Find the bag"
+ },
+ "gb.survival_kids_1.003": {
+  "split": "test",
+  "text": "Pick up the stick"
+ },
+ "gb.survival_kids_1.004": {
+  "split": "test",
+  "text": "Pick up the tree bark"
+ },
+ "gb.survival_kids_1.005": {
+  "split": "test",
+  "text": "Pick up the bird feather"
+ },
+ "gb.survival_kids_1.006": {
+  "split": "train",
+  "text": "Choose the knife"
+ },
+ "gb.survival_kids_1.007": {
+  "split": "test",
+  "text": "Equip the knife"
+ },
+ "gb.survival_kids_1.008": {
+  "split": "test",
+  "text": "Make kindling from the inventory"
+ },
+ "gb.survival_kids_1.009": {
+  "split": "test",
+  "text": "Drop trash from the inventory"
+ },
+ "gb.survival_kids_1.010": {
+  "split": "train",
+  "text": "Select kindling from the inventory"
+ },
+ "gb.survival_kids_1.011": {
+  "split": "train",
+  "text": "Use kindling"
+ },
+ "gb.survival_kids_1.012": {
+  "split": "train",
+  "text": "Light a fire with kindling"
+ },
+ "gb.survival_kids_1.013": {
+  "split": "val",
+  "text": "Open the inventory after lighting a fire"
+ },
+ "gb.survival_kids_1.014": {
+  "split": "val",
+  "text": "Enter Items after lighting a fire"
+ },
+ "gb.survival_kids_1.015": {
+  "split": "val",
+  "text": "Select meat from the inventory"
+ },
+ "gb.survival_kids_1.016": {
+  "split": "val",
+  "text": "Select Burn on the meat"
+ },
+ "gb.survival_kids_1.017": {
+  "split": "val",
+  "text": "Confirm burning the meat"
+ },
+ "gb.survival_kids_1.018": {
+  "split": "val",
+  "text": "Cook the meat over the fire"
+ },
+ "gb.survival_kids_1.019": {
+  "split": "val",
+  "text": "Open the cooked meat action menu"
+ },
+ "gb.survival_kids_1.020": {
+  "split": "val",
+  "text": "Store the cooked meat"
+ },
+ "gb.survival_kids_1.021": {
+  "split": "val",
+  "text": "Select Eat on the cooked meat"
+ },
+ "gb.survival_kids_1.022": {
+  "split": "val",
+  "text": "Eat the cooked meat"
+ },
+ "gb.survival_kids_1.023": {
+  "split": "test",
+  "text": "Cut grass"
+ },
+ "gb.survival_kids_1.024": {
+  "split": "train",
+  "text": "Select Take from the item menu"
+ },
+ "gb.survival_kids_1.025": {
+  "split": "train",
+  "text": "Select Take from the clam menu"
+ },
+ "gb.survival_kids_1.026": {
+  "split": "train",
+  "text": "Pick up the clam"
+ },
+ "gb.survival_kids_1.027": {
+  "split": "train",
+  "text": "Pick up the canteen"
+ },
+ "gb.survival_kids_1.028": {
+  "split": "train",
+  "text": "Select Take from the canteen menu"
+ },
+ "gb.survival_kids_1.029": {
+  "split": "test",
+  "text": "Choose the canteen"
+ },
+ "gb.survival_kids_1.030": {
+  "split": "test",
+  "text": "Open the canteen action menu"
+ },
+ "gb.survival_kids_1.031": {
+  "split": "train",
+  "text": "Select Use on the canteen"
+ },
+ "gb.survival_kids_1.032": {
+  "split": "train",
+  "text": "Select Drink on the canteen"
+ },
+ "gb.survival_kids_1.033": {
+  "split": "train",
+  "text": "Drink from the canteen"
+ },
+ "gb.survival_kids_1.034": {
+  "split": "test",
+  "text": "Clear the first blocked path"
+ },
+ "gb.survival_kids_1.035": {
+  "split": "test",
+  "text": "Enter the shelter after clearing grass"
+ },
+ "gb.survival_kids_1.036": {
+  "split": "train",
+  "text": "Find the river"
+ },
+ "gb.survival_kids_1.037": {
+  "split": "test",
+  "text": "Enter the shelter"
+ },
+ "gb.survival_kids_1.038": {
+  "split": "test",
+  "text": "Reach daytime"
+ },
+ "gb.survival_kids_1.039": {
+  "split": "val",
+  "text": "Reach nighttime"
+ },
+ "gb.survival_kids_1.040": {
+  "split": "train",
+  "text": "Open the water menu"
+ },
+ "gb.survival_kids_1.041": {
+  "split": "train",
+  "text": "Drink water from the water menu"
+ },
+ "gb.survival_kids_1.042": {
+  "split": "train",
+  "text": "Start filling water from the water menu"
+ },
+ "gb.survival_kids_1.043": {
+  "split": "train",
+  "text": "Get water from the water menu"
+ },
+ "gb.survival_kids_1.044": {
+  "split": "val",
+  "text": "Select Take from the feather menu"
+ },
+ "gb.survival_kids_1.045": {
+  "split": "test",
+  "text": "Open the meat action menu"
+ },
+ "gb.survival_kids_1.046": {
+  "split": "train",
+  "text": "Hunt the animal"
+ },
+ "gb.survival_kids_1.047": {
+  "split": "test",
+  "text": "Open the merge menu"
+ },
+ "gb.survival_kids_1.048": {
+  "split": "train",
+  "text": "Open the canteen take or leave menu"
+ },
+ "gb.survival_kids_1.049": {
+  "split": "val",
+  "text": "Open the feather take or leave menu"
+ },
+ "gb.survival_kids_2.000": {
+  "split": "test_env",
+  "text": "Find the hidden bag"
+ },
+ "gb.survival_kids_2.001": {
+  "split": "test_env",
+  "text": "Open the inventory"
+ },
+ "gb.survival_kids_2.002": {
+  "split": "test_env",
+  "text": "Choose the knife"
+ },
+ "gb.survival_kids_2.003": {
+  "split": "test_env",
+  "text": "Equip the knife"
+ },
+ "gb.survival_kids_2.004": {
+  "split": "test_env",
+  "text": "Pick up the stick"
+ },
+ "gb.survival_kids_2.005": {
+  "split": "test_env",
+  "text": "Cut grass"
+ },
+ "gb.survival_kids_2.006": {
+  "split": "test_env",
+  "text": "Cut grass before the sharp stone"
+ },
+ "gb.survival_kids_2.007": {
+  "split": "test_env",
+  "text": "Find the sharp stone"
+ },
+ "gb.survival_kids_2.008": {
+  "split": "test_env",
+  "text": "Pick up the sharp stone"
+ },
+ "gb.survival_kids_2.009": {
+  "split": "test_env",
+  "text": "Pick up the stone"
+ },
+ "gb.survival_kids_2.010": {
+  "split": "test_env",
+  "text": "Pick up the vine"
+ },
+ "gb.survival_kids_2.011": {
+  "split": "test_env",
+  "text": "Clear the first blocked path"
+ },
+ "gb.survival_kids_2.012": {
+  "split": "test_env",
+  "text": "Move past the cleared grass"
+ },
+ "gb.survival_kids_2.013": {
+  "split": "test_env",
+  "text": "Find the first new path"
+ },
+ "gb.survival_kids_2.014": {
+  "split": "test_env",
+  "text": "Find the second new path"
+ },
+ "gb.survival_kids_2.015": {
+  "split": "test_env",
+  "text": "Find the river"
+ },
+ "gb.survival_kids_2.016": {
+  "split": "test_env",
+  "text": "Enter the shelter"
+ },
+ "gb.survival_kids_2.017": {
+  "split": "test_env",
+  "text": "Reach afternoon"
+ },
+ "gb.survival_kids_2.018": {
+  "split": "test_env",
+  "text": "Reach daytime"
+ },
+ "gb.survival_kids_2.019": {
+  "split": "test_env",
+  "text": "Reach nighttime"
+ },
+ "gb.survival_kids_2.020": {
+  "split": "test_env",
+  "text": "Enter Items from the inventory"
+ },
+ "gb.survival_kids_2.021": {
+  "split": "test_env",
+  "text": "Find the helmet"
+ },
+ "gb.survival_kids_2.022": {
+  "split": "test_env",
+  "text": "Find the fruit"
+ },
+ "gb.survival_kids_2.023": {
+  "split": "test_env",
+  "text": "Open the fruit action menu"
+ },
+ "gb.survival_kids_2.024": {
+  "split": "test_env",
+  "text": "Select Eat on the fruit"
+ },
+ "gb.survival_kids_2.025": {
+  "split": "test_env",
+  "text": "Pick up the fruit"
+ },
+ "gb.survival_kids_2.026": {
+  "split": "test_env",
+  "text": "Eat the fruit"
+ },
+ "gb.survival_kids_2.027": {
+  "split": "test_env",
+  "text": "Recover hunger by eating fruit"
+ },
+ "gb.survival_kids_2.028": {
+  "split": "test_env",
+  "text": "Pick up the tree bark"
+ },
+ "gb.survival_kids_2.029": {
+  "split": "test_env",
+  "text": "Move past the cleared C1 grass"
+ },
+ "gb.survival_kids_2.030": {
+  "split": "test_env",
+  "text": "Enter shelter after C1 grass"
+ },
+ "gb.survival_kids_2.031": {
+  "split": "test_env",
+  "text": "Find water"
+ },
+ "gb.survival_kids_2.032": {
+  "split": "test_env",
+  "text": "Open the inventory with club"
+ },
+ "gb.survival_kids_2.033": {
+  "split": "test_env",
+  "text": "Select the club"
+ },
+ "gb.survival_kids_2.034": {
+  "split": "test_env",
+  "text": "Equip the club"
+ },
+ "gb.survival_kids_2.035": {
+  "split": "test_env",
+  "text": "Approach the pry stone"
+ },
+ "gb.survival_kids_2.036": {
+  "split": "test_env",
+  "text": "Open the pry stone dialogue"
+ },
+ "gb.survival_kids_2.037": {
+  "split": "test_env",
+  "text": "Open inventory near the pry stone with club"
+ },
+ "gb.survival_kids_2.038": {
+  "split": "test_env",
+  "text": "Select the club near the pry stone"
+ },
+ "gb.survival_kids_2.039": {
+  "split": "test_env",
+  "text": "Equip the club near the pry stone"
+ },
+ "gb.survival_kids_2.040": {
+  "split": "test_env",
+  "text": "Move to the path after prying the stone"
+ },
+ "gb.survival_kids_2.041": {
+  "split": "test_env",
+  "text": "Cut grass before the push stone"
+ },
+ "gb.survival_kids_2.042": {
+  "split": "test_env",
+  "text": "Approach the second push stone"
+ },
+ "gb.survival_kids_2.043": {
+  "split": "test_env",
+  "text": "Open the second push stone dialogue"
+ },
+ "gb.survival_kids_2.044": {
+  "split": "test_env",
+  "text": "Open inventory near the second push stone with club"
+ },
+ "gb.survival_kids_2.045": {
+  "split": "test_env",
+  "text": "Push open the second stone"
+ },
+ "gb.survival_kids_2.046": {
+  "split": "test_env",
+  "text": "Move to the path after pushing the second stone"
+ },
+ "gb.survival_kids_2.047": {
+  "split": "test_env",
+  "text": "Cut grass before the log"
+ },
+ "gb.survival_kids_2.048": {
+  "split": "test_env",
+  "text": "Find the log"
+ },
+ "gb.survival_kids_2.049": {
+  "split": "test_env",
+  "text": "Pick up the log"
+ },
+ "gb.sword_of_hope_1.000": {
+  "split": "test",
+  "text": "Reach the first adjacent room from the start state"
+ },
+ "gb.sword_of_hope_1.001": {
+  "split": "test",
+  "text": "Navigate from the Old Man's Room to the Shaman's House"
+ },
+ "gb.sword_of_hope_1.002": {
+  "split": "val",
+  "text": "Clear the active dialogue box and return control to the player"
+ },
+ "gb.sword_of_hope_1.003": {
+  "split": "val",
+  "text": "Finish a battle encounter without a game over"
+ },
+ "gb.sword_of_hope_1.004": {
+  "split": "test",
+  "text": "Look at an object in the environment to discover a hidden item"
+ },
+ "gb.sword_of_hope_1.005": {
+  "split": "test",
+  "text": "Buy equipment or supplies from a shop"
+ },
+ "gb.sword_of_hope_1.006": {
+  "split": "test",
+  "text": "From default reach a stable overworld position with no open dialogue or menu"
+ },
+ "gb.sword_of_hope_1.007": {
+  "split": "train",
+  "text": "Talk to an NPC or interactable and advance one full dialogue page"
+ },
+ "gb.sword_of_hope_1.008": {
+  "split": "val",
+  "text": "Open the command menu and close it to return to exploration"
+ },
+ "gb.sword_of_hope_1.009": {
+  "split": "val",
+  "text": "During battle choose a non-default command such as item spell or defend"
+ },
+ "gb.sword_of_hope_1.010": {
+  "split": "train",
+  "text": "Cast Teleport to return to a previously visited location"
+ },
+ "gb.sword_of_hope_1.011": {
+  "split": "train",
+  "text": "Talk to an NPC multiple times to trigger a progression event"
+ },
+ "gb.sword_of_hope_1.012": {
+  "split": "train",
+  "text": "Make a binary dialogue choice that affects the outcome"
+ },
+ "gb.sword_of_hope_1.013": {
+  "split": "test",
+  "text": "Look at surroundings to reveal a previously hidden path"
+ },
+ "gb.sword_of_hope_1.014": {
+  "split": "val",
+  "text": "Defeat a boss using offensive magic spells (Treant with Firebal2)"
+ },
+ "gb.sword_of_hope_1.015": {
+  "split": "test",
+  "text": "Open a chest / collect a quest item (Scroll of Grace from backroom)"
+ },
+ "gb.sword_of_hope_1.016": {
+  "split": "test",
+  "text": "Use a key or quest item to unlock passage to a new area"
+ },
+ "gb.sword_of_hope_1.017": {
+  "split": "test",
+  "text": "Cast a quest spell at a specific location to trigger a story event (Grace at Martel altar -> Charm)"
+ },
+ "gb.sword_of_hope_1.018": {
+  "split": "train",
+  "text": "Cast Teleport to return to a previously visited location (full completion - arrival)"
+ },
+ "gb.sword_of_hope_1.019": {
+  "split": "val",
+  "text": "Escape from a battle using the Escape command"
+ },
+ "gb.sword_of_hope_1.020": {
+  "split": "test",
+  "text": "Open the shop buy menu (shorter scope than purchase)"
+ },
+ "gb.sword_of_hope_1.021": {
+  "split": "train",
+  "text": "Select the LOOK command in the command grid"
+ },
+ "gb.sword_of_hope_1.022": {
+  "split": "train",
+  "text": "Open the command menu from exploration"
+ },
+ "gb.sword_of_hope_1.023": {
+  "split": "train",
+  "text": "Open the Magic spell list from the overworld"
+ },
+ "gb.sword_of_hope_1.024": {
+  "split": "train",
+  "text": "Initiate an NPC dialogue (shorter scope than advancing)"
+ },
+ "gb.sword_of_hope_1.025": {
+  "split": "train",
+  "text": "Navigate cursor onto LOOK in command grid"
+ },
+ "gb.sword_of_hope_1.026": {
+  "split": "train",
+  "text": "Navigate cursor onto OPEN in command grid"
+ },
+ "gb.sword_of_hope_1.027": {
+  "split": "train",
+  "text": "Navigate cursor onto USE in command grid"
+ },
+ "gb.sword_of_hope_1.028": {
+  "split": "train",
+  "text": "Navigate cursor onto MAGIC in command grid"
+ },
+ "gb.sword_of_hope_1.029": {
+  "split": "train",
+  "text": "Navigate cursor onto HIT in command grid"
+ },
+ "gb.sword_of_hope_1.030": {
+  "split": "train",
+  "text": "Navigate cursor onto POWER in command grid"
+ },
+ "gb.sword_of_hope_1.031": {
+  "split": "train",
+  "text": "Cycle cursor through all 6 commands in order (LOOK->OPEN->USE->MAGIC->HIT->POWER)"
+ },
+ "gb.sword_of_hope_1.032": {
+  "split": "train",
+  "text": "Open Power stats menu to first stats page (HP/MP/etc)"
+ },
+ "gb.sword_of_hope_1.033": {
+  "split": "val",
+  "text": "Navigate cursor to AUTO command in battle row"
+ },
+ "gb.sword_of_hope_1.034": {
+  "split": "train",
+  "text": "Open Magic submenu and back out without casting (menu-cancel reasoning)"
+ },
+ "gb.sword_of_hope_1.035": {
+  "split": "train",
+  "text": "Open Power menu first stats page and close back to exploration"
+ },
+ "gb.sword_of_hope_1.036": {
+  "split": "train",
+  "text": "Open Teleport destination list and cancel back to exploration"
+ },
+ "gb.sword_of_hope_1.037": {
+  "split": "test",
+  "text": "Open shop buy menu and exit without purchasing"
+ },
+ "gb.sword_of_hope_1.038": {
+  "split": "train",
+  "text": "Look at target options and back out without choosing"
+ },
+ "gb.sword_of_hope_1.039": {
+  "split": "val",
+  "text": "Open battle Magic submenu and cancel back to battle command"
+ },
+ "gb.sword_of_hope_1.040": {
+  "split": "train",
+  "text": "Cycle cursor all the way around back to LOOK via POWER (wrap-around)"
+ },
+ "gb.sword_of_hope_1.041": {
+  "split": "train",
+  "text": "Navigate cursor to POWER via MAGIC (lower-row constrained path)"
+ },
+ "gb.sword_of_hope_1.042": {
+  "split": "val",
+  "text": "In battle Magic submenu cursor on Firebal spell specifically (battle-only spell)"
+ },
+ "gb.sword_of_hope_1.043": {
+  "split": "val",
+  "text": "In battle Magic submenu cursor on Firebal2 spell specifically (battle-only spell)"
+ },
+ "gb.sword_of_hope_1.044": {
+  "split": "val",
+  "text": "In battle Magic submenu cursor on Stripall debuff spell specifically"
+ },
+ "gb.sword_of_hope_1.045": {
+  "split": "val",
+  "text": "In battle Magic submenu navigate cursor to Stripall then back out without casting"
+ },
+ "gb.sword_of_hope_1.046": {
+  "split": "test",
+  "text": "In Teleport destination list cursor on Old Man's House specifically"
+ },
+ "gb.sword_of_hope_1.047": {
+  "split": "test",
+  "text": "In Use submenu cursor on Herb inventory item specifically"
+ },
+ "gb.sword_of_hope_1.048": {
+  "split": "test",
+  "text": "In Use submenu cursor on Key M inventory item specifically"
+ },
+ "gb.sword_of_hope_1.049": {
+  "split": "test",
+  "text": "View Power stats last page then Teleport to Old Man's House (3-subgoal composite)"
+ },
+ "gb.sword_of_hope_2.000": {
+  "split": "test_env",
+  "text": "Clear the active dialogue box and return control to the player"
+ },
+ "gb.sword_of_hope_2.001": {
+  "split": "test_env",
+  "text": "Talk to an NPC or interactable and advance one full dialogue page"
+ },
+ "gb.sword_of_hope_2.002": {
+  "split": "test_env",
+  "text": "Open the command menu and close it to return to exploration"
+ },
+ "gb.sword_of_hope_2.003": {
+  "split": "test_env",
+  "text": "Reach the first adjacent room from the start state"
+ },
+ "gb.sword_of_hope_2.004": {
+  "split": "test_env",
+  "text": "From default reach a stable overworld position with no open dialogue or menu"
+ },
+ "gb.sword_of_hope_2.005": {
+  "split": "test_env",
+  "text": "Finish a battle encounter without a game over"
+ },
+ "gb.sword_of_hope_2.006": {
+  "split": "test_env",
+  "text": "Escape from a battle using the Flee command"
+ },
+ "gb.sword_of_hope_2.007": {
+  "split": "test_env",
+  "text": "Open a shop's buy menu"
+ },
+ "gb.sword_of_hope_2.008": {
+  "split": "test_env",
+  "text": "Buy Wheat from a shop"
+ },
+ "gb.sword_of_hope_2.009": {
+  "split": "test_env",
+  "text": "During battle choose Magic command (submenu opens)"
+ },
+ "gb.sword_of_hope_2.010": {
+  "split": "test_env",
+  "text": "Cast Motion magic from overworld at lvl 2"
+ },
+ "gb.sword_of_hope_2.011": {
+  "split": "test_env",
+  "text": "Buy CPR Sword from Weapons Shop via Look-shopkeeper-Buy chain"
+ },
+ "gb.sword_of_hope_2.012": {
+  "split": "test_env",
+  "text": "Navigate cursor to AUTO command in battle row"
+ },
+ "gb.sword_of_hope_2.013": {
+  "split": "test_env",
+  "text": "Hit a tree at Riccar Woods [A4] until Wheat is received"
+ },
+ "gb.sword_of_hope_2.014": {
+  "split": "test_env",
+  "text": "Open Item submenu and reach the Use action (Item -> Use chain)"
+ },
+ "gb.sword_of_hope_2.015": {
+  "split": "test_env",
+  "text": "Use Wheat from inventory"
+ },
+ "gb.sword_of_hope_2.016": {
+  "split": "test_env",
+  "text": "View Theo's stats and reach EXP-to-level-up page"
+ },
+ "gb.sword_of_hope_2.017": {
+  "split": "test_env",
+  "text": "Navigate cursor onto LOOK in command grid"
+ },
+ "gb.sword_of_hope_2.018": {
+  "split": "test_env",
+  "text": "Navigate cursor onto ITEM in command grid"
+ },
+ "gb.sword_of_hope_2.019": {
+  "split": "test_env",
+  "text": "Navigate cursor onto OPEN in command grid"
+ },
+ "gb.sword_of_hope_2.020": {
+  "split": "test_env",
+  "text": "Navigate cursor onto MAGIC in command grid"
+ },
+ "gb.sword_of_hope_2.021": {
+  "split": "test_env",
+  "text": "Navigate cursor onto HIT in command grid"
+ },
+ "gb.sword_of_hope_2.022": {
+  "split": "test_env",
+  "text": "Cycle cursor through all 6 commands in order"
+ },
+ "gb.sword_of_hope_2.023": {
+  "split": "test_env",
+  "text": "Navigate cursor onto POWER in command grid"
+ },
+ "gb.sword_of_hope_2.024": {
+  "split": "test_env",
+  "text": "Open Power stats menu to first stats page (HP/MP)"
+ },
+ "gb.sword_of_hope_2.025": {
+  "split": "test_env",
+  "text": "Open the Magic submenu from exploration"
+ },
+ "gb.sword_of_hope_2.026": {
+  "split": "test_env",
+  "text": "Open the Item submenu (inventory view) from exploration"
+ },
+ "gb.sword_of_hope_2.027": {
+  "split": "test_env",
+  "text": "Look at the weapons-shop shopkeeper to engage interaction"
+ },
+ "gb.sword_of_hope_2.028": {
+  "split": "test_env",
+  "text": "Reach the weapons shop BUY item list from the shopkeeper interaction"
+ },
+ "gb.sword_of_hope_2.029": {
+  "split": "test_env",
+  "text": "Navigate the cursor onto CPR Sword in the weapons shop item list"
+ },
+ "gb.sword_of_hope_2.030": {
+  "split": "test_env",
+  "text": "Open the Use submenu after selecting Wheat in inventory"
+ },
+ "gb.sword_of_hope_2.031": {
+  "split": "test_env",
+  "text": "Reach the BUY/SELL choice menu after engaging the weapons shopkeeper"
+ },
+ "gb.sword_of_hope_2.032": {
+  "split": "test_env",
+  "text": "Navigate the cursor onto Wheat in the Item submenu"
+ },
+ "gb.sword_of_hope_2.033": {
+  "split": "test_env",
+  "text": "Navigate the cursor onto CLASH in the battle command row"
+ },
+ "gb.sword_of_hope_2.034": {
+  "split": "test_env",
+  "text": "Reach Ancient Temple 1F from outside the temple entrance (story event #1)"
+ },
+ "gb.sword_of_hope_2.035": {
+  "split": "test_env",
+  "text": "Open Magic submenu and cancel back to exploration without casting"
+ },
+ "gb.sword_of_hope_2.036": {
+  "split": "test_env",
+  "text": "Open Item inventory submenu and cancel back to exploration"
+ },
+ "gb.sword_of_hope_2.037": {
+  "split": "test_env",
+  "text": "Open shop buy menu and exit without purchasing"
+ },
+ "gb.sword_of_hope_2.038": {
+  "split": "test_env",
+  "text": "Reach weapons shop BUY item list then cancel back to exploration"
+ },
+ "gb.sword_of_hope_2.039": {
+  "split": "test_env",
+  "text": "Look at the weapons-shop shopkeeper then back out without engaging"
+ },
+ "gb.sword_of_hope_2.040": {
+  "split": "test_env",
+  "text": "In battle navigate cursor AUTO -> CLASH (reverse selection)"
+ },
+ "gb.sword_of_hope_2.041": {
+  "split": "test_env",
+  "text": "In battle navigate cursor CLASH -> AUTO (forward selection)"
+ },
+ "gb.sword_of_hope_2.042": {
+  "split": "test_env",
+  "text": "In Magic submenu choose Theo then cursor on Motion spell (lvl-2 overworld spell)"
+ },
+ "gb.sword_of_hope_2.043": {
+  "split": "test_env",
+  "text": "In shop buy list cursor on first item entry (full_screen capture)"
+ },
+ "gb.sword_of_hope_2.044": {
+  "split": "test_env",
+  "text": "In shop buy list cursor on third item entry (must traverse from first)"
+ },
+ "gb.sword_of_hope_2.045": {
+  "split": "test_env",
+  "text": "In weapons shop cursor on first weapon (Knife)"
+ },
+ "gb.sword_of_hope_2.046": {
+  "split": "test_env",
+  "text": "In weapons shop cursor on second weapon (Rapier) - single step from first"
+ },
+ "gb.sword_of_hope_2.047": {
+  "split": "test_env",
+  "text": "In weapons shop cursor on third weapon (CPR Sword) - traverse first and second"
+ },
+ "gb.sword_of_hope_2.048": {
+  "split": "test_env",
+  "text": "Use LOOK then cursor on TREE target in target list"
+ },
+ "gb.sword_of_hope_2.049": {
+  "split": "test_env",
+  "text": "View Power stats first then exp page then cast Motion (3-subgoal composite)"
+ }
+}

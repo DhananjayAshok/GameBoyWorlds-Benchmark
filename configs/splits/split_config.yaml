@@ -1,0 +1,15 @@
+seed: 0
+
+train_games:
+  - pokemon_red
+  - legend_of_zelda_links_awakening
+  - bomberman_max
+  - harvest_moon_1
+  - deja_vu_1
+  - runes_of_virtue_1
+  - sword_of_hope_1
+  - survival_kids_1
+  - harry_potter_philosophers_stone
+
+val_fraction: 0.2
+test_fraction: 0.3
