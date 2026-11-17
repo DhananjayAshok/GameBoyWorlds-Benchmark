@@ -97,6 +97,8 @@ Read-only diagnostics over saved artifacts via `debug.py`; reports land under `<
 | `execution/strategist/pokemon/knowledge.py` | The knowledge tree; `remember` files a fact, `recall` looks one up. |
 | `execution/strategist/pokemon/guide.py` | Event-triggered rules and battle tips; defeat reflection. |
 | `execution/strategist/pokemon/notepad.py` | Free-text working memory. |
+| `execution/strategist/pokemon/npcs.py`, `npc_model.py`, `npc_map.py`, `npc_names.py` | The people registry: recognises characters on screen from their sprites, tracks where they stand and what they said, and adds them to the map text. Listens to every step through `MappingEnvironment`. |
+| `execution/perception/pokemon/sprites.py` | Sprite matching used by the people registry. |
 | `execution/strategist/pokemon/global_map/` | The map built from frames. `registration` aligns consecutive frames, `model` stores cells and areas and merges them, `env` wraps the environment so every step updates the map, `routes` plans paths, `text` and `render` draw it for prompts and reports, `judges` holds its model calls, `exploration` decides when to explore. |
 | `execution/strategist/pokemon/asking.py` | One model question with retries that tell the model what was wrong with its reply. |
 | `execution/strategist/pokemon/prompts.py` | Every strategist prompt. |

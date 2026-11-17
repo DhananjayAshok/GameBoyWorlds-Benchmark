@@ -50,6 +50,8 @@ DEFAULT_ENV_MAX_STEPS = 1_000_000
               help="The Pokemon executors act through state-wise actions, not low-level "
                    "button presses.")
 @click.option("--save_video", default=True, show_default=True, type=bool)
+@click.option("--npc_registry/--no_npc_registry", default=True, show_default=True,
+              help="Record every person seen on screen (their look, where, when, and what they said).")
 @click.option("--override_goal", default=None, type=str,
               help="On a new --name, replace the default goal tree with this single goal; subgoals are planned under it.")
 @click.option("--resume_run", default=None, type=str,
@@ -59,7 +61,7 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
          supervisor_vlm_model, supervisor_vlm_kind, executor_vlm_model, executor_vlm_kind,
          max_episodes, supervisor_max_steps, env_max_steps, strategist_max_new_tokens,
          supervisor_max_new_tokens, subgoal_every, report_detail, controller_variant, save_video,
-         override_goal, resume_run):
+         npc_registry, override_goal, resume_run):
     """Play one long playthrough; re-running the same --name continues it."""
     parameters = load_parameters()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -95,6 +97,7 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
             report_detail=report_detail,
             resume_run=resume_run,
             override_goal=override_goal,
+            npc_registry=npc_registry,
             parameters=parameters,
             # Forwarded to each episode's supervisor; vlm_model/vlm_kind go on to its executors.
             supervisor_vlm_model=supervisor_vlm_model or model,

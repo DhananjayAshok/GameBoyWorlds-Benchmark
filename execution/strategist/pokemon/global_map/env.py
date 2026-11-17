@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import traceback
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, Optional, Tuple
+
+import numpy as np
 
 from .registration import has_structure
 
@@ -29,14 +32,35 @@ def _movement(action, kwargs: Dict[str, Any], info: Dict[str, Any]) -> Tuple[Opt
     return None, 0, None
 
 
-class MappingEnvironment:
-    """Wraps the environment so every step taken through it updates the global map; a map failure ends the run."""
+@dataclass
+class StepEvent:
+    """One environment step, after the map has placed its frame: what step listeners are told."""
+    action: Any
+    kwargs: Dict[str, Any]
+    info: Dict[str, Any]
+    was_free: bool
+    free: bool
+    frame: np.ndarray
+    identified: Dict[Any, Any]
+    status: str
+    direction: Optional[str] = None
+    max_steps: int = 0
+    reported: Optional[int] = None
 
-    def __init__(self, env, global_map: GlobalMap, tile_recognizer, parameters: Optional[dict] = None) -> None:
+
+class MappingEnvironment:
+    """Wraps the environment so every step taken through it updates the global map; a map failure ends the run.
+    Listeners get a StepEvent after each step the map accepted; one that fails is logged and skipped."""
+
+    def __init__(self, env, global_map: GlobalMap, tile_recognizer, parameters: Optional[dict] = None,
+                 listeners: Iterable[Callable[[StepEvent], None]] = ()) -> None:
         self._env = env
         self._map = global_map
         self._tiles = tile_recognizer
+        if tile_recognizer is not None and hasattr(tile_recognizer, "canonical_hash"):
+            global_map.canonical_hash = tile_recognizer.canonical_hash
         self._parameters = parameters
+        self._listeners = list(listeners)
         self.marker = None
 
     def step_high_level_action(self, action, **kwargs):
@@ -59,9 +83,19 @@ class MappingEnvironment:
                 faded = passed is not None and any(not has_structure(f) for f in passed)
                 identified = self._tiles.identify_tiles(frame) if free else {}
                 queued = len(self._map.naming_queue)
-                self._map.on_step(frame, identified, free, direction, max_steps, reported, was_free, faded)
+                status = self._map.on_step(frame, identified, free, direction, max_steps, reported, was_free, faded)
                 for entry in self._map.naming_queue[queued:]:
                     entry["marker"] = self.marker() if self.marker is not None else None
+                if self._listeners:
+                    event = StepEvent(action, kwargs, info, was_free, free, frame, identified, status, direction,
+                                      max_steps, reported)
+                    for listener in self._listeners:
+                        try:
+                            listener(event)
+                        except Exception as e:  # noqa: BLE001
+                            from utils import log_warn
+                            log_warn(f"A step listener failed and was skipped: {type(e).__name__}: {e}",
+                                     self._parameters)
         except Exception as e:
             from utils import log_error
             # log_error raises

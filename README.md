@@ -233,7 +233,7 @@ One episode runs like this:
 
 ### Where the artifacts go
 
-The playthrough's memory lives at `<storage_dir>/playthrough_artifacts/<game>/strategist/<name>/episode_<n>/`. Six artifacts, each saved in the episodes where it changed:
+The playthrough's memory lives at `<storage_dir>/playthrough_artifacts/<game>/strategist/<name>/episode_<n>/`. Seven artifacts, each saved in the episodes where it changed:
 
 | Artifact | What it holds |
 |----------|---------------|
@@ -241,6 +241,7 @@ The playthrough's memory lives at `<storage_dir>/playthrough_artifacts/<game>/st
 | `globalmap` | The map it has built from screens alone: areas, doors between them, and where it has walked |
 | `knowledge` | What it believes about the game's world, mechanics and its own situation, organised by topic |
 | `guide` | Rules of thumb tied to events (entering a building, reaching a town, battles), seeded by `guide_seeds.yaml` and extended as it plays |
+| `npcregistry` | The people it has met: what they look like, where they stand, and what they said (turn off with `--no_npc_registry`) |
 | `tiles` | The tile recognizer: the tile images it has seen and what it decided they are |
 | `notepad` | Free-text thoughts it wrote to itself |
 
@@ -256,7 +257,7 @@ python debug.py --game pokemon_red playthrough view --name gemini_run --episode 
 python debug.py --game pokemon_red playthrough diff --name gemini_run
 ```
 
-`diff` shows you the moment the agent discovered a route, revised a belief, or spent forty episodes re-deriving something it already knew. Add `--artifact globalmap` (or `goals`, `knowledge`, `guide`, `tiles`, `notepad`) to narrow it to one. `bash runs/playthrough/playthrough.sh --name gemini_run --model google/gemini-3.6-flash` runs a playthrough and both reports in one go.
+`diff` shows you the moment the agent discovered a route, revised a belief, or spent forty episodes re-deriving something it already knew. Add `--artifact globalmap` (or `goals`, `knowledge`, `guide`, `npcregistry`, `tiles`, `notepad`) to narrow it to one. `playthrough npc-export --name gemini_run` writes the people registry out as JSON lines, CSV and PNG files. `bash runs/playthrough/playthrough.sh --name gemini_run --model google/gemini-3.6-flash` runs a playthrough and both reports in one go.
 
 ### Results
 

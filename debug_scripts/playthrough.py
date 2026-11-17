@@ -19,6 +19,9 @@ from execution.strategist.pokemon.goals import PokemonGoalTree
 from execution.strategist.pokemon.guide import StrategyGuide
 from execution.strategist.pokemon.knowledge import PokemonKnowledgeTree
 from execution.strategist.pokemon.notepad import ThoughtNotepad
+from execution.strategist.pokemon.npc_map import person_tag, render_with_people
+from execution.strategist.pokemon.npc_model import display_name
+from execution.strategist.pokemon.npcs import NPCRegistry
 from execution.strategist.report import episode_report_path, load_episode_report
 from python_scripts.paths import debug_dir, debug_frames_dir, playthrough_dir
 from utils import log_error, log_info
@@ -31,10 +34,12 @@ ARTIFACTS = {
     "notepad": ThoughtNotepad,
     "globalmap": GlobalMap,
     "guide": StrategyGuide,
+    "npcregistry": NPCRegistry,
 }
 TITLES = {"goals": "Goals", "knowledge": "Knowledge", "tiles": "Tiles",
-          "notepad": "Thought notepad", "globalmap": "Global map", "guide": "Strategy guide"}
-OPTIONAL = {"globalmap", "guide"}
+          "notepad": "Thought notepad", "globalmap": "Global map", "guide": "Strategy guide",
+          "npcregistry": "People (NPC registry)"}
+OPTIONAL = {"globalmap", "guide", "npcregistry"}
 
 TILE_SCALE = 6
 IMAGE_SCALE = 2
@@ -215,16 +220,28 @@ def episode_brief(run_dir: str, episode: int) -> Tuple[str, str]:
     return archive.episode.task or "", direction
 
 
+def registry_at(run_dir: str, episode: int) -> Optional[NPCRegistry]:
+    if not NPCRegistry.exists(run_dir):
+        return None
+    eligible = [n for n in NPCRegistry.saved_episodes(run_dir) if n <= episode]
+    return NPCRegistry.load(run_dir, eligible[-1]) if eligible else None
+
+
+def people_drawing(marks: list, maybe: list = ()) -> dict:
+    return dict(people=marks, maybe=maybe, scale=2, legend=True) if marks or maybe else {}
+
+
 def map_image(report: Report, gmap: GlobalMap, segment: int, path: str, **kwargs) -> Optional[str]:
     if report.fresh(path):
-        canvas = render_segment(gmap, segment, **kwargs)
+        canvas = (render_with_people if "people" in kwargs else render_segment)(gmap, segment, **kwargs)
         if canvas is None:
             return None
         cv2.imwrite(path, canvas)
     return path
 
 
-def map_replay(report: Report, gmap: GlobalMap, episode: int, n_frames: int = 120) -> Optional[str]:
+def map_replay(report: Report, gmap: GlobalMap, episode: int, n_frames: int = 120,
+               people: Optional[NPCRegistry] = None) -> Optional[str]:
     si = gmap.segment
     path = report.image_path("globalmap", f"ep{episode}_seg{si}_build.gif")
     if not report.fresh(path):
@@ -238,7 +255,9 @@ def map_replay(report: Report, gmap: GlobalMap, episode: int, n_frames: int = 12
     seg = gmap.segments[si]
     frames = []
     for t in sorted(set(range(steps[0], steps[-1] + 1, max(1, (steps[-1] - steps[0]) // n_frames))) | {steps[-1]}):
-        canvas = render_segment(gmap, si, upto_step=t, bounds=bounds)
+        marks = people.map_people(gmap, si, upto_step=t) if people is not None else []
+        canvas = (render_with_people(gmap, si, people=marks, upto_step=t, bounds=bounds) if marks
+                  else render_segment(gmap, si, upto_step=t, bounds=bounds))
         if canvas is None:
             continue
         ep = next((n for end, n in ends if t <= end), episode)
@@ -262,7 +281,8 @@ def map_replay(report: Report, gmap: GlobalMap, episode: int, n_frames: int = 12
 
 def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[str], str]:
     exploring = gmap.exploring_until
-    replay = map_replay(report, gmap, episode)
+    people = registry_at(report.run_dir, episode)
+    replay = map_replay(report, gmap, episode, people=people)
     blocks = [
         md.para(f"{gmap.n_cells} squares mapped in {gmap.n_areas} area(s) ({len(gmap.segments)} segments opened, "
                 f"{len(gmap.merged_into)} merged into an older one), over {gmap.step} steps."),
@@ -288,9 +308,14 @@ def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[
          "description": gmap.info(si).description or ""}
         for si in live])))
     blocks.append(md.para(MAP_LEGEND + " " + DOOR_LEGEND))
+    if people is not None:
+        blocks.append(md.para(PEOPLE_LEGEND))
     for si in live:
         seg, info = gmap.segments[si], gmap.info(si)
-        png = map_image(report, gmap, si, report.image_path("globalmap", f"ep{episode}_seg{si}.png"), doors=True)
+        marks = people.map_people(gmap, si) if people is not None else []
+        maybe = people.unconfirmed(gmap, si) if people is not None else []
+        png = map_image(report, gmap, si, report.image_path("globalmap", f"ep{episode}_seg{si}.png"), doors=True,
+                        **people_drawing(marks, maybe))
         blocks += [md.h3(f"Segment {si}{' (current)' if si == gmap.segment else ''}: {gmap.place_label(si)}, "
                          f"{info.kind or 'kind not known'}, {len(seg)} squares")]
         if info.description:
@@ -298,6 +323,13 @@ def view_globalmap(gmap: GlobalMap, report: Report, episode: int) -> Tuple[List[
         if info.aliases:
             blocks.append(md.para("Also named, before merges: " + "; ".join(name for name, _ in info.aliases)))
         blocks.append(report.img(f"segment {si}", png))
+        if marks or maybe:
+            blocks.append(md.table(pd.DataFrame(
+                [{"marker": person_tag(m), "person": m.name, "talked to here": m.talked, "times": m.times_talked,
+                  "faces": m.facing or "", "square": m.square, "earlier squares": m.earlier,
+                  "last seen (episode, step)": m.last_seen, "may have moved": m.stale} for m in marks]
+                + [{"marker": "?", "person": "the screen reader tagged a person here; no sprite confirmed",
+                    "square": square} for square in maybe])))
         doors = gmap.door_list(si)
         if doors:
             blocks.append(doors_table(gmap, doors))
@@ -357,9 +389,112 @@ def view_guide(guide: StrategyGuide, report: Report, episode: int) -> Tuple[List
     return blocks, f"{len(guide.rules)} rules ({own} the strategist's own), {len(guide.events)} triggers fired"
 
 
+PEOPLE_LEGEND = ("Yellow boxes labelled P3 (K3 for a Pokemon) are people at the square they were last seen; the number "
+                 "is the person's id in the People page. Solid = talked to in this area, thin = probably (a guess at "
+                 "who spoke), dashed = not yet. The triangle shows the way they faced; faded dots are squares they "
+                 "stood on before (a dotted frame: everywhere a walker was seen). Grey with a ? (P3?) = may have "
+                 "moved: not seen for over 3 episodes, or their square was on screen without them. The strip under "
+                 "the picture names each person. A magenta ring marked ? is a square the screen "
+                 "reader tagged as a person, drawn like a sprite, where nobody has been seen whole yet (cut off by the "
+                 "screen edge, or hidden); squares drawn like background (a statue, a bush) get no ring.")
+
+
+def looks_sheet(reg: NPCRegistry, path: str) -> Optional[str]:
+    rows = []
+    for look in reg.looks.values():
+        tiles = [np.kron(v.pixels.astype(np.uint8), np.ones((4, 4), np.uint8)) for v in look.views]
+        rows.append(np.concatenate([x for t in tiles for x in (t, np.full((64, 6), 128, np.uint8))], axis=1))
+    if not rows:
+        return None
+    width = max(r.shape[1] for r in rows)
+    sheet = np.concatenate([np.pad(r, ((0, 6), (0, width - r.shape[1])), constant_values=255) for r in rows], axis=0)
+    Image.fromarray(sheet).save(path)
+    return path
+
+
+def facing_summary(reg: NPCRegistry, npc) -> str:
+    # Until a model has read the first picture's facing, the way is told relative to that picture.
+    look = reg.look_of(npc)
+    counts: Dict[str, int] = {}
+    for s_ in npc.sightings:
+        way = reg.sighting_facing(look, s_)
+        if way is None or look.views[min(s_.view, len(look.views) - 1)].facing not in ("left", "right"):
+            way = ("turned (mirror image)" if s_.flipped else "as first seen") if way is None else way
+        counts[way] = counts.get(way, 0) + 1
+    return ", ".join(f"{k} x{v}" for k, v in counts.items())
+
+
+def view_npcregistry(reg: NPCRegistry, report: Report, episode: int) -> Tuple[List[str], str]:
+    editions = [n for n in GlobalMap.saved_episodes(report.run_dir) if n <= episode]
+    gmap = GlobalMap.load(report.run_dir, editions[-1]) if editions else None
+    people = sorted(reg.live_npcs(), key=lambda n: n.id)
+    rows = []
+    for npc in people:
+        seen = reg.last_seen(gmap, npc) if gmap is not None else None
+        areas = sorted({gmap.resolve(s.segment, s.square)[0] for s in npc.sightings}) if gmap is not None else []
+        rows.append({
+            "#": int(npc.id.split("_")[1]), "name": npc.name, "real name": npc.real_name or "",
+            "kind": npc.kind, "description": npc.description, "look": reg.look_of(npc).id,
+            "areas seen": ", ".join(f"{si}: {gmap.place_label(si)}" for si in areas),
+            "last seen": f"episode {seen[2].episode}, segment {seen[0]}, square {seen[1]}" if seen else "",
+            "sightings": len(npc.sightings), "conversations": len(npc.conversations),
+            "facing seen": facing_summary(reg, npc), "needs": npc.needs or ""})
+    blocks = [
+        md.para(f"{len(people)} people seen, {len(reg.looks)} different looks, "
+                f"{len(reg.conversations)} conversations recorded."),
+        md.h2("People"),
+        md.table(pd.DataFrame(rows)) if rows else md.note("Nobody has been seen yet."),
+    ]
+    sheet = looks_sheet(reg, report.image_path("npcregistry", f"ep{episode}_looks.png"))
+    if sheet:
+        blocks += [md.h2("Looks"),
+                   md.para("One row per look: every picture of the sprite the registry holds (facing and walking frames). "
+                           "A person's look is shown in the People table."),
+                   report.img("looks", sheet)]
+    if any(n.conversations for n in people):
+        blocks.append(md.h2("Who said what"))
+        blocks.append(md.para("One line per time the player talked to a person: what the conversation was about. "
+                              "The full text stays in the dataset export, not here."))
+        for npc in people:
+            visits = reg.visits(npc)
+            if not visits:
+                continue
+            lines = []
+            for k, c, same in visits:
+                where = (gmap.place_label(gmap.resolve(c.segment, c.square)[0]) if gmap is not None
+                         else f"segment {c.segment}")
+                if same:
+                    body = f"same words as visit {same}"
+                elif c.summary:
+                    body = c.summary + (f" (outcome: {c.outcome})" if c.outcome else "")
+                else:
+                    body = "no summary yet" + (f" - text starts: {c.text.replace(chr(10), ' / ')[:90]}" if c.text else "")
+                lines.append(f"Visit {k} (episode {c.episode}, {where}): {body}")
+            blocks += [md.h3(f"P{int(npc.id.split('_')[1])} {display_name(npc)}"), md.bullets(lines)]
+    if reg.signs:
+        blocks += [md.h2("Signs"), md.table(pd.DataFrame([
+            {"sign": s.id, "segment": s.segment, "square": s.square, "conversations": len(s.conversations),
+             "text": s.text[:200]} for s in reg.signs.values()]))]
+    unattributed = [reg.conversations[c] for c in reg.unattributed if c in reg.conversations]
+    if unattributed:
+        blocks += [md.h2("Conversations nobody could be matched to"), md.table(pd.DataFrame([
+            {"episode": c.episode, "trigger": c.trigger, "text": (c.text or "(no text read)")[:200]}
+            for c in unattributed]))]
+    replies = []
+    for stage, label in (("npc_card", "person card reply"), ("npc_judge", "look-alike judge reply"),
+                         ("npc_summary", "conversation summary reply"), ("npc_ocr", "dialogue reading reply")):
+        replies += stage_replies(report.run_dir, range(episode + 1), stage, label)
+    if replies:
+        blocks += [md.h2("The model's replies"), *replies]
+    blocks += [md.h2("Counters"), md.table(pd.Series(dict(reg.stats), dtype=int).sort_index().rename_axis("counter")
+                                           .reset_index(name="count")) if reg.stats else md.note("No counters yet.")]
+    return blocks, f"{len(people)} people, {len(reg.looks)} looks, {len(reg.conversations)} conversations"
+
+
 VIEWS: Dict[str, Callable[..., Tuple[List[str], str]]] = {
     "goals": view_goals, "knowledge": view_knowledge, "tiles": view_tiles,
     "notepad": view_notepad, "globalmap": view_globalmap, "guide": view_guide,
+    "npcregistry": view_npcregistry,
 }
 
 
@@ -435,12 +570,14 @@ def diff_globalmap(new, old, d, report: Report, a: int, b: int) -> Tuple[List[st
     before, after = d["exploring"]
     if before != after:
         blocks.append(md.para(f"Forced exploration: until episode {before} → until episode {after}."))
+    people = registry_at(report.run_dir, b)
     for si in sorted(set(d["new_cells"]) | set(d["reclassified"])):
         if not new.segments[si]:
             continue
         added, relabelled = d["new_cells"].get(si, []), d["reclassified"].get(si, [])
+        marks = people.map_people(new, si) if people is not None else []
         png = map_image(report, new, si, report.image_path("globalmap", f"ep{a}_to_ep{b}_seg{si}.png"),
-                        highlight=added, trail_from=old.step, doors=True)
+                        highlight=added, trail_from=old.step, doors=True, **people_drawing(marks))
         blocks += [md.h3(f"Segment {si}: {len(added)} new squares, {len(relabelled)} recognised since"),
                    report.img(f"segment {si}", png)]
     if d["new_cells"] or d["reclassified"]:
@@ -492,9 +629,27 @@ def diff_guide(new, old, d, report: Report, a: int, b: int) -> Tuple[List[str], 
                                  (len(d["edited"]), "rewritten"), (len(d["removed"]), "removed")])
 
 
+def diff_npcregistry(new: NPCRegistry, old: NPCRegistry, d, report: Report, a: int, b: int
+                     ) -> Tuple[List[str], str]:
+    blocks = []
+    if d["new_npcs"]:
+        blocks += [md.h3("People met"), md.bullets(f"+ {new.npcs[i].name} ({i})" for i in d["new_npcs"])]
+    if d["new_looks"] or d["new_views"]:
+        blocks.append(md.para(f"New looks: {len(d['new_looks'])}. Looks that gained a picture: {len(d['new_views'])}."))
+    if d["merged"]:
+        blocks += [md.h3("People found to be one"), md.bullets(f"{i} → {j}" for i, j in d["merged"].items())]
+    if d["new_conversations"]:
+        blocks += [md.h3("Conversations"), md.bullets(
+            f"{(new.npcs[new.conversations[c].npc].name if new.conversations[c].npc in new.npcs else 'unknown')}: "
+            f"{(new.conversations[c].text or '(no text)')[:120]}" for c in d["new_conversations"])]
+    return blocks, count_phrase([(len(d["new_npcs"]), "people met"), (len(d["new_conversations"]), "conversations"),
+                                 (len(d["merged"]), "merged")])
+
+
 DIFFS: Dict[str, Callable[..., Tuple[List[str], str]]] = {
     "goals": diff_goals, "knowledge": diff_knowledge, "tiles": diff_tiles,
     "notepad": diff_notepad, "globalmap": diff_globalmap, "guide": diff_guide,
+    "npcregistry": diff_npcregistry,
 }
 
 
@@ -522,7 +677,7 @@ def selected(artifact: Optional[str], run_dir: str) -> List[str]:
 
 @click.group(name="playthrough")
 def debug_playthrough():
-    """Inspect a playthrough's saved artifacts (goals, knowledge, tiles, notepad, global map, strategy guide)."""
+    """Inspect a playthrough's saved artifacts (goals, knowledge, tiles, notepad, global map, guide, people)."""
 
 
 ARTIFACT_OPTION = click.option("--artifact", type=click.Choice(list(ARTIFACTS)), default=None,
@@ -566,6 +721,30 @@ def debug_playthrough_view(obj, name, artifact, episode):
         md.table(pd.DataFrame(rows)),
     ])
     log_info(f"[playthrough] view report: {index}", parameters)
+
+
+@debug_playthrough.command(name="npc-export")
+@NAME_OPTION
+@click.option("--episode", type=int, default=None,
+              help="Export the registry as of this episode (its latest save at or before it). Defaults to the latest.")
+@click.option("--output", type=click.Path(file_okay=False), default=None,
+              help="Where to write the dataset. Defaults to results/npc_dataset/<game>/<name>.")
+@click.pass_obj
+def debug_playthrough_npc_export(obj, name, episode, output):
+    """The people registry as a dataset: JSON lines, CSV and PNG files, readable without this code."""
+    from debug_scripts.npc_export import export_registry
+
+    parameters, game = obj["parameters"], obj["game"]
+    run_dir, _ = setup(obj, name, "npc_export")
+    reg = registry_at(run_dir, episode if episode is not None else 10 ** 9)
+    if reg is None:
+        log_error(f"[playthrough] no people registry under {run_dir}; the run needs the registry on.", parameters)
+    maps = [n for n in GlobalMap.saved_episodes(run_dir) if episode is None or n <= episode]
+    gmap = GlobalMap.load(run_dir, maps[-1], parameters=parameters) if maps else None
+    out = output or os.path.join("results", "npc_dataset", game, name)
+    counts = export_registry(reg, gmap, out, game, name)
+    log_info(f"[playthrough] npc dataset written to {out}: " + ", ".join(f"{v} {k}" for k, v in counts.items()),
+             parameters)
 
 
 @debug_playthrough.command(name="diff")
