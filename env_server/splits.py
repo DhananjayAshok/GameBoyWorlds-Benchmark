@@ -4,15 +4,20 @@ import random
 from typing import Optional
 
 import yaml
-from gameboy_worlds import get_benchmark_tasks, get_benchmark_tasks_dfs
+from gameboy_worlds import get_available_init_states, get_benchmark_tasks, get_benchmark_tasks_dfs
 
 from utils import load_parameters
 from utils.log_handling import log_error, log_info
 
 # test: held-back tasks of the training games. test_env: every task of a non-training game.
-SPLITS = ("train", "val", "test", "test_env")
+# playthrough: one whole-game task per game, defined in split_config.yaml rather than the benchmark's task list.
+SPLITS = ("train", "val", "test", "test_env", "playthrough")
 DEV_SPLITS = ("train", "val")
 TEST_SPLITS = ("test", "test_env")
+PLAYTHROUGH_SPLITS = ("playthrough",)
+
+PLAYTHROUGH_SUFFIX = "playthrough"
+PLAYTHROUGH_TRACKER = "collect_championship_test"
 
 CONFIG_PATH = os.path.join("configs", "splits", "split_config.yaml")
 SPLIT_PATH = os.path.join("configs", "splits", "benchmark_splits.json")
@@ -22,6 +27,14 @@ _cache: Optional[dict] = None
 
 def task_id(*, game: str, index: int) -> str:
     return f"gb.{game}.{index:03d}"
+
+
+def playthrough_id(*, game: str) -> str:
+    return f"gb.{game}.{PLAYTHROUGH_SUFFIX}"
+
+
+def is_playthrough(*, task_id: str) -> bool:
+    return task_id.split(".", 2)[2] == PLAYTHROUGH_SUFFIX
 
 
 def game_of(*, task_id: str) -> str:
@@ -42,6 +55,11 @@ def load_config(*, parameters: dict) -> dict:
                   f"Available: {known}", parameters=parameters)
     if config["val_fraction"] + config["test_fraction"] >= 1.0:
         log_error("val_fraction + test_fraction must leave room for train", parameters=parameters)
+    config.setdefault("playthrough", {})
+    for game, entry in config["playthrough"].items():
+        if entry["init_state"] not in get_available_init_states(game):
+            log_error(f"split_config.yaml: {game} has no start state {entry['init_state']!r}",
+                      parameters=parameters)
     return config
 
 
@@ -86,6 +104,8 @@ def generate(*, parameters: dict = None, write: bool = True) -> dict:
             taken += len(group)
         for i, row in rows.iterrows():
             splits[task_id(game=game, index=i)] = {"split": assigned[i], "text": row["task"]}
+    for game, entry in config["playthrough"].items():
+        splits[playthrough_id(game=game)] = {"split": "playthrough", "text": entry["goal"]}
     if write:
         path = os.path.join(parameters["project_root"], SPLIT_PATH)
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -117,9 +137,20 @@ def load_splits(*, parameters: dict = None, check: bool = True) -> dict:
 
 
 def verify(*, splits: dict, parameters: dict) -> None:
-    for game in sorted({game_of(task_id=t) for t in splits}):
+    config = load_config(parameters=parameters)
+    for game, entry in config["playthrough"].items():
+        listed = splits.get(playthrough_id(game=game), {})
+        if listed.get("text") != entry["goal"]:
+            log_error(f"{playthrough_id(game=game)} in the split file does not match split_config.yaml. "
+                      f"Regenerate the split file.", parameters=parameters)
+    benchmark_ids = [t for t in splits if not is_playthrough(task_id=t)]
+    stale = [t for t in splits if is_playthrough(task_id=t) and game_of(task_id=t) not in config["playthrough"]]
+    if stale:
+        log_error(f"the split file has playthrough tasks split_config.yaml does not: {stale}. "
+                  f"Regenerate the split file.", parameters=parameters)
+    for game in sorted({game_of(task_id=t) for t in benchmark_ids}):
         rows = get_benchmark_tasks(game=game).reset_index(drop=True)
-        ids = [t for t in splits if game_of(task_id=t) == game]
+        ids = [t for t in benchmark_ids if game_of(task_id=t) == game]
         if len(ids) != len(rows):
             log_error(f"{game}: the split file has {len(ids)} tasks, the benchmark has {len(rows)}. "
                       f"Regenerate the split file.", parameters=parameters)
@@ -131,8 +162,13 @@ def verify(*, splits: dict, parameters: dict) -> None:
                           parameters=parameters)
 
 
-def row_of(*, task_id: str):
-    rows = get_benchmark_tasks(game=game_of(task_id=task_id)).reset_index(drop=True)
+def row_of(*, task_id: str, parameters: dict = None):
+    game = game_of(task_id=task_id)
+    if is_playthrough(task_id=task_id):
+        entry = load_config(parameters=load_parameters(parameters))["playthrough"][game]
+        return {"game": game, "task": entry["goal"], "init_state": entry["init_state"],
+                "state_tracker_class": PLAYTHROUGH_TRACKER}
+    rows = get_benchmark_tasks(game=game).reset_index(drop=True)
     return rows.iloc[index_of(task_id=task_id)]
 
 

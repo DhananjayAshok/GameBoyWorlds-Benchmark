@@ -2,12 +2,16 @@ from dataclasses import dataclass
 
 from env_server import codec, splits
 
-KINDS = ("dev", "test")
+KINDS = ("dev", "test", "playthrough")
+
+# run_benchmark.py's --max_steps: the budget a benchmark task is scored against.
+TASK_MAX_STEPS = 200
+# GameBoyWorlds' gameboy_hard_max_steps: the emulator clamps anything larger.
+PLAYTHROUGH_MAX_STEPS = 1_000_000
 
 
 @dataclass(frozen=True)
 class Policy:
-    """What a server instance shows. Fixed at launch; no request can change it."""
     kind: str
     splits_open: tuple
     splits_listed: tuple
@@ -17,6 +21,13 @@ class Policy:
     save_load: bool
     # A test episode is one attempt: a second reset would turn the score into best-of-N.
     reset_again: bool
+    max_steps: int = TASK_MAX_STEPS
+    # A playthrough session runs for days and a million steps: it is never reaped for being idle, its
+    # recording is a video rather than a PNG per step, and it can be checkpointed to disk.
+    long_running: bool = False
+    # GameBoyWorlds controller variant: "low_level" takes button names, "state_wise" takes the game's
+    # high-level action strings, which every observation lists under obs.actions.
+    controller: str = "low_level"
 
     @classmethod
     def of(cls, *, kind: str) -> "Policy":
@@ -28,6 +39,11 @@ class Policy:
             return cls(kind=kind, splits_open=splits.TEST_SPLITS, splits_listed=(),
                        free_play=False, state_mode="scored", state_optional=False, save_load=False,
                        reset_again=False)
+        if kind == "playthrough":
+            return cls(kind=kind, splits_open=splits.PLAYTHROUGH_SPLITS,
+                       splits_listed=splits.PLAYTHROUGH_SPLITS, free_play=False, state_mode="scored",
+                       state_optional=False, save_load=False, reset_again=False,
+                       max_steps=PLAYTHROUGH_MAX_STEPS, long_running=True, controller="state_wise")
         raise ValueError(f"unknown server kind {kind!r}; one of {KINDS}")
 
     def __post_init__(self) -> None:

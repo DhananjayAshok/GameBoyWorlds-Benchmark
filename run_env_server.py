@@ -37,7 +37,8 @@ def check():
 
 
 @main.command("serve")
-@click.option("--kind", required=True, type=click.Choice(["dev", "test"]), help="dev (train + val) or test.")
+@click.option("--kind", required=True, type=click.Choice(["dev", "test", "playthrough"]),
+              help="dev (train + val), test (held-out tasks) or playthrough (one whole game).")
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=None, type=int, help="TCP port. Give this or --unix_socket.")
 @click.option("--unix_socket", default=None,
@@ -45,19 +46,28 @@ def check():
 @click.option("--token_file", required=True, help="A file holding the bearer token clients must send.")
 @click.option("--max_sessions", default=4, show_default=True)
 @click.option("--idle_seconds", default=1800, show_default=True, help="Close a session after this long unused.")
-@click.option("--max_steps", default=200, show_default=True, type=int,
-              help="The per-episode step budget; 200 is what run_benchmark.py scores a task against.")
+@click.option("--max_steps", default=None, type=int,
+              help="The per-episode step budget. Defaults to 200 (what run_benchmark.py scores a task "
+                   "against), or 1000000 for a playthrough.")
 @click.option("--record_dir", default=None, help="Record every session's full state here. Off by default.")
-def serve(kind, host, port, unix_socket, token_file, max_sessions, idle_seconds, max_steps, record_dir):
+@click.option("--checkpoint_dir", default=None,
+              help="Playthrough only: save the session here so a restarted server continues it.")
+@click.option("--checkpoint_every", default=500, show_default=True, type=int,
+              help="Steps between checkpoints. One is also written on shutdown.")
+def serve(kind, host, port, unix_socket, token_file, max_sessions, idle_seconds, max_steps, record_dir,
+          checkpoint_dir, checkpoint_every):
     """Serve one policy on host:port or on a Unix socket."""
     from env_server.policy import Policy
     from env_server.server import serve as serve_forever
     from env_server.sessions import Sessions
     if (port is None) == (unix_socket is None):
         raise click.ClickException("give exactly one of --port or --unix_socket")
+    if checkpoint_dir and kind != "playthrough":
+        raise click.ClickException("--checkpoint_dir is only for --kind playthrough")
     parameters = load_parameters()
     sessions = Sessions(policy=Policy.of(kind=kind), max_sessions=max_sessions, idle_seconds=idle_seconds,
-                        record_dir=record_dir, max_steps=max_steps, parameters=parameters)
+                        record_dir=record_dir, max_steps=max_steps, parameters=parameters,
+                        checkpoint_dir=checkpoint_dir, checkpoint_every=checkpoint_every)
     serve_forever(sessions=sessions, host=host, port=port, token=_read_token(token_file),
                   parameters=parameters, unix_socket=unix_socket)
 

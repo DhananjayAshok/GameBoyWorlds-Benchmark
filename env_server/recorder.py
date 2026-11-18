@@ -30,17 +30,22 @@ class Recorder:
     """Host-side record of every step's full tracker report, whatever the client was sent."""
 
     def __init__(self, *, directory: str, session: str, task_id: Optional[str], game: Optional[str],
-                 policy: str, parameters: dict) -> None:
+                 policy: str, parameters: dict, frames: bool = True) -> None:
         self._parameters = parameters
         self.directory = os.path.join(directory, policy, session)
-        os.makedirs(os.path.join(self.directory, "frames"), exist_ok=True)
+        self.frames = frames
+        os.makedirs(os.path.join(self.directory, "frames") if frames else self.directory, exist_ok=True)
         self.n = 0
+        log = os.path.join(self.directory, "steps.jsonl")
+        if os.path.exists(log):
+            with open(log) as f:
+                self.n = sum(1 for _ in f)
         with open(os.path.join(self.directory, "meta.json"), "w") as f:
             json.dump({"session": session, "task_id": task_id, "game": game, "policy": policy}, f, indent=1)
 
     def write(self, *, kind: str, action, info: Optional[dict], success, frame=None) -> None:
         try:
-            if frame is not None:
+            if frame is not None and self.frames:
                 arr = np.asarray(frame)
                 if arr.ndim == 3 and arr.shape[2] == 1:
                     arr = arr[:, :, 0]

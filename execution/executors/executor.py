@@ -54,6 +54,12 @@ You are playing a GameBoy game. The current screen is shown in the image.
                 "action_policy": self._action_policy.name,
                 "history_policy": self._history_policy.name}
 
+    def _take_action_string(self, action_str: str) -> Optional[EnvironmentStepRecord]:
+        action_class, kwargs = self._env.string_to_high_level_action(action_str)
+        if action_class is None:
+            return None
+        return self._take_action(action_class, **(kwargs or {}))
+
     def _take_action(self, action_class: Type[HighLevelAction], **kwargs) -> EnvironmentStepRecord:
         before_info = self._env.get_info()
         frame_before = before_info["core"]["current_frame"]

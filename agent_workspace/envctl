@@ -3,7 +3,8 @@
 envctl: drive the environment server from the shell.
 
 Every open/reset/step/observe writes the screen to obs/<session>/<n>.png and everything else about that observation
-to obs/<session>/<n>.json, then prints a one-line summary.
+to obs/<session>/<n>.json, then prints a summary that ends with the actions this screen accepts. Pass one of
+them, filled in, to step: "A" on a button server, "move(up 3)" or "button(a)" on a playthrough server.
 
     envctl tasks                                  the tasks you can practise on
     envctl scenes                                 free-play start points, {game: [init_state]}
@@ -73,6 +74,10 @@ def write_obs(cur, out):
     print("  screen: %s" % os.path.join(directory, "%04d.png" % n))
     if obs.get("goal"):
         print("  goal: %s" % obs["goal"])
+    if obs.get("actions"):
+        print("  actions:")
+        for text in obs["actions"].values():
+            print("    %s" % " ".join(text.split()))
     if obs.get("signals"):
         print("  signals: %s" % json.dumps(obs["signals"]))
     if "state" in out:

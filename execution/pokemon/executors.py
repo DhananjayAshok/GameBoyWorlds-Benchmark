@@ -3,8 +3,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from gameboy_worlds.emulation.pokemon import AgentState
-from gameboy_worlds.emulation.emulator import LowLevelActions
-from gameboy_worlds.interface.action import LowLevelAction
 from gameboy_worlds.interface.pokemon.actions import (BattleMenuAction, InteractAction, MenuAction,
                                                       MoveStepsAction, OpenMenuAction,
                                                       PassDialogueAction, PickAttackAction)
@@ -441,7 +439,7 @@ Move: <1, 2, 3 or 4 if the action is fight, otherwise None>
             if state == AgentState.FREE_ROAM:
                 texts = []
                 for _ in range(FREE_ROAM_CHECK_PRESSES):
-                    record = self._take_action(LowLevelAction, low_level_action=LowLevelActions.PRESS_BUTTON_B)
+                    record = self._take_action_string("button(b)")
                     if self._last_terminated:
                         return self._fail(BATTLE_TERMINATED, "terminated")
                     if self._last_truncated:
@@ -739,16 +737,6 @@ FREE_TRUNCATED = 2
 FREE_UNREADABLE = -1
 FREE_OUT_OF_STEPS = -2
 
-FREE_BUTTONS = {
-    "a": LowLevelActions.PRESS_BUTTON_A,
-    "b": LowLevelActions.PRESS_BUTTON_B,
-    "start": LowLevelActions.PRESS_BUTTON_START,
-    "up": LowLevelActions.PRESS_ARROW_UP,
-    "down": LowLevelActions.PRESS_ARROW_DOWN,
-    "left": LowLevelActions.PRESS_ARROW_LEFT,
-    "right": LowLevelActions.PRESS_ARROW_RIGHT,
-}
-
 
 class FreeExecutor(PolicyExecutor):
     MAX_NEW_TOKENS = 4000
@@ -816,7 +804,8 @@ Press: <one of a, b, start, up, down, left, right>
                 return self._finish(FREE_OK, "termination_met")
             answer = (parse_key_value(output, "Press") or "").strip().lower().strip(".")
             press = answer.split()[0] if answer else ""
-            if press not in FREE_BUTTONS:
+            record = self._take_action_string(f"button({press})") if press.isalpha() else None
+            if record is None:
                 self._record_invalid(output)
                 consecutive_invalid += 1
                 if consecutive_invalid >= self.MAX_INVALID:
@@ -824,7 +813,6 @@ Press: <one of a, b, start, up, down, left, right>
                 continue
             consecutive_invalid = 0
             self.presses.append(press)
-            record = self._take_action(LowLevelAction, low_level_action=FREE_BUTTONS[press])
             drop_prefix_crops(captured_dialogue_crops([record]), self.dialogue_crops)
             if self._last_terminated:
                 return self._finish(FREE_TERMINATED, "terminated")

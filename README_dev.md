@@ -123,8 +123,8 @@ A run writes to three places:
 |------|-------------|
 | `run_env_server.py` | CLI: `serve`, `check`, `generate_splits`, `open_session`, `session_info`. |
 | `env_server/server.py` | The HTTP handler and bearer-token checks. |
-| `env_server/sessions.py` | One emulator per session; applies the policy to reset, step, save and load. |
-| `env_server/policy.py` | The `dev` and `test` policies. |
+| `env_server/sessions.py` | One emulator per session; applies the policy to reset, step, save and load. Checkpoints and restores a playthrough session (`emulator.state` and `session.json` in `--checkpoint_dir`). |
+| `env_server/policy.py` | The `dev`, `test` and `playthrough` policies, including which GameBoyWorlds controller each serves (`low_level` buttons, or `state_wise` for playthrough). |
 | `env_server/splits.py` | Generates, loads and verifies `configs/splits/benchmark_splits.json`. |
 | `env_server/codec.py` | What a response may contain: the frame as PNG, and full or scored-only state. |
 | `env_server/recorder.py` | Host-side record of every step when `--record_dir` is set. |
@@ -144,7 +144,7 @@ Routes, all JSON with `Authorization: Bearer <token>`. The server token reaches 
 | `GET /tasks` | Tasks the policy lists. |
 | `GET /scenes` | Free-play start states, `{game: [init_state]}`. |
 | `POST /sessions` | Open a session: `{"task_id": ...}` or `{"game": ..., "init_state": ...}`, optional `"state": true`. Returns the session and its token. |
-| `GET /sessions/<id>` | Status: steps, `episode_over`, `success`. |
+| `GET /sessions/<id>` | Status: steps, `episode_over`, `success`, `subgoals`. |
 | `POST /sessions/<id>/reset`, `step`, `observe`, `save`, `load` | `step` takes `{"action": ...}`, `load` takes `{"handle": ...}`. |
 | `DELETE /sessions/<id>` | Close it. |
 

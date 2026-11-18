@@ -276,17 +276,20 @@ The harness above is ours. To evaluate a different agent — a coding agent, say
 ### The pieces
 
 - **The environment server** (`run_env_server.py`, `env_server/`) runs on the host and owns the emulators. It serves sessions over HTTP: open a task, step it, get back the screen as a PNG, the goal, and whether the task is done.
-- **The splits** (`configs/splits/`) divide the benchmark's tasks into `train`, `val`, `test` (held-out tasks in the training games) and `test_env` (every task of a held-out game). Tasks that share a start state always share a split.
+- **The splits** (`configs/splits/`) divide the benchmark's tasks into `train`, `val`, `test` (held-out tasks in the training games) and `test_env` (every task of a held-out game). Tasks that share a start state always share a split. A fifth split, `playthrough`, holds one whole-game task per Pokémon game, named `gb.<game>.playthrough`.
 - **The server's policy** is fixed when it starts and no request can change it:
 
-  | | `--kind dev` | `--kind test` |
-  |---|---|---|
-  | Tasks it opens | `train`, `val` | `test`, `test_env` |
-  | Lists tasks | yes | no |
-  | Free play from a start state | yes | no |
-  | Emulator state returned | full, on request | task success and subgoal progress only |
-  | Save / load | yes | no |
-  | Attempts per session | unlimited resets | one |
+  | | `--kind dev` | `--kind test` | `--kind playthrough` |
+  |---|---|---|---|
+  | Tasks it opens | `train`, `val` | `test`, `test_env` | `playthrough` |
+  | Lists tasks | yes | no | yes |
+  | Free play from a start state | yes | no | no |
+  | Emulator state returned | full, on request | task success and subgoal progress only | game won and badges earned only |
+  | Save / load | yes | no | no |
+  | Attempts per session | unlimited resets | one | one |
+  | Actions | buttons | buttons | high-level actions and `button(...)` |
+  | Step budget | 200 | 200 | 1,000,000 |
+  | Survives a restart | no | no | yes, from a checkpoint |
 
 - **The model gateway** (`env_server/model_gateway.py`) is the sandbox's only route to a model. It forwards chat completions for the models you allow to OpenRouter and adds your API key on the host, so the key is never inside the sandbox. It strips web-search and fallback-routing fields.
 - **The sandbox image** (`containers/sandbox.def`) is an [Apptainer](https://apptainer.org) image holding a Python runtime and the agent. It runs with no network at all; the server and gateway reach it as two Unix sockets.
@@ -339,6 +342,23 @@ python envctl close
 
 In a test run the session is already open, so the agent starts at `envctl observe` or `envctl step`.
 
+### Running a playthrough
+
+A playthrough is one session that lasts a whole game: the agent gets the screen and acts until it becomes Champion or spends its million button presses.
+
+Unlike a test run, a playthrough takes the same high-level actions as our own harness: `move(up 3)`, `interact()`, `passdialogue()`, `battlemenu(fight)`, `pickattack(2)`, `menu(confirm)` and so on, plus `button(a)` for a single press. Which ones apply depends on the screen, and every observation lists them under `obs.actions`; `envctl` prints them after each step. An action that does not fit the current screen is refused with `valid: false` and nothing happens. The step budget counts button presses, so `move(up 3)` uses three.
+
+```bash
+bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_brown.playthrough \
+    --run_dir /path/to/run --model google/gemini-3.6-flash -- \
+    prime-agent --provider gateway --model google/gemini-3.6-flash --cwd /work -p "<your prompt>"
+```
+
+The tasks are `gb.pokemon_red.playthrough`, `gb.pokemon_crystal.playthrough`, `gb.pokemon_brown.playthrough` and `gb.pokemon_prism.playthrough`; their start states and goals are in `configs/splits/split_config.yaml`.
+
+`--run_dir` is where the run lives. It holds the emulator checkpoint (`checkpoint/`), the agent's workspace (`work/`) and home (`home/`), and one log directory per launch (`logs/<stamp>/`). The server checkpoints every 500 steps (`--checkpoint_every`) and when it shuts down, so if the job ends or the node dies, **running the same command again continues the same session**: same step count, same badges, and the agent finds its files where it left them. It is still one attempt: the game cannot be reset, and a run directory cannot be pointed at a different game.
+
+`result.json` in each log directory reports `success`, `steps` and `subgoals.completed`, the badges earned so far. The emulator's video is written under GameBoyWorlds' `sessions/<game>/env_server/<session>/`, one file per launch; the server log names the directory.
 To regenerate the splits after changing `configs/splits/split_config.yaml` or the benchmark's task list, run `python run_env_server.py generate_splits --show`.
 
 ---

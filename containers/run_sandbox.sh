@@ -8,8 +8,13 @@
 #   test  one held-out task, opened for the agent; it gets a token for that session only:
 #     bash containers/run_sandbox.sh --kind test --task_id gb.pokemon_red.001 --model <model> -- <command>
 #
+#   playthrough  one whole game. --run_dir keeps the emulator checkpoint and the agent's files, so
+#                running the same line again continues the same session:
+#     bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_brown.playthrough \
+#         --run_dir <dir> --model <model> -- <command>
+#
 # Needs OPENROUTER_API_KEY in the host environment; it is never passed into the sandbox.
-# Exits with the command's status. Logs, and result.json for a test run, go to --log_dir.
+# Exits with the command's status. Logs, and result.json for a test or playthrough run, go to --log_dir.
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -24,14 +29,16 @@ WORKSPACE=""
 LOG_DIR=""
 RECORD_DIR=""
 TIME_LIMIT=""
-MAX_STEPS=200
+MAX_STEPS=""
+STATE_DIR=""
+CHECKPOINT_EVERY=500
 
 usage() {
-    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     echo
-    echo "Options: --kind dev|test  --model <openrouter id>  --task_id <id>  --sif <image>"
+    echo "Options: --kind dev|test|playthrough  --model <openrouter id>  --task_id <id>  --sif <image>"
     echo "         --workspace <dir>  --log_dir <dir>  --record_dir <dir>  --time_limit <seconds>"
-    echo "         --max_steps <n>"
+    echo "         --max_steps <n>  --run_dir <dir>  --checkpoint_every <steps>"
     exit 1
 }
 
@@ -46,16 +53,20 @@ while [[ $# -gt 0 ]]; do
         --record_dir) RECORD_DIR="$2"; shift 2 ;;
         --time_limit) TIME_LIMIT="$2"; shift 2 ;;
         --max_steps) MAX_STEPS="$2"; shift 2 ;;
+        --run_dir) STATE_DIR="$2"; shift 2 ;;
+        --checkpoint_every) CHECKPOINT_EVERY="$2"; shift 2 ;;
         --) shift; break ;;
         *) usage ;;
     esac
 done
 
 [[ $# -gt 0 ]] || usage
-[[ "$KIND" == dev || "$KIND" == test ]] || die "--kind must be dev or test"
+[[ "$KIND" == dev || "$KIND" == test || "$KIND" == playthrough ]] || die "--kind must be dev, test or playthrough"
 [[ -n "$MODEL" ]] || die "--model is required"
-[[ "$KIND" == dev || -n "$TASK_ID" ]] || die "--kind test needs --task_id"
-[[ "$KIND" == test || -z "$TASK_ID" ]] || die "--task_id is only for --kind test; a dev agent opens tasks itself"
+[[ "$KIND" == dev || -n "$TASK_ID" ]] || die "--kind $KIND needs --task_id"
+[[ "$KIND" != dev || -z "$TASK_ID" ]] || die "--task_id is not for --kind dev; a dev agent opens tasks itself"
+[[ "$KIND" != playthrough || -n "$STATE_DIR" ]] || die "--kind playthrough needs --run_dir, where the run is kept"
+[[ "$KIND" == playthrough || -z "$STATE_DIR" ]] || die "--run_dir is only for --kind playthrough"
 [[ -f "$SIF" ]] || die "no image at $SIF; build it first (see containers/sandbox.def)"
 [[ -n "${OPENROUTER_API_KEY:-}" ]] || die "OPENROUTER_API_KEY is not set; the model gateway needs it"
 require_apptainer
@@ -68,6 +79,15 @@ RUN_DIR="$(mktemp -d "$(sandbox_runtime_dir)/gbsandbox.XXXXXX")"
 NET="$RUN_DIR/net"
 AGENT_HOME="$RUN_DIR/home"
 TOKEN_FILE="$RUN_DIR/server.token"
+if [[ -n "$STATE_DIR" ]]; then
+    mkdir -p "$STATE_DIR"
+    STATE_DIR="$(cd "$STATE_DIR" && pwd)"
+    exec 9> "$STATE_DIR/lock"
+    flock -n 9 || die "$STATE_DIR is in use by another run"
+    AGENT_HOME="$STATE_DIR/home"
+    [[ -n "$WORKSPACE" ]] || WORKSPACE="$STATE_DIR/work"
+    [[ -n "$LOG_DIR" ]] || LOG_DIR="$STATE_DIR/logs/$(date +%Y%m%d_%H%M%S)"
+fi
 [[ -n "$WORKSPACE" ]] || WORKSPACE="$RUN_DIR/work"
 [[ -n "$LOG_DIR" ]] || LOG_DIR="$results_dir/sandbox/$(date +%Y%m%d_%H%M%S)_$KIND"
 mkdir -p "$NET" "$AGENT_HOME/.prime/agent" "$WORKSPACE" "$LOG_DIR"
@@ -84,9 +104,10 @@ trap cleanup EXIT
 
 "$PYTHON" -c 'import secrets; print(secrets.token_urlsafe(24))' > "$TOKEN_FILE"
 
-server_args=(serve --kind "$KIND" --unix_socket "$NET/envserver.sock" --token_file "$TOKEN_FILE"
-             --max_steps "$MAX_STEPS")
+server_args=(serve --kind "$KIND" --unix_socket "$NET/envserver.sock" --token_file "$TOKEN_FILE")
+[[ -n "$MAX_STEPS" ]] && server_args+=(--max_steps "$MAX_STEPS")
 [[ -n "$RECORD_DIR" ]] && server_args+=(--record_dir "$RECORD_DIR")
+[[ -n "$STATE_DIR" ]] && server_args+=(--checkpoint_dir "$STATE_DIR/checkpoint" --checkpoint_every "$CHECKPOINT_EVERY")
 "$PYTHON" run_env_server.py "${server_args[@]}" > "$LOG_DIR/server.log" 2>&1 &
 SERVER_PID=$!
 "$PYTHON" -m env_server.model_gateway --socket "$NET/model.sock" --allow "$MODEL" \
@@ -106,7 +127,7 @@ JSON
 json_field() { "$PYTHON" -c 'import json, sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
 
 SESSION=""
-if [[ "$KIND" == test ]]; then
+if [[ "$KIND" != dev ]]; then
     opened="$("$PYTHON" run_env_server.py open_session --unix_socket "$NET/envserver.sock" \
         --token_file "$TOKEN_FILE" --task_id "$TASK_ID")"
     SESSION="$(json_field session <<< "$opened")"

@@ -2399,6 +2399,10 @@
   "split": "test_env",
   "text": "go left to see the bush near the bridge"
  },
+ "gb.pokemon_brown.playthrough": {
+  "split": "playthrough",
+  "text": "Defeat the Elite Four and become the Rijon League Champion"
+ },
  "gb.pokemon_crystal.000": {
   "split": "test_env",
   "text": "Enter the Cherrygrove Pokemon Center"
@@ -2599,6 +2603,14 @@
   "split": "test_env",
   "text": "Defeat Koga"
  },
+ "gb.pokemon_crystal.playthrough": {
+  "split": "playthrough",
+  "text": "Defeat the Elite Four and enter the Hall of Fame"
+ },
+ "gb.pokemon_prism.playthrough": {
+  "split": "playthrough",
+  "text": "Defeat the Elite Four and become the Rijon League Champion"
+ },
  "gb.pokemon_red.000": {
   "split": "val",
   "text": "Enter the Pokemon Center"
@@ -2798,6 +2810,10 @@
  "gb.pokemon_red.049": {
   "split": "val",
   "text": "Read the blackboard in the school nearby"
+ },
+ "gb.pokemon_red.playthrough": {
+  "split": "playthrough",
+  "text": "Defeat the Elite Four and become the Pokemon League Champion"
  },
  "gb.runes_of_virtue_1.000": {
   "split": "train",

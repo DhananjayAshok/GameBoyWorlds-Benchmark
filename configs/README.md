@@ -12,7 +12,7 @@ You can source this file to use config vars in bash scripts.
 
 ## Splits (`configs/splits/`)
 
-`split_config.yaml` sets the seed, the training games and the `val`/`test` fractions. `benchmark_splits.json` is generated from it and is what the environment server reads; it is checked in so everyone evaluates on the same held-out tasks. Regenerate it with:
+`split_config.yaml` sets the seed, the training games and the `val`/`test` fractions. Its `playthrough` table defines the whole-game tasks: for each game, the start state and the goal text. `benchmark_splits.json` is generated from it and is what the environment server reads; it is checked in so everyone evaluates on the same held-out tasks. Regenerate it with:
 
 ```bash
 python run_env_server.py generate_splits --show
