@@ -346,7 +346,7 @@ In a test run the session is already open, so the agent starts at `envctl observ
 
 A playthrough is one session that lasts a whole game: the agent gets the screen and acts until it becomes Champion or spends its million button presses.
 
-Unlike a test run, a playthrough takes the same high-level actions as our own harness: `move(up 3)`, `interact()`, `passdialogue()`, `battlemenu(fight)`, `pickattack(2)`, `menu(confirm)` and so on, plus `button(a)` for a single press. Which ones apply depends on the screen, and every observation lists them under `obs.actions`; `envctl` prints them after each step. An action that does not fit the current screen is refused with `valid: false` and nothing happens. The step budget counts button presses, so `move(up 3)` uses three.
+Unlike a test run, a playthrough takes the same high-level actions as our own harness: `move(up 3)`, `interact()`, `passdialogue()`, `battlemenu(fight)`, `pickattack(2)`, `menu(confirm)` and so on, plus `button(a)` for a single press and `wait()` to let the game run a step without pressing anything. Which ones apply depends on the screen, and every observation lists them under `obs.actions`; `envctl` prints them after each step. An action that does not fit the current screen is refused with `valid: false` and nothing happens. The step budget counts button presses, so `move(up 3)` uses three.
 
 ```bash
 bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_brown.playthrough \
@@ -358,7 +358,20 @@ The tasks are `gb.pokemon_red.playthrough`, `gb.pokemon_crystal.playthrough`, `g
 
 `--run_dir` is where the run lives. It holds the emulator checkpoint (`checkpoint/`), the agent's workspace (`work/`) and home (`home/`), and one log directory per launch (`logs/<stamp>/`). The server checkpoints every 500 steps (`--checkpoint_every`) and when it shuts down, so if the job ends or the node dies, **running the same command again continues the same session**: same step count, same badges, and the agent finds its files where it left them. It is still one attempt: the game cannot be reset, and a run directory cannot be pointed at a different game.
 
-`result.json` in each log directory reports `success`, `steps` and `subgoals.completed`, the badges earned so far. The emulator's video is written under GameBoyWorlds' `sessions/<game>/env_server/<session>/`, one file per launch; the server log names the directory.
+A client can also mark its own checkpoints (`POST /sessions/<id>/checkpoint` with a `label`). From the first one on, the server resumes only from the client's latest mark, so the game never runs ahead of what the client saved; presses made after that mark and lost in a restart are reported as `discarded_steps`.
+
+To play with our strategist harness as the client, add `--harness` and run it in the sandbox. Its code is copied to `/work/harness` and its memory is kept in `/work/storage`, so it resumes with the session:
+
+```bash
+bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_brown.playthrough \
+    --run_dir /path/to/run --model google/gemini-3.6-flash --harness -- \
+    /opt/harness/bin/python /work/harness/run_playthrough.py --remote --name brown1 \
+    --model google/gemini-3.6-flash --vlm_kind gateway
+```
+
+The harness has no GameBoyWorlds inside the sandbox. `execution/game_api.py` stands in for the names it uses, and `execution/remote_env.py` turns the server's observations back into the environment interface it expects. Each step's response carries `obs.transition` (every frame the action passed through, the screen-text crops and the action's return value), and the harness marks a checkpoint at the end of every episode.
+
+`result.json` in each log directory reports `success`, `steps`, `subgoals.completed` (the badges earned so far), `label` and `discarded_steps`. The emulator's video is written under GameBoyWorlds' `sessions/<game>/env_server/<session>/`, one file per launch; the server log names the directory.
 To regenerate the splits after changing `configs/splits/split_config.yaml` or the benchmark's task list, run `python run_env_server.py generate_splits --show`.
 
 ---

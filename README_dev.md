@@ -136,6 +136,9 @@ A run writes to three places:
 | `containers/sandbox_run.sh`, `netbridge.py` | Inside the image: expose the two Unix sockets as loopback ports, then run the command. |
 | `containers/prime_agent_*.sh`, `kernel_*`, `seed_kernel_skills.py` | prime-agent specifics: the vendored installer, and the pinned Python environment it runs tools in. |
 | `agent_workspace/envctl`, `envclient.py` | The client the agent is given. |
+| `execution/remote_env.py` | `RemoteEnvironment`: the strategist harness's environment interface over an env-server session (`run_playthrough.py --remote`). |
+| `execution/game_api.py` | The GameBoyWorlds names the harness uses: the real ones when GameBoyWorlds is installed, stand-ins inside the sandbox. |
+| `containers/harness_requirements.txt` | The harness's pinned Python environment in the image (`/opt/harness`); `run_sandbox.sh --harness` copies the code to `/work/harness`. |
 
 Routes, all JSON with `Authorization: Bearer <token>`. The server token reaches everything; a session's own token reaches only that session.
 
@@ -144,8 +147,9 @@ Routes, all JSON with `Authorization: Bearer <token>`. The server token reaches 
 | `GET /tasks` | Tasks the policy lists. |
 | `GET /scenes` | Free-play start states, `{game: [init_state]}`. |
 | `POST /sessions` | Open a session: `{"task_id": ...}` or `{"game": ..., "init_state": ...}`, optional `"state": true`. Returns the session and its token. |
-| `GET /sessions/<id>` | Status: steps, `episode_over`, `success`, `subgoals`. |
+| `GET /sessions/<id>` | Status: steps, `episode_over`, `success`, `subgoals`, `label`, `discarded_steps`. |
 | `POST /sessions/<id>/reset`, `step`, `observe`, `save`, `load` | `step` takes `{"action": ...}`, `load` takes `{"handle": ...}`. |
+| `POST /sessions/<id>/checkpoint` | Playthrough only: `{"label": ...}` checkpoints now; from then on the session resumes only from the latest label. |
 | `DELETE /sessions/<id>` | Close it. |
 
 To use a different agent, add its install to `sandbox.def` and pass its command after `--` to `run_sandbox.sh`. It needs to speak the OpenAI chat-completions API at `http://127.0.0.1:8720/v1`.
