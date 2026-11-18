@@ -13,9 +13,7 @@ if TYPE_CHECKING:
 
 
 def _movement(action, kwargs: Dict[str, Any], info: Dict[str, Any]) -> Tuple[Optional[str], int, Optional[int]]:
-    from gameboy_worlds.emulation.emulator import LowLevelActions
-    from gameboy_worlds.interface.action import LowLevelAction
-    from gameboy_worlds.interface.pokemon.actions import MoveStepsAction
+    from execution.game_api import LowLevelAction, LowLevelActions, MoveStepsAction
 
     if action is MoveStepsAction or (isinstance(action, type) and issubclass(action, MoveStepsAction)):
         direction = kwargs.get("direction")
@@ -64,7 +62,7 @@ class MappingEnvironment:
         self.marker = None
 
     def step_high_level_action(self, action, **kwargs):
-        from gameboy_worlds.emulation.pokemon import AgentState
+        from execution.game_api import AgentState
 
         before = self._env.get_info()
         was_free = before.get("pokemon_core", {}).get("agent_state") == AgentState.FREE_ROAM

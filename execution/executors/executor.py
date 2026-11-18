@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Type
 
-from gameboy_worlds.interface import HighLevelAction
+from execution.game_api import HighLevelAction
 
 from execution.executors.base import MAX_CONSECUTIVE_INVALID, Executor
 from execution.executors.policies import (AVAILABLE_ACTION_POLICIES,
@@ -211,7 +211,7 @@ You are playing a GameBoy game. The current screen is shown in the image.
 
 
 def _is_low_level(action_class) -> bool:
-    from gameboy_worlds.interface.action import LowLevelAction
+    from execution.game_api import LowLevelAction
     return issubclass(action_class, LowLevelAction)
 
 

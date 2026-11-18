@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable, List, Protocol
 
-from gameboy_worlds.interface.action import LowLevelAction
+from execution.game_api import LowLevelAction
 
 from execution.report import EnvironmentStepRecord, StepRecord, action_name
 

@@ -4,8 +4,6 @@ from datetime import datetime
 
 import click
 
-from gameboy_worlds import get_environment
-
 from execution.strategist.pokemon.strategist import PokemonStrategist
 from python_scripts import paths
 from utils import load_parameters, log_info
@@ -57,32 +55,45 @@ DEFAULT_ENV_MAX_STEPS = 1_000_000
 @click.option("--resume_run", default=None, type=str,
               help="Fork another run's latest state (artifacts and emulator save) into --name and "
                    "continue from it, e.g. to recreate a failure from a past playthrough.")
+@click.option("--remote", is_flag=True, default=False,
+              help="Play the environment server session in $ENVCTL_SESSION instead of a local emulator. "
+                   "The server decides the game and start; --game, --init_state, --env_max_steps, "
+                   "--controller_variant and --save_video do not apply.")
 def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategist_vlm_kind,
          supervisor_vlm_model, supervisor_vlm_kind, executor_vlm_model, executor_vlm_kind,
          max_episodes, supervisor_max_steps, env_max_steps, strategist_max_new_tokens,
          supervisor_max_new_tokens, subgoal_every, report_detail, controller_variant, save_video,
-         npc_registry, override_goal, resume_run):
+         npc_registry, override_goal, resume_run, remote):
     """Play one long playthrough; re-running the same --name continues it."""
     parameters = load_parameters()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir = paths.playthrough_dir(parameters, game=game, name=name)
 
-    log_info(f"Playthrough {name!r} on {game} from {init_state!r}", parameters)
-    log_info(f"State: {out_dir}", parameters)
-
-    environment = get_environment(
-        game=game,
-        environment_variant="default",
-        controller_variant=controller_variant,
-        init_state=init_state,
-        max_steps=env_max_steps,
-        headless=True,
-        save_video=save_video,
-        # Relative to GameBoyWorlds' sessions/<game>/; read back by paths.playthrough_sessions_root.
-        session_name=f"{paths.PLAYTHROUGH_SEGMENT}/{paths.depathify(name)}/{stamp}/",
-    )
+    if remote:
+        if resume_run is not None:
+            raise click.UsageError("--resume_run forks a local emulator save; a remote session cannot load one")
+        from execution.remote_env import RemoteEnvironment
+        environment = RemoteEnvironment.attach()
+        game = environment.game
+        log_info(f"Playthrough {name!r} on server session {environment.described['session']} ({game}), "
+                 f"step {environment.steps}", parameters)
+    else:
+        from gameboy_worlds import get_environment
+        log_info(f"Playthrough {name!r} on {game} from {init_state!r}", parameters)
+        environment = get_environment(
+            game=game,
+            environment_variant="default",
+            controller_variant=controller_variant,
+            init_state=init_state,
+            max_steps=env_max_steps,
+            headless=True,
+            save_video=save_video,
+            # Relative to GameBoyWorlds' sessions/<game>/; read back by paths.playthrough_sessions_root.
+            session_name=f"{paths.PLAYTHROUGH_SEGMENT}/{paths.depathify(name)}/{stamp}/",
+        )
+    log_info(f"State: {paths.playthrough_dir(parameters, game=game, name=name)}", parameters)
     try:
-        environment.reset()
+        if not remote:
+            environment.reset()
         strategist = PokemonStrategist(
             env=environment,
             game=game,

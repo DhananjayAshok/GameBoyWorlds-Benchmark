@@ -128,6 +128,8 @@ def check_playthrough_policy(*, steps: int = 6, parameters: dict, action: str = 
         return ["the split file has no playthrough tasks"]
     other = next(t for t, v in sorted(table.items()) if v["split"] == "test")
     for kind in ("dev", "test"):
+        if Policy.of(kind=kind).transitions:
+            failures.append(f"a {kind} server serves obs.transition")
         sessions = Sessions(policy=Policy.of(kind=kind), max_sessions=1, idle_seconds=600,
                             record_dir=None, max_steps=None, parameters=parameters)
         try:
@@ -166,8 +168,13 @@ def check_playthrough_policy(*, steps: int = 6, parameters: dict, action: str = 
             extra = codec.audit_scored(payload=payload)
             if extra:
                 failures.append(f"playthrough payload {i} carried tracker groups beyond the scored set: {extra}")
-            if not any(text.startswith("button(") for text in payload["obs"]["actions"].values()):
-                failures.append(f"playthrough payload {i} does not list button() in obs.actions")
+            for listed in ("button(", "wait("):
+                if not any(text.startswith(listed) for text in payload["obs"]["actions"].values()):
+                    failures.append(f"playthrough payload {i} does not list {listed}) in obs.actions")
+            if ("transition" in payload["obs"]) != (i > 0):
+                failures.append(f"playthrough payload {i} {'lacks' if i else 'carries'} obs.transition")
+            elif i > 0 and not payload["obs"]["transition"]["frames"]:
+                failures.append(f"playthrough step {i} served no transition frames")
         if not any(text.startswith("move(") for p in payloads for text in p["obs"]["actions"].values()):
             failures.append("a playthrough session never listed the state-wise move() action")
         for bad in ("A", "fly(somewhere)"):
@@ -214,6 +221,23 @@ def check_playthrough_policy(*, steps: int = 6, parameters: dict, action: str = 
         failures += _refused_reset(session, label="a reset after a restart")
         if session.step(action=action)["obs"]["steps"] != described["steps"] + 1:
             failures.append("a restored session did not continue its step count")
+        if session.step(action="wait()")["obs"]["steps"] != described["steps"] + 2:
+            failures.append("wait() did not take exactly one step")
+
+        marked = session.mark(label="episode7")
+        marked_frame = session.observe()["obs"]["frame"]
+        for _ in range(5):
+            session.step(action="wait()")
+        sessions.close_all()
+        sessions = serve()
+        session = sessions.open(task_id=ids[0])
+        video_dirs.append(session.env._emulator.session_path)
+        after = session.describe()
+        if (after["steps"], after["label"], after["discarded_steps"]) != (marked["steps"], "episode7", 5):
+            failures.append(f"a client checkpoint restored as steps={after['steps']}, label={after['label']!r}, "
+                            f"discarded={after['discarded_steps']}; wanted {marked['steps']}, 'episode7', 5")
+        if session.observe()["obs"]["frame"] != marked_frame:
+            failures.append("a client checkpoint restored a different screen")
         sessions.close_all()
     finally:
         for path in [os.path.join(directory, name) for name in os.listdir(directory)]:

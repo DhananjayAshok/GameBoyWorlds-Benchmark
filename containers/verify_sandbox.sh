@@ -118,6 +118,16 @@ run "no half-written seed copies are left behind" \
     sh -c '! ls -d "$0"/.prime/agent/.kernel-venv.seeding.* >/dev/null 2>&1' "$SEEDHOME"
 
 echo
+echo "== the strategist harness environment =="
+run "every harness pin is what got installed" \
+    sandbox "$SIF" sh -c 'grep -v "^#" /dev/stdin | while read -r pin; do grep -qix "$pin" /opt/harness/freeze.txt || exit 1; done' \
+    < containers/harness_requirements.txt
+run "the harness environment imports its packages" \
+    sandbox "$SIF" /opt/harness/bin/python -c "import numpy, cv2, PIL, matplotlib, openai, anthropic, httpx, click, tqdm, yaml"
+in_image_absent "no GameBoyWorlds in the harness environment" /opt/harness/lib/python3.12/site-packages/gameboy_worlds
+in_image_absent "no emulator in the harness environment"     /opt/harness/lib/python3.12/site-packages/pyboy
+
+echo
 echo "== no agent state baked into the image =="
 in_image_absent "no ~/.prime under /root"          /root/.prime
 in_image_absent "no build HOME (/home/agent)"      /home/agent

@@ -7,11 +7,11 @@ from PIL import Image
 from utils.lm_inference import (
     OpenAIModel,
     OpenRouterModel,
+    GatewayModel,
     AnthropicModel,
     vLLMModel,
     parse_yes_no,
 )
-from utils.huggingface_inference import HuggingFaceModel
 
 
 def convert_numpy_greyscale_to_pillow(arr: np.ndarray) -> Image:
@@ -46,7 +46,11 @@ class VLM:
             self._vlm = OpenAIModel(model=self._model_name)
         elif self._vlm_kind == "openrouter":
             self._vlm = OpenRouterModel(model=self._model_name)
+        elif self._vlm_kind == "gateway":
+            self._vlm = GatewayModel(model=self._model_name)
         elif self._vlm_kind == "huggingface":
+            from utils.huggingface_inference import HuggingFaceModel
+
             self._vlm = HuggingFaceModel(model=self._model_name, model_kind="vlm")
         elif self._vlm_kind == "anthropic":
             self._vlm = AnthropicModel(model=self._model_name)

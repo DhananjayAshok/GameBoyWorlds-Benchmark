@@ -2,7 +2,7 @@ from utils import object_detection
 from typing import Tuple, List, Dict, Any, Optional, Callable
 import numpy as np
 from abc import ABC, abstractmethod
-from gameboy_worlds.emulation.parser import StateParser
+from execution.game_api import StateParser
 
 
 def _get_quadrants(

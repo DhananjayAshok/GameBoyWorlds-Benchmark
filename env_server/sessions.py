@@ -49,6 +49,9 @@ class Session:
         self.checkpoint_dir = checkpoint_dir
         self.checkpoint_every = checkpoint_every
         self._checkpointed_at = 0
+        self.label: Optional[str] = saved.get("label") if saved else None
+        self.discarded_steps = int(saved.get("discarded_steps", 0)) if saved else 0
+        self._meta: Optional[dict] = saved
         self.want_state = True if not policy.state_optional else bool(want_state)
         self.success: Optional[float] = None
         self.episode_over = False
@@ -93,7 +96,8 @@ class Session:
                 "can_reset": self.policy.reset_again or not self.started,
                 "save_load": self.policy.save_load, "free_play": not self.is_task,
                 "episode_over": self.episode_over, "success": self.success,
-                "steps": self._steps(), "max_steps": self._max_steps(), "subgoals": self._subgoals()}
+                "steps": self._steps(), "max_steps": self._max_steps(), "subgoals": self._subgoals(),
+                "label": self.label, "discarded_steps": self.discarded_steps}
 
     def _steps(self) -> int:
         return int(getattr(self.env._emulator, "step_count", 0))
@@ -113,16 +117,36 @@ class Session:
             return
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         self._checkpointed_at = self._steps()
+        self._meta = {**self.describe(), "token": self.token, "started": self.started}
         # State before meta, each replaced atomically: a crash between the two leaves a loadable pair
         # whose step count is at most one interval behind the emulator's.
-        for name, write in ((CHECKPOINT_STATE, lambda f: self.env._emulator._pyboy.save_state(f)),
-                            (CHECKPOINT_META, lambda f: f.write(json.dumps(
-                                {**self.describe(), "token": self.token, "started": self.started},
-                                indent=1).encode()))):
-            path = os.path.join(self.checkpoint_dir, name)
-            with open(path + ".tmp", "wb") as f:
-                write(f)
-            os.replace(path + ".tmp", path)
+        self._write(CHECKPOINT_STATE, lambda f: self.env._emulator._pyboy.save_state(f))
+        self._write_meta()
+
+    def _write(self, name: str, write) -> None:
+        path = os.path.join(self.checkpoint_dir, name)
+        with open(path + ".tmp", "wb") as f:
+            write(f)
+        os.replace(path + ".tmp", path)
+
+    def _write_meta(self) -> None:
+        self._write(CHECKPOINT_META, lambda f: f.write(json.dumps(self._meta, indent=1).encode()))
+
+    def mark(self, *, label: str) -> dict:
+        if not self.checkpoint_dir:
+            raise SessionError("this server keeps no checkpoints", 403)
+        self.last_used = time.time()
+        self.label = label
+        self.checkpoint()
+        return {"label": label, "steps": self._steps()}
+
+    def _discard_since_checkpoint(self) -> None:
+        lost = self._steps() - self._checkpointed_at
+        if lost <= 0 or self._meta is None:
+            return
+        self.discarded_steps += lost
+        self._meta = {**self._meta, "discarded_steps": self.discarded_steps}
+        self._write_meta()
 
     def _restore(self, *, saved: dict) -> None:
         emulator = self.env._emulator
@@ -151,6 +175,9 @@ class Session:
         out = codec.public_obs(frame=self.env.get_observation(), goal=self.goal,
                                actions=self._actions(), steps=self._steps(), max_steps=self._max_steps(),
                                report=report, action_success=action_success)
+        if self.policy.transitions and isinstance(info, dict) \
+                and "previous_action_details" in info.get("core", {}):
+            out["transition"] = codec.transition(info=info)
         payload = {"obs": out, "valid": valid, "error": error, "done": self.episode_over,
                    "success": self.success, "session": self.id}
         if self.want_state:
@@ -201,7 +228,7 @@ class Session:
             self.recorder.write(kind="step", action=action, info=info, success=self.success,
                                 frame=self.env.get_observation())
         # One high-level action can take many presses, so this counts presses since the last checkpoint.
-        if self.episode_over or (self.checkpoint_every
+        if self.episode_over or (self.checkpoint_every and self.label is None
                                  and self._steps() - self._checkpointed_at >= self.checkpoint_every):
             self.checkpoint()
         return self._payload(info=info, action_success=action_success)
@@ -242,7 +269,10 @@ class Session:
                     log_warn(f"deleting save state {handle}: {exc}", parameters=self._parameters)
             self._handles.clear()
             try:
-                self.checkpoint()
+                if self.label is None or self.episode_over:
+                    self.checkpoint()
+                elif self.checkpoint_dir:
+                    self._discard_since_checkpoint()
             except Exception as exc:
                 log_warn(f"checkpointing session {self.id}: {exc}", parameters=self._parameters)
             try:

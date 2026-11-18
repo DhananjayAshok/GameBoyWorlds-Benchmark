@@ -13,6 +13,11 @@
 #     bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_brown.playthrough \
 #         --run_dir <dir> --model <model> -- <command>
 #
+#   --harness copies this repo's strategist harness to /work/harness (its state goes to /work/storage):
+#     bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_brown.playthrough \
+#         --run_dir <dir> --model <model> --harness -- /opt/harness/bin/python /work/harness/run_playthrough.py \
+#         --remote --name <name> --model <model> --vlm_kind gateway
+#
 # Needs OPENROUTER_API_KEY in the host environment; it is never passed into the sandbox.
 # Exits with the command's status. Logs, and result.json for a test or playthrough run, go to --log_dir.
 
@@ -32,13 +37,14 @@ TIME_LIMIT=""
 MAX_STEPS=""
 STATE_DIR=""
 CHECKPOINT_EVERY=500
+HARNESS=false
 
 usage() {
-    sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     echo
     echo "Options: --kind dev|test|playthrough  --model <openrouter id>  --task_id <id>  --sif <image>"
     echo "         --workspace <dir>  --log_dir <dir>  --record_dir <dir>  --time_limit <seconds>"
-    echo "         --max_steps <n>  --run_dir <dir>  --checkpoint_every <steps>"
+    echo "         --max_steps <n>  --run_dir <dir>  --checkpoint_every <steps>  --harness"
     exit 1
 }
 
@@ -55,6 +61,7 @@ while [[ $# -gt 0 ]]; do
         --max_steps) MAX_STEPS="$2"; shift 2 ;;
         --run_dir) STATE_DIR="$2"; shift 2 ;;
         --checkpoint_every) CHECKPOINT_EVERY="$2"; shift 2 ;;
+        --harness) HARNESS=true; shift ;;
         --) shift; break ;;
         *) usage ;;
     esac
@@ -117,6 +124,20 @@ wait_for_socket "$NET/envserver.sock" "$SERVER_PID" "$LOG_DIR/server.log"
 wait_for_socket "$NET/model.sock" "$GATEWAY_PID" "$LOG_DIR/gateway.log"
 
 cp agent_workspace/envclient.py agent_workspace/envctl "$WORKSPACE/"
+if [[ "$HARNESS" == true ]]; then
+    HARNESS_DIR="$WORKSPACE/harness"
+    mkdir -p "$HARNESS_DIR/configs" "$HARNESS_DIR/agent_workspace"
+    rsync -a --delete --exclude __pycache__ execution utils python_scripts run_playthrough.py "$HARNESS_DIR/"
+    cp agent_workspace/envclient.py "$HARNESS_DIR/agent_workspace/"
+    "$PYTHON" - "$HARNESS_DIR/configs" <<'PY'
+import sys, yaml
+out = sys.argv[1]
+project = yaml.safe_load(open("configs/project_vars.yaml"))
+project["results_dir"] = "/work/results"
+yaml.safe_dump(project, open(f"{out}/project_vars.yaml", "w"))
+yaml.safe_dump({"storage_dir": "/work/storage"}, open(f"{out}/private_vars.yaml", "w"))
+PY
+fi
 cat > "$AGENT_HOME/.prime/agent/models.json" <<JSON
 { "providers": { "gateway": {
     "baseUrl": "http://127.0.0.1:$MODEL_GATEWAY_PORT/v1", "apiKey": "none", "api": "openai-completions",
@@ -137,6 +158,7 @@ else
     export APPTAINERENV_ENV_SERVER_TOKEN="$(cat "$TOKEN_FILE")"
 fi
 export APPTAINERENV_ENV_SERVER_URL="http://127.0.0.1:$ENV_SERVER_PORT"
+export APPTAINERENV_MODEL_GATEWAY_URL="http://127.0.0.1:$MODEL_GATEWAY_PORT/v1"
 export APPTAINERENV_SANDBOX_BRIDGE="$ENV_SERVER_PORT=/sandboxnet/envserver.sock $MODEL_GATEWAY_PORT=/sandboxnet/model.sock"
 
 limit=()

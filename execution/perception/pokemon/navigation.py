@@ -2,7 +2,7 @@ import re
 from collections import deque
 from typing import Collection, Dict, Iterable, List, Optional, Tuple
 
-from gameboy_worlds.interface.pokemon.actions import HARD_MAX_STEPS
+from execution.game_api import HARD_MAX_STEPS
 
 from execution.perception.pokemon.grid import LEFT_COL, TOP_ROW
 

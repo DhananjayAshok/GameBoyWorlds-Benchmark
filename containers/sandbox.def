@@ -1,4 +1,5 @@
-# The agent sandbox image: a Python runtime and prime-agent, with nothing of this project inside.
+# The agent sandbox image: a Python runtime, prime-agent, and the strategist harness's pinned Python
+# environment (/opt/harness, containers/harness_requirements.txt), with nothing of this project inside.
 #
 # Build from the repo root, on a machine with network access (about ten minutes):
 #
@@ -24,6 +25,7 @@ From: python@sha256:cad37dd20c7cac861af9003af8796d03ea7a998ec1e3a664429740fc9d7d
     containers/kernel_constraints.txt /opt/build/kernel_constraints.txt
     containers/kernel_skills.json /opt/build/kernel_skills.json
     containers/seed_kernel_skills.py /opt/build/seed_kernel_skills.py
+    containers/harness_requirements.txt /opt/build/harness_requirements.txt
     containers/prime_agent_wrapper.sh /opt/sandbox/bin/prime-agent
     containers/netbridge.py /opt/sandbox/bin/netbridge.py
     containers/sandbox_run.sh /opt/sandbox/bin/sandbox-run
@@ -64,6 +66,12 @@ From: python@sha256:cad37dd20c7cac861af9003af8796d03ea7a998ec1e3a664429740fc9d7d
     mv "$kernel" /opt/pa-kernel/seed-venv
     uv pip freeze --python /opt/pa-kernel/seed-venv/bin/python > /opt/pa-kernel/freeze.txt
     chmod 0755 /opt/sandbox/bin/prime-agent /opt/sandbox/bin/sandbox-run
+
+    python -m venv /opt/harness
+    /opt/harness/bin/pip install --no-cache-dir --no-deps -r /opt/build/harness_requirements.txt
+    /opt/harness/bin/pip check
+    /opt/harness/bin/python -c "import numpy, cv2, PIL, matplotlib, openai, anthropic, httpx, click, tqdm, yaml"
+    /opt/harness/bin/pip freeze > /opt/harness/freeze.txt
 
     # Keep only the interpreter from the build data home, and nothing from the build HOME.
     find "$XDG_DATA_HOME" -mindepth 1 -maxdepth 1 ! -name uv -exec rm -rf {} +

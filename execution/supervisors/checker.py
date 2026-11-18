@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, List, Optional, Tuple, Type
 
-from gameboy_worlds.interface import Environment
+from execution.game_api import Environment
 
 from execution.executors import Executor
 from execution.report import EnvironmentStepRecord, ExecutorReport, action_name

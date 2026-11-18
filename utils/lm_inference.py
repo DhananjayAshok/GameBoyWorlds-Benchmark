@@ -238,6 +238,8 @@ class OpenAICompatibleAPIBase(RateLimitedAPIBase):
 class InferenceModel(ABC):
     """Abstract base class for all LM inference backends."""
 
+    BATCH_SIZE_PARAMETER: str = "max_batch_size_api"
+
     @abstractmethod
     def do_infer(
         self,
@@ -345,14 +347,7 @@ class InferenceModel(ABC):
             self.parameters if hasattr(self, "parameters") else load_parameters()
         )
         if batch_size is None:
-            from utils.huggingface_inference import HuggingFaceModel
-
-            if isinstance(self, vLLMModel):
-                batch_size = parameters["max_batch_size_vllm"]
-            elif isinstance(self, HuggingFaceModel):
-                batch_size = parameters["max_batch_size_huggingface"]
-            else:
-                batch_size = parameters["max_batch_size_api"]
+            batch_size = parameters[self.BATCH_SIZE_PARAMETER]
         results = []
         meta = {"input_tokens": [], "output_tokens": []}
         for i in range(0, len(texts), batch_size):
@@ -1004,6 +999,7 @@ class AnthropicModel(APIModel):
 
 class vLLMModel(OpenAIAPIModel):
     LOCAL_ENDPOINT: bool = True
+    BATCH_SIZE_PARAMETER: str = "max_batch_size_vllm"
 
     def __init__(
         self,
@@ -1039,6 +1035,24 @@ class OpenRouterModel(OpenAIAPIModel):
             model=model,
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
+            max_queries_per_minute=max_queries_per_minute,
+            parameters=parameters,
+        )
+
+
+class GatewayModel(OpenAIAPIModel):
+    SUPPORTS_NATIVE_N: bool = False
+
+    def __init__(
+        self,
+        model: str,
+        max_queries_per_minute: Optional[int] = None,
+        parameters: dict[str, Any] = None,
+    ) -> None:
+        super().__init__(
+            model=model,
+            base_url=os.environ["MODEL_GATEWAY_URL"],
+            api_key="none",
             max_queries_per_minute=max_queries_per_minute,
             parameters=parameters,
         )

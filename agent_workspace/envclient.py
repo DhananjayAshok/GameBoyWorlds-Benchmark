@@ -92,6 +92,9 @@ class Session:
     def load(self, handle, raw=False):
         return self._post("load", {"handle": handle}, raw=raw)
 
+    def checkpoint(self, label):
+        return self._post("checkpoint", {"label": label})
+
     def describe(self):
         return self.server.request("GET", "/sessions/" + self.id)
 

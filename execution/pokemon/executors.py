@@ -2,10 +2,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from gameboy_worlds.emulation.pokemon import AgentState
-from gameboy_worlds.interface.pokemon.actions import (BattleMenuAction, InteractAction, MenuAction,
-                                                      MoveStepsAction, OpenMenuAction,
-                                                      PassDialogueAction, PickAttackAction)
+from execution.game_api import (AgentState, BattleMenuAction, InteractAction, MenuAction, MoveStepsAction,
+                                OpenMenuAction, PassDialogueAction, PickAttackAction)
 
 from execution.executors import PolicyExecutor
 from execution.perception.pokemon.navigation import (DIRECTIONS, WALKABLE, approach_cells,

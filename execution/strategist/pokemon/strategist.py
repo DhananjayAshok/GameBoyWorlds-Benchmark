@@ -7,10 +7,10 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-from gameboy_worlds.emulation.pokemon import AgentState
 from tqdm import tqdm
 
 from execution.artifact import episode_dirs
+from execution.game_api import AgentState, WaitAction
 from execution.perception.pokemon.tiles import TileRecognizer, verbalize_tiles
 from execution.pokemon.executors import CombatExecutor
 from execution.pokemon.supervisors import PokemonPlayThroughSupervisor
@@ -52,8 +52,8 @@ def settle_screen(env) -> None:
         frame = np.asarray(env.get_info()["core"]["current_frame"])
         if float(np.mean(frame <= BLACK_PIXEL_LEVEL)) < BLACK_FRACTION:
             return
-        captured, _ = env._emulator.step(None)
-        if captured is None:
+        obs, *_ = env.step_high_level_action(WaitAction)
+        if obs is None:
             return
 
 

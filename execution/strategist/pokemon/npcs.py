@@ -763,9 +763,7 @@ class NPCRegistry(StrategistArtifact):
 
     @staticmethod
     def _is_a_press(action: Any, kwargs: Dict[str, Any]) -> bool:
-        from gameboy_worlds.emulation.emulator import LowLevelActions
-        from gameboy_worlds.interface.action import LowLevelAction
-        from gameboy_worlds.interface.pokemon.actions import InteractAction
+        from execution.game_api import InteractAction, LowLevelAction, LowLevelActions
 
         if isinstance(action, type) and issubclass(action, InteractAction):
             return True
@@ -773,7 +771,7 @@ class NPCRegistry(StrategistArtifact):
                 and kwargs.get("low_level_action") == LowLevelActions.PRESS_BUTTON_A)
 
     def _conversation_step(self, ev: StepEvent) -> None:
-        from gameboy_worlds.emulation.pokemon import AgentState
+        from execution.game_api import AgentState
 
         state = ev.info.get("pokemon_core", {}).get("agent_state") if ev.info else None
         if self._resume is not None:

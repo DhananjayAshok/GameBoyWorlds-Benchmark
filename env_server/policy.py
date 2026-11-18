@@ -28,6 +28,7 @@ class Policy:
     # GameBoyWorlds controller variant: "low_level" takes button names, "state_wise" takes the game's
     # high-level action strings, which every observation lists under obs.actions.
     controller: str = "low_level"
+    transitions: bool = False
 
     @classmethod
     def of(cls, *, kind: str) -> "Policy":
@@ -43,7 +44,8 @@ class Policy:
             return cls(kind=kind, splits_open=splits.PLAYTHROUGH_SPLITS,
                        splits_listed=splits.PLAYTHROUGH_SPLITS, free_play=False, state_mode="scored",
                        state_optional=False, save_load=False, reset_again=False,
-                       max_steps=PLAYTHROUGH_MAX_STEPS, long_running=True, controller="state_wise")
+                       max_steps=PLAYTHROUGH_MAX_STEPS, long_running=True, controller="state_wise",
+                       transitions=True)
         raise ValueError(f"unknown server kind {kind!r}; one of {KINDS}")
 
     def __post_init__(self) -> None:

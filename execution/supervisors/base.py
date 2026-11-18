@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Optional, Type
 
-from gameboy_worlds.interface import Environment
+from execution.game_api import Environment
 
 from execution.executors import Executor
 from execution.report import (ExecutorReport, SupervisorReport, SupervisorVLMCallRecord,

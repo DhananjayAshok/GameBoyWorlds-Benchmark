@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Type
 
-from gameboy_worlds.interface import Environment, HighLevelAction
+from execution.game_api import Environment, HighLevelAction
 
 from execution.report import (ACTION_TAGS, EnvironmentStepRecord, ExecutorReport,
                               InvalidStepRecord, ExecutorVLMCallRecord, LogRecord,

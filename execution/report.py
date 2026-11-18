@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Type, Union
 import matplotlib.pyplot as plt
 import numpy as np
 
-from gameboy_worlds.interface import HighLevelAction
+from execution.game_api import HighLevelAction
 
 from python_scripts import paths
 from utils import load_parameters, log_info, parse_yes_no, sum_optional

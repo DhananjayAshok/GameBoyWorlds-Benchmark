@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from execution.executor_action import ExecutorAction, LocateAction, coords_to_string
 from execution.perception.pokemon.tiles import verbalize_neighbourhood
-from gameboy_worlds.emulation.pokemon import AgentState
+from execution.game_api import AgentState
 from utils import parse_key_value
 
 

@@ -87,6 +87,21 @@ def public_obs(*, frame: np.ndarray, goal: str, actions, steps: int, max_steps, 
             "signals": obs_signals(report=report)}
 
 
+def _pngs(frames) -> list:
+    return [] if frames is None else [{"__png__": frame_png(frame)} for frame in frames]
+
+
+def transition(*, info) -> dict:
+    core = info.get("core", {}) if isinstance(info, dict) else {}
+    details = core.get("previous_action_details")
+    states = details[2] if details else []
+    return {"frames": _pngs(core.get("transition_passed_frames")),
+            "frame_changed": bool(core.get("frame_changed")),
+            "action_return": jsonable(details[4]) if details else None,
+            "ocr": [{kind: _pngs(crops) for kind, crops in state.get("ocr", {}).get("ocr_regions", {}).items()}
+                    for state in states]}
+
+
 def audit_scored(*, payload) -> list:
     """Tracker groups in `payload` that a "scored" client must not have been given."""
     state = payload.get("state") if isinstance(payload, dict) else None

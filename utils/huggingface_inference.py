@@ -66,6 +66,8 @@ class HuggingFaceModelBase(ABC):
 
 
 class HuggingFaceModel(HuggingFaceModelBase, InferenceModel):
+    BATCH_SIZE_PARAMETER: str = "max_batch_size_huggingface"
+
     def __init__(
         self,
         model: str,

@@ -1,7 +1,7 @@
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
-from gameboy_worlds.emulation.pokemon import AgentState
+from execution.game_api import AgentState
 
 from execution.executors import Executor
 from execution.perception.pokemon.navigation import cell_kinds

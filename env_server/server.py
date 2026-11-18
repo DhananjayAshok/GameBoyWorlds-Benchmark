@@ -104,6 +104,11 @@ def _handler(*, sessions: Sessions, token: str, parameters: dict):
                         return session.step(action=action)
                     if tail == "save":
                         return session.save()
+                    if tail == "checkpoint":
+                        label = self._body().get("label")
+                        if not isinstance(label, str) or not label:
+                            raise SessionError("checkpoint needs a label")
+                        return session.mark(label=label)
                     if tail == "load":
                         handle = self._body().get("handle")
                         if not isinstance(handle, str):
