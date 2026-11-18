@@ -197,10 +197,6 @@ Solving GameBoyWorlds-Execution will require generalizable self-improvement meth
 
 ## Run a model on GameBoyWorlds-Playthrough
 
-Unlike the original games, fan-made games are scarcely documented and so models trained on internet-scale corpora (e.g. Large Language Models) haven't already acquired as rich base of knowledge regarding the game areas or particular Fakémon. While good performance in PokémonRed may be a result of the backbone model's data being contaminated with walkthroughs and internet guides, the same concern is far less valid for more obscure fan-made games. You can find evidence of this in the HuggingFace dataset below:
-
-<a href="https://huggingface.co/datasets/DJ-Research/GameBoyWorlds-Playthrough-Contamination-Check" target="_blank" rel="noopener noreferrer"><img alt="Contamination Check" src="https://img.shields.io/badge/dataset-Contamination%20Check-ffd21e?logo=huggingface"></a>
-
 To run a playthrough: 
 
 ```bash
@@ -258,12 +254,6 @@ python debug.py --game pokemon_red playthrough diff --name gemini_run
 ```
 
 `diff` shows you the moment the agent discovered a route, revised a belief, or spent forty episodes re-deriving something it already knew. Add `--artifact globalmap` (or `goals`, `knowledge`, `guide`, `npcregistry`, `tiles`, `notepad`) to narrow it to one. `playthrough npc-export --name gemini_run` writes the people registry out as JSON lines, CSV and PNG files. `bash runs/playthrough/playthrough.sh --name gemini_run --model google/gemini-3.6-flash` runs a playthrough and both reports in one go.
-
-### Results
-
-![Pokémon Red versus Pokémon Brown](assets/red_vs_brown.png)
-
-The same system, the same number of episodes. In Pokémon Red — a game with two decades of walkthroughs in every pretraining corpus — it makes steady progress through the initial parts of the game. In Pokémon Brown, a fan-made game of comparable difficulty about which far less has been written, it never leaves the starter town. 
 
 Solving GameBoyWorlds-Playthrough will require agents that can actively acquire information, conduct motivated exploration and self-improve continually, mid-deployment. 
 
@@ -349,12 +339,12 @@ A playthrough is one session that lasts a whole game: the agent gets the screen 
 Unlike a test run, a playthrough takes the same high-level actions as our own harness: `move(up 3)`, `interact()`, `passdialogue()`, `battlemenu(fight)`, `pickattack(2)`, `menu(confirm)` and so on, plus `button(a)` for a single press and `wait()` to let the game run a step without pressing anything. Which ones apply depends on the screen, and every observation lists them under `obs.actions`; `envctl` prints them after each step. An action that does not fit the current screen is refused with `valid: false` and nothing happens. The step budget counts button presses, so `move(up 3)` uses three.
 
 ```bash
-bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_brown.playthrough \
+bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_red.playthrough \
     --run_dir /path/to/run --model google/gemini-3.6-flash -- \
     prime-agent --provider gateway --model google/gemini-3.6-flash --cwd /work -p "<your prompt>"
 ```
 
-The tasks are `gb.pokemon_red.playthrough`, `gb.pokemon_crystal.playthrough`, `gb.pokemon_brown.playthrough` and `gb.pokemon_prism.playthrough`; their start states and goals are in `configs/splits/split_config.yaml`.
+The tasks are `gb.pokemon_red.playthrough` and `gb.pokemon_crystal.playthrough`; their start states and goals are in `configs/splits/split_config.yaml`.
 
 `--run_dir` is where the run lives. It holds the emulator checkpoint (`checkpoint/`), the agent's workspace (`work/`) and home (`home/`), and one log directory per launch (`logs/<stamp>/`). The server checkpoints every 500 steps (`--checkpoint_every`) and when it shuts down, so if the job ends or the node dies, **running the same command again continues the same session**: same step count, same badges, and the agent finds its files where it left them. It is still one attempt: the game cannot be reset, and a run directory cannot be pointed at a different game.
 
@@ -363,9 +353,9 @@ A client can also mark its own checkpoints (`POST /sessions/<id>/checkpoint` wit
 To play with our strategist harness as the client, add `--harness` and run it in the sandbox. Its code is copied to `/work/harness` and its memory is kept in `/work/storage`, so it resumes with the session:
 
 ```bash
-bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_brown.playthrough \
+bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_red.playthrough \
     --run_dir /path/to/run --model google/gemini-3.6-flash --harness -- \
-    /opt/harness/bin/python /work/harness/run_playthrough.py --remote --name brown1 \
+    /opt/harness/bin/python /work/harness/run_playthrough.py --remote --name red_run \
     --model google/gemini-3.6-flash --vlm_kind gateway
 ```
 

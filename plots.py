@@ -97,12 +97,9 @@ CONTAMINATION_MODELS = [
 CONTAMINATION_GAMES = [
     ("Pokémon Red", "R", "Red", ["#ff5a4e", "#c8161d"]),
     ("Pokémon Crystal", "C", "Crystal", ["#9ff0ff", "#2aa7d6", "#1b5fa8"]),
-    ("Pokémon Brown", "B", "Brown", ["#c98b52", "#7a4a22"]),
-    ("Pokémon Prism", "P", "Prism", ["#c89bff", "#8a4fe0", "#56209e"]),
 ]
 CONTAMINATION_GAME_GROUPS = [
     ("Classic", ["Pokémon Red", "Pokémon Crystal"]),
-    ("GameBoyWorlds-Playthrough", ["Pokémon Brown", "Pokémon Prism"]),
 ]
 
 FAILURE_MODES = [

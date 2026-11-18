@@ -10,11 +10,11 @@
 #
 #   playthrough  one whole game. --run_dir keeps the emulator checkpoint and the agent's files, so
 #                running the same line again continues the same session:
-#     bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_brown.playthrough \
+#     bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_red.playthrough \
 #         --run_dir <dir> --model <model> -- <command>
 #
 #   --harness copies this repo's strategist harness to /work/harness (its state goes to /work/storage):
-#     bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_brown.playthrough \
+#     bash containers/run_sandbox.sh --kind playthrough --task_id gb.pokemon_red.playthrough \
 #         --run_dir <dir> --model <model> --harness -- /opt/harness/bin/python /work/harness/run_playthrough.py \
 #         --remote --name <name> --model <model> --vlm_kind gateway
 #

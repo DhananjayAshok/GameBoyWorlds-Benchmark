@@ -31,8 +31,6 @@ TRAIN_GAMES=("${PRACTICE_GAMES[@]}")
 POKEMON_GAMES=(
     "pokemon_red"
     "pokemon_crystal"
-    "pokemon_brown"
-    "pokemon_prism"
 )
 
 # resolve_games <default_array_name> <comma_separated_or_none>
