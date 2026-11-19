@@ -123,20 +123,21 @@ A run writes to three places:
 |------|-------------|
 | `run_env_server.py` | CLI: `serve`, `check`, `generate_splits`, `open_session`, `session_info`. |
 | `env_server/server.py` | The HTTP handler and bearer-token checks. |
-| `env_server/sessions.py` | One emulator per session; applies the policy to reset, step, save and load. Checkpoints and restores a playthrough session (`emulator.state` and `session.json` in `--checkpoint_dir`). |
-| `env_server/policy.py` | The `dev`, `test` and `playthrough` policies, including which GameBoyWorlds controller each serves (`low_level` buttons, or `state_wise` for playthrough). |
+| `env_server/sessions.py` | One emulator per session; applies the policy to reset, step, save and load. Checkpoints and restores a playthrough session (`emulator.state` and `session.json` in `--checkpoint_dir`), keeps a train server's named saves in `--saves_dir`, and writes every session's video under `--obs_dir`. |
+| `env_server/policy.py` | The `dev`, `test`, `playthrough` and `train` policies, including which GameBoyWorlds controller each serves (`low_level` buttons, or `state_wise` for playthrough and train). `train` opens only the `train_sandbox_games` of `split_config.yaml`, one session at a time (opening one closes the other), with full state on request, resets, and named saves that outlive the session. |
 | `env_server/splits.py` | Generates, loads and verifies `configs/splits/benchmark_splits.json`. |
 | `env_server/codec.py` | What a response may contain: the frame as PNG, and full or scored-only state. |
 | `env_server/recorder.py` | Host-side record of every step when `--record_dir` is set. |
-| `env_server/model_gateway.py` | The sandbox's model endpoint; holds the API key on the host. |
+| `env_server/model_gateway.py` | The sandbox's model endpoint; holds the API key on the host. With `--max_cost` it adds up each call's cost in a ledger file and refuses calls once the cap is reached. |
 | `env_server/check.py` | Asserts the policies and the HTTP layer against live sessions. |
 | `containers/sandbox.def` | The image. Everything it pins is in `containers/versions.env`. |
-| `containers/run_sandbox.sh` | Starts the server and gateway, runs a command in the sandbox, cleans up. |
+| `containers/run_sandbox.sh` | Starts the server and gateway, runs a command in the sandbox, cleans up. Session videos go to `/work/obs`, read-only; `--max_cost` caps the model spend. |
+| `containers/run_train_agent.sh`, `containers/train_agent/` | prime-agent developing the harness in a `--kind train` sandbox: its instructions (`AGENTS.md`, read-only at `/work/AGENTS.md`), the loop that restarts it, and the stub that disables git. |
 | `containers/verify_sandbox.sh` | Checks a built image's contents and isolation. |
 | `containers/sandbox_run.sh`, `netbridge.py` | Inside the image: expose the two Unix sockets as loopback ports, then run the command. |
 | `containers/prime_agent_*.sh`, `kernel_*`, `seed_kernel_skills.py` | prime-agent specifics: the vendored installer, and the pinned Python environment it runs tools in. |
 | `agent_workspace/envctl`, `envclient.py` | The client the agent is given. |
-| `execution/remote_env.py` | `RemoteEnvironment`: the strategist harness's environment interface over an env-server session (`run_playthrough.py --remote`). |
+| `execution/remote_env.py` | `RemoteEnvironment`: the strategist harness's environment interface over an env-server session (`run_playthrough.py --remote`): the one in `$ENVCTL_SESSION`, or one it opens on `--game` itself. With named saves, `--resume_run` works remotely. |
 | `execution/game_api.py` | The GameBoyWorlds names the harness uses: the real ones when GameBoyWorlds is installed, stand-ins inside the sandbox. |
 | `containers/harness_requirements.txt` | The harness's pinned Python environment in the image (`/opt/harness`); `run_sandbox.sh --harness` copies the code to `/work/harness`. |
 
@@ -148,7 +149,7 @@ Routes, all JSON with `Authorization: Bearer <token>`. The server token reaches 
 | `GET /scenes` | Free-play start states, `{game: [init_state]}`. |
 | `POST /sessions` | Open a session: `{"task_id": ...}` or `{"game": ..., "init_state": ...}`, optional `"state": true`. Returns the session and its token. |
 | `GET /sessions/<id>` | Status: steps, `episode_over`, `success`, `subgoals`, `label`, `discarded_steps`. |
-| `POST /sessions/<id>/reset`, `step`, `observe`, `save`, `load` | `step` takes `{"action": ...}`, `load` takes `{"handle": ...}`. |
+| `POST /sessions/<id>/reset`, `step`, `observe`, `save`, `load` | `step` takes `{"action": ...}`, `load` takes `{"handle": ...}`. On a train server `save` takes `{"name": ...}` and the name is the handle. |
 | `POST /sessions/<id>/checkpoint` | Playthrough only: `{"label": ...}` checkpoints now; from then on the session resumes only from the latest label. |
 | `DELETE /sessions/<id>` | Close it. |
 

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import secrets
 import threading
 import time
@@ -23,6 +24,7 @@ class SessionError(Exception):
 
 CHECKPOINT_STATE = "emulator.state"
 CHECKPOINT_META = "session.json"
+SAVE_NAME = re.compile(r"^[A-Za-z0-9_]{1,128}$")
 
 
 def read_checkpoint(*, directory: Optional[str]) -> Optional[dict]:
@@ -40,8 +42,10 @@ class Session:
                  init_state: Optional[str], want_state: bool, max_steps: int,
                  record_dir: Optional[str], session_name: Optional[str], parameters: dict,
                  checkpoint_dir: Optional[str] = None, checkpoint_every: int = 0,
-                 saved: Optional[dict] = None) -> None:
+                 saved: Optional[dict] = None, obs_dir: Optional[str] = None,
+                 saves_dir: Optional[str] = None) -> None:
         self._parameters = parameters
+        self.saves_dir = saves_dir
         self.policy = policy
         self.task_id = task_id
         self.id = saved["session"] if saved else uuid.uuid4().hex[:16]
@@ -66,6 +70,9 @@ class Session:
         if policy.long_running:
             emulator_kwargs["save_video"] = True
             emulator_kwargs["session_name"] = session_name or f"env_server/{self.id}"
+        if obs_dir:
+            emulator_kwargs["save_video"] = True
+            emulator_kwargs["session_name"] = os.path.join(os.path.abspath(obs_dir), self.id)
         if task_id is not None:
             row = splits.row_of(task_id=task_id, parameters=parameters)
             self.goal = str(row["task"])
@@ -80,7 +87,7 @@ class Session:
         self.recorder = Recorder(directory=record_dir, session=self.id, task_id=task_id, game=self.game,
                                  policy=policy.kind, frames=not policy.long_running,
                                  parameters=parameters) if record_dir else None
-        if policy.long_running:
+        if self.env._emulator.save_video:
             log_info(f"session {self.id} video: {self.env._emulator.session_path}", parameters=parameters)
         if saved:
             self._restore(saved=saved)
@@ -94,7 +101,8 @@ class Session:
                 "policy": self.policy.kind, "controller": self.policy.controller, "state_enabled": self.want_state,
                 "state_mode": self.policy.state_mode,
                 "can_reset": self.policy.reset_again or not self.started,
-                "save_load": self.policy.save_load, "free_play": not self.is_task,
+                "save_load": self.policy.save_load, "named_saves": self.policy.named_saves,
+                "free_play": not self.is_task,
                 "episode_over": self.episode_over, "success": self.success,
                 "steps": self._steps(), "max_steps": self._max_steps(), "subgoals": self._subgoals(),
                 "label": self.label, "discarded_steps": self.discarded_steps}
@@ -148,14 +156,13 @@ class Session:
         self._meta = {**self._meta, "discarded_steps": self.discarded_steps}
         self._write_meta()
 
-    def _restore(self, *, saved: dict) -> None:
+    def _apply_state(self, *, state_path: str, saved: dict) -> None:
         emulator = self.env._emulator
-        with open(os.path.join(self.checkpoint_dir, CHECKPOINT_STATE), "rb") as f:
+        with open(state_path, "rb") as f:
             emulator._pyboy.load_state(f)
         # Zero ticks redraws the screen from the loaded state without advancing the game.
         emulator._pyboy.tick(0, True)
         emulator.step_count = int(saved["steps"])
-        self._checkpointed_at = emulator.step_count
         # Screen-matched subgoals are seen only at the moment they happen, so they are restored by name.
         done = set((saved.get("subgoals") or {}).get("completed", []))
         metric = emulator.state_tracker.metrics.get("subgoals")
@@ -164,10 +171,14 @@ class Session:
         emulator._update_listeners_after_actions(np.array([emulator.get_current_frame()]))
         if emulator.save_video:
             emulator.video_writer.start_video()
+
+    def _restore(self, *, saved: dict) -> None:
+        self._apply_state(state_path=os.path.join(self.checkpoint_dir, CHECKPOINT_STATE), saved=saved)
+        self._checkpointed_at = self._steps()
         self.started = bool(saved["started"])
         self.episode_over = bool(saved["episode_over"])
         self.success = saved["success"]
-        log_info(f"restored session {self.id} at step {emulator.step_count}", parameters=self._parameters)
+        log_info(f"restored session {self.id} at step {self._steps()}", parameters=self._parameters)
 
     def _payload(self, *, info: Optional[dict], action_success=None, valid: bool = True,
                  error: Optional[str] = None) -> dict:
@@ -237,10 +248,29 @@ class Session:
         self.last_used = time.time()
         return self._payload(info=None)
 
-    def save(self) -> dict:
+    def _named_paths(self, *, name) -> tuple:
+        if not isinstance(name, str) or not SAVE_NAME.match(name):
+            raise SessionError("a save name is 1-128 letters, digits or underscores")
+        base = os.path.join(self.saves_dir, self.game, name)
+        return base + ".state", base + ".json"
+
+    def save(self, *, name: Optional[str] = None) -> dict:
         if not self.policy.save_load:
             raise SessionError("save/load is not available on this server", 403)
         self.last_used = time.time()
+        if self.policy.named_saves:
+            state_path, meta_path = self._named_paths(name=name)
+            os.makedirs(os.path.dirname(state_path), exist_ok=True)
+            with open(state_path + ".tmp", "wb") as f:
+                self.env._emulator._pyboy.save_state(f)
+            os.replace(state_path + ".tmp", state_path)
+            with open(meta_path + ".tmp", "w") as f:
+                json.dump({"steps": self._steps(), "subgoals": self._subgoals()}, f)
+            os.replace(meta_path + ".tmp", meta_path)
+            emulator = self.env._emulator
+            if emulator.save_video and emulator.video_writer.video_running:
+                emulator.video_writer.start_video()
+            return {"handle": name, "steps": self._steps()}
         handle = uuid.uuid4().hex[:16]
         self.env.save_custom_state(handle)
         self._handles.add(handle)
@@ -249,10 +279,19 @@ class Session:
     def load(self, *, handle: str) -> dict:
         if not self.policy.save_load:
             raise SessionError("save/load is not available on this server", 403)
-        if handle not in self._handles:
-            raise SessionError("unknown handle", 404)
         self.last_used = time.time()
-        self.env.load_custom_state(handle)
+        if self.policy.named_saves:
+            state_path, meta_path = self._named_paths(name=handle)
+            if not os.path.exists(state_path) or not os.path.exists(meta_path):
+                raise SessionError("unknown handle", 404)
+            with open(meta_path) as f:
+                saved = json.load(f)
+            self.started = True
+            self._apply_state(state_path=state_path, saved=saved)
+        else:
+            if handle not in self._handles:
+                raise SessionError("unknown handle", 404)
+            self.env.load_custom_state(handle)
         self.episode_over = False
         self.success = None
         return self._payload(info=None)
@@ -287,11 +326,16 @@ class Sessions:
     def __init__(self, *, policy: Policy, max_sessions: int, idle_seconds: float,
                  record_dir: Optional[str], max_steps: Optional[int], parameters: dict,
                  session_name: Optional[str] = None, checkpoint_dir: Optional[str] = None,
-                 checkpoint_every: int = 500) -> None:
+                 checkpoint_every: int = 500, obs_dir: Optional[str] = None,
+                 saves_dir: Optional[str] = None) -> None:
         self._parameters = parameters
         self.policy = policy
-        if checkpoint_dir and not policy.long_running:
+        if checkpoint_dir and policy.kind != "playthrough":
             raise ValueError(f"a {policy.kind} server does not checkpoint; only playthrough does")
+        if policy.named_saves != bool(saves_dir):
+            raise ValueError(f"a {policy.kind} server {'needs' if policy.named_saves else 'takes no'} saves_dir")
+        self.obs_dir = obs_dir
+        self.saves_dir = saves_dir
         # A checkpoint directory holds one session, so a checkpointing server serves one.
         self.max_sessions = 1 if checkpoint_dir else max_sessions
         self.idle_seconds = idle_seconds
@@ -309,10 +353,14 @@ class Sessions:
                        want_state=want_state, max_steps=self.max_steps, record_dir=self.record_dir,
                        session_name=self.session_name, parameters=self._parameters,
                        checkpoint_dir=self.checkpoint_dir, checkpoint_every=self.checkpoint_every,
-                       saved=saved)
+                       saved=saved, obs_dir=self.obs_dir, saves_dir=self.saves_dir)
 
     def listed(self) -> list:
-        return splits.listed(splits_wanted=self.policy.splits_listed, parameters=self._parameters)
+        tasks = splits.listed(splits_wanted=self.policy.splits_listed, parameters=self._parameters)
+        if not self.policy.train_games_only:
+            return tasks
+        allowed = set(splits.train_sandbox_games(parameters=self._parameters))
+        return [t for t in tasks if splits.game_of(task_id=t["task_id"]) in allowed]
 
     def free_play(self) -> dict:
         if not self.policy.free_play:
@@ -338,12 +386,20 @@ class Sessions:
         saved = read_checkpoint(directory=self.checkpoint_dir)
         if saved and saved["task_id"] != task_id:
             raise SessionError(f"this run is {saved['task_id']}; it cannot open another task", 409)
+        replaced = []
         with self._lock:
             for existing in (self._sessions.values() if self.checkpoint_dir else ()):
                 return existing
+            if self.policy.opening_replaces:
+                while self._sessions and len(self._sessions) + self._opening >= self.max_sessions:
+                    oldest = min(self._sessions.values(), key=lambda s: s.last_used)
+                    replaced.append(self._sessions.pop(oldest.id))
             if len(self._sessions) + self._opening >= self.max_sessions:
                 raise SessionError("too many open sessions; close one first", 429)
             self._opening += 1
+        for session in replaced:
+            log_info(f"closing session {session.id} to open a new one", parameters=self._parameters)
+            session.close()
         session = None
         try:
             session = self._build(task_id=task_id, game=game, init_state=init_state, want_state=want_state,

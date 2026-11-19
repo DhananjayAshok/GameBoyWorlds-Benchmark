@@ -60,7 +60,16 @@ def load_config(*, parameters: dict) -> dict:
         if entry["init_state"] not in get_available_init_states(game):
             log_error(f"split_config.yaml: {game} has no start state {entry['init_state']!r}",
                       parameters=parameters)
+    config.setdefault("train_sandbox_games", [])
+    outside = [g for g in config["train_sandbox_games"] if g not in config["playthrough"]]
+    if outside:
+        log_error(f"split_config.yaml: train_sandbox_games {outside} have no playthrough entry",
+                  parameters=parameters)
     return config
+
+
+def train_sandbox_games(*, parameters: dict = None) -> list:
+    return list(load_config(parameters=load_parameters(parameters))["train_sandbox_games"])
 
 
 def benchmark_games(*, min_tasks: int = 2) -> list:

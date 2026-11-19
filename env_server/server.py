@@ -103,7 +103,7 @@ def _handler(*, sessions: Sessions, token: str, parameters: dict):
                             raise SessionError("step needs an action string")
                         return session.step(action=action)
                     if tail == "save":
-                        return session.save()
+                        return session.save(name=self._body().get("name"))
                     if tail == "checkpoint":
                         label = self._body().get("label")
                         if not isinstance(label, str) or not label:

@@ -16,6 +16,56 @@ PATH = "/v1/chat/completions"
 STRIPPED = ("plugins", "web_search_options", "models", "route")
 UPSTREAM_TIMEOUT = 600
 MAX_BODY = 64 * 1024 * 1024
+STREAM_TAIL = 1024 * 1024
+
+
+def call_cost(usage) -> float:
+    if not isinstance(usage, dict):
+        return 0.0
+    details = usage.get("cost_details") or {}
+    return float(usage.get("cost") or 0.0) + float(details.get("upstream_inference_cost") or 0.0)
+
+
+def usage_of(body: bytes, *, stream: bool):
+    text = body.decode("utf-8", "replace")
+    if not stream:
+        try:
+            return json.loads(text).get("usage")
+        except (json.JSONDecodeError, AttributeError):
+            return None
+    for line in reversed(text.splitlines()):
+        if line.startswith("data:") and '"usage"' in line:
+            try:
+                return json.loads(line[len("data:"):].strip()).get("usage")
+            except (json.JSONDecodeError, AttributeError):
+                return None
+    return None
+
+
+class Ledger:
+    def __init__(self, *, path: str, max_cost: float) -> None:
+        self.path = path
+        self.max_cost = max_cost
+        self.lock = threading.Lock()
+        self.totals = {"spent": 0.0, "calls": 0, "calls_without_usage": 0}
+        if os.path.exists(path):
+            with open(path) as f:
+                self.totals.update(json.load(f))
+
+    def exhausted(self) -> bool:
+        with self.lock:
+            return self.totals["spent"] >= self.max_cost
+
+    def add(self, *, usage) -> float:
+        cost = call_cost(usage)
+        with self.lock:
+            self.totals["spent"] += cost
+            self.totals["calls"] += 1
+            self.totals["calls_without_usage"] += usage is None
+            with open(self.path + ".tmp", "w") as f:
+                json.dump({**self.totals, "max_cost": self.max_cost}, f)
+            os.replace(self.path + ".tmp", self.path)
+            return self.totals["spent"]
 
 
 def _tls_context() -> ssl.SSLContext:
@@ -30,7 +80,7 @@ def _tls_context() -> ssl.SSLContext:
 TLS = _tls_context()
 
 
-def _handler(*, allow: set, key: str, log, lock: threading.Lock):
+def _handler(*, allow: set, key: str, log, lock: threading.Lock, ledger=None):
     def record(**event) -> None:
         event["t"] = round(time.time(), 3)
         with lock:
@@ -73,6 +123,8 @@ def _handler(*, allow: set, key: str, log, lock: threading.Lock):
             model = request.get("model")
             if model not in allow:
                 return self._refuse(403, f"model {model!r} is not allowed", model=str(model)[:200])
+            if ledger is not None and ledger.exhausted():
+                return self._refuse(402, f"the spending cap of ${ledger.max_cost:g} has been reached", model=model)
             stripped = [name for name in STRIPPED if name in request]
             for name in stripped:
                 request.pop(name)
@@ -101,21 +153,32 @@ def _handler(*, allow: set, key: str, log, lock: threading.Lock):
             self.send_response(response.status)
             self.send_header("Content-Type", response.headers.get("Content-Type", "application/json"))
             self.end_headers()
+            stream = bool(request.get("stream"))
+            kept = bytearray()
+            client_gone = False
             try:
                 while True:
                     chunk = response.read1(65536) if hasattr(response, "read1") else response.read(65536)
                     if not chunk:
                         break
-                    self.wfile.write(chunk)
-                    self.wfile.flush()
-                    sent += len(chunk)
-            except (BrokenPipeError, ConnectionResetError):
-                pass
+                    kept += chunk
+                    if stream and len(kept) > STREAM_TAIL:
+                        del kept[:len(kept) - STREAM_TAIL]
+                    if client_gone:
+                        continue
+                    try:
+                        self.wfile.write(chunk)
+                        self.wfile.flush()
+                        sent += len(chunk)
+                    except (BrokenPipeError, ConnectionResetError):
+                        client_gone = True
             finally:
                 response.close()
+            usage = usage_of(bytes(kept), stream=stream) if response.status == 200 else None
+            spent = ledger.add(usage=usage) if ledger is not None and response.status == 200 else None
             record(verdict="forwarded", model=model, stripped=stripped, status=response.status,
-                   stream=bool(request.get("stream")), bytes_in=length, bytes_out=sent,
-                   seconds=round(time.time() - started, 2))
+                   stream=stream, bytes_in=length, bytes_out=sent, seconds=round(time.time() - started, 2),
+                   cost=call_cost(usage), spent=spent)
 
     return Handler
 
@@ -129,6 +192,9 @@ def main() -> None:
     parser.add_argument("--log", required=True)
     parser.add_argument("--key_env", default="OPENROUTER_API_KEY",
                         help="the host environment variable holding the key; it is never written anywhere")
+    parser.add_argument("--max_cost", type=float, default=None,
+                        help="refuse requests once this many dollars have been spent, counted in --ledger")
+    parser.add_argument("--ledger", default=None, help="a JSON file that keeps the running spend across restarts")
     args = parser.parse_args()
     key = os.environ.get(args.key_env)
     if not key:
@@ -136,11 +202,15 @@ def main() -> None:
     allow = set(args.allow)
     if any(m.endswith(":online") for m in allow):
         parser.error("an :online model searches the web; it cannot be allowlisted")
+    if (args.max_cost is None) != (args.ledger is None):
+        parser.error("--max_cost and --ledger go together")
+    ledger = Ledger(path=args.ledger, max_cost=args.max_cost) if args.ledger else None
     with open(args.log, "a") as log:
         lock = threading.Lock()
-        httpd = unix_listener(args.socket, _handler(allow=allow, key=key, log=log, lock=lock))
+        httpd = unix_listener(args.socket, _handler(allow=allow, key=key, log=log, lock=lock, ledger=ledger))
         log.write(json.dumps({"t": round(time.time(), 3), "verdict": "listening", "socket": args.socket,
-                              "allow": sorted(allow)}) + "\n")
+                              "allow": sorted(allow), "max_cost": args.max_cost,
+                              "spent": ledger.totals["spent"] if ledger else None}) + "\n")
         log.flush()
         try:
             httpd.serve_forever()

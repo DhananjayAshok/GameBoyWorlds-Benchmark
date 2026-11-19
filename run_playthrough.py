@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
 
 import click
@@ -56,8 +57,9 @@ DEFAULT_ENV_MAX_STEPS = 1_000_000
               help="Fork another run's latest state (artifacts and emulator save) into --name and "
                    "continue from it, e.g. to recreate a failure from a past playthrough.")
 @click.option("--remote", is_flag=True, default=False,
-              help="Play the environment server session in $ENVCTL_SESSION instead of a local emulator. "
-                   "The server decides the game and start; --game, --init_state, --env_max_steps, "
+              help="Play on the environment server instead of a local emulator: the session in "
+                   "$ENVCTL_SESSION when set, otherwise a new session on --game's playthrough task. "
+                   "The server decides the start; --init_state, --env_max_steps, "
                    "--controller_variant and --save_video do not apply.")
 def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategist_vlm_kind,
          supervisor_vlm_model, supervisor_vlm_kind, executor_vlm_model, executor_vlm_kind,
@@ -69,10 +71,14 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if remote:
-        if resume_run is not None:
-            raise click.UsageError("--resume_run forks a local emulator save; a remote session cannot load one")
         from execution.remote_env import RemoteEnvironment
-        environment = RemoteEnvironment.attach()
+        if os.environ.get("ENVCTL_SESSION"):
+            environment = RemoteEnvironment.attach()
+        else:
+            environment = RemoteEnvironment.open(game)
+        if resume_run is not None and not environment.described.get("named_saves"):
+            environment.close()
+            raise click.UsageError("--resume_run needs a server with named saves (run_sandbox.sh --kind train)")
         game = environment.game
         log_info(f"Playthrough {name!r} on server session {environment.described['session']} ({game}), "
                  f"step {environment.steps}", parameters)
