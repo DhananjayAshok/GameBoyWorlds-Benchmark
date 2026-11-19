@@ -9,6 +9,7 @@
 # also snapshots the agent's artifacts and notes into <run_dir>/archive/<time>/, hard-linking unchanged files.
 
 set -uo pipefail
+export GIT_TERMINAL_PROMPT=0
 
 MODE="$1"
 RUN="$2"
