@@ -5,7 +5,8 @@
 #
 # Each round fetches every branch of <run_dir>/work/harness into <run_dir>/harness_mirror.git (a history the
 # agent cannot rewrite there: a rewritten branch is kept beside the old one under rewritten/<time>/) and, with
-# <push_url>, pushes the mirror's branches to <push_prefix>/<branch> there. Once an hour, and on `once`, it
+# <push_url>, pushes the mirror's branches but upstream (a copy of the starting harness, which is published as
+# harness/<name>) to <push_prefix>/<branch> there. Once an hour, and on `once`, it
 # also snapshots the agent's artifacts and notes into <run_dir>/archive/<time>/, hard-linking unchanged files.
 
 set -uo pipefail
@@ -35,8 +36,12 @@ mirror() {
             && say "a branch was rewritten; its new history is kept under rewritten/$stamp/"
     fi
     if [[ -n "$PUSH_URL" ]]; then
-        git -C "$MIRROR" push -q "$PUSH_URL" "refs/heads/*:refs/heads/$PUSH_PREFIX/*" 2>>"$LOG" \
-            || say "push to $PUSH_URL failed"
+        local refspecs=()
+        while read -r branch; do
+            [[ "$branch" == upstream ]] || refspecs+=("refs/heads/$branch:refs/heads/$PUSH_PREFIX/$branch")
+        done < <(git -C "$MIRROR" for-each-ref --format='%(refname:lstrip=2)' refs/heads)
+        [[ ${#refspecs[@]} -gt 0 ]] || return 0
+        git -C "$MIRROR" push -q "$PUSH_URL" "${refspecs[@]}" 2>>"$LOG" || say "push to $PUSH_URL failed"
     fi
 }
 

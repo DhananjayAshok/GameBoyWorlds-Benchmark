@@ -6,6 +6,9 @@
 #                                   containers/train_agent/harness_docs/<name>.md as its HARNESS.md, and
 #                                   commit it on the harness's main branch; run again after changing <ref>.
 #                                   HARNESS_DOC_REF=<ref> takes HARNESS.md from another ref
+#   publish <name> [--url <git url>]
+#                                   push harnesses/<name>'s main to harness/<name> at <url> (default:
+#                                   harness_remote in configs/project_vars.yaml)
 #   prepare <repo> <worktree> <branch> <note_file>
 #                                   used by run_sandbox.sh: clone <repo> into <worktree> on <branch> the first
 #                                   time; afterwards commit anything uncommitted and merge <repo>'s main
@@ -16,6 +19,7 @@
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+source configs/config.env
 source containers/common.sh
 
 HARNESS_PATHS=(execution utils python_scripts run_playthrough.py agent_workspace/envclient.py README.md README_dev.md)
@@ -68,6 +72,14 @@ PY
     echo "harnesses/$name main is now $(git -C "$repo" rev-parse --short HEAD), from $ref ($sha)"
 }
 
+publish_harness() {
+    local name="$1" url="$2"
+    [[ -d "harnesses/$name/.git" ]] || die "no harness repository at harnesses/$name"
+    [[ -n "$url" ]] || die "no --url and no harness_remote in configs/project_vars.yaml"
+    GIT_TERMINAL_PROMPT=0 git -C "harnesses/$name" push -q "$url" "main:refs/heads/harness/$name"
+    echo "published harnesses/$name main ($(git -C "harnesses/$name" rev-parse --short main)) as harness/$name"
+}
+
 prepare_worktree() {
     local repo="$1" worktree="$2" branch="$3" note="$4"
     repo="$(cd "$repo" && pwd)"
@@ -116,10 +128,15 @@ case "${1:-}" in
         name="$2"; ref=train_only
         [[ "${3:-}" == --ref ]] && ref="${4:?--ref needs a value}"
         sync_harness "$name" "$ref" ;;
+    publish)
+        [[ $# -ge 2 ]] || die "usage: $0 publish <name> [--url <git url>]"
+        url="${harness_remote:-}"
+        [[ "${3:-}" == --url ]] && url="${4:?--url needs a value}"
+        publish_harness "$2" "$url" ;;
     prepare)
         [[ $# -eq 5 ]] || die "usage: $0 prepare <repo> <worktree> <branch> <note_file>"
         prepare_worktree "$2" "$3" "$4" "$5" ;;
     *)
-        sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+        sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
         exit 1 ;;
 esac
