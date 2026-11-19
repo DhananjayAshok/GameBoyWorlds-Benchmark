@@ -86,8 +86,8 @@ class Session:
     def observe(self, raw=False):
         return self._post("observe", raw=raw)
 
-    def save(self):
-        return self._post("save")["handle"]
+    def save(self, name=None):
+        return self._post("save", {"name": name} if name else None)["handle"]
 
     def load(self, handle, raw=False):
         return self._post("load", {"handle": handle}, raw=raw)

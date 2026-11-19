@@ -250,6 +250,113 @@ def check_playthrough_policy(*, steps: int = 6, parameters: dict, action: str = 
     return failures
 
 
+def _videos(directory: str) -> list:
+    return sorted(os.path.join(root, name) for root, _, names in os.walk(directory)
+                  for name in names if name.endswith(".mp4"))
+
+
+def check_train_policy(*, steps: int = 4, parameters: dict, action: str = "button(a)") -> list:
+    failures = []
+    table = splits.load_splits(parameters=parameters)
+    games = splits.train_sandbox_games(parameters=parameters)
+    if not games:
+        return ["split_config.yaml lists no train_sandbox_games"]
+    allowed = {splits.playthrough_id(game=game) for game in games}
+    playthroughs = {t for t, v in table.items() if v["split"] == "playthrough"}
+    other = next(t for t, v in sorted(table.items()) if v["split"] == "test")
+    root = tempfile.mkdtemp(prefix="envcheck.", dir="/dev/shm" if os.path.isdir("/dev/shm") else None)
+    obs_dir, saves_dir = os.path.join(root, "obs"), os.path.join(root, "saves")
+
+    def serve() -> Sessions:
+        return Sessions(policy=Policy.of(kind="train"), max_sessions=1, idle_seconds=0, record_dir=None,
+                        max_steps=None, parameters=parameters, obs_dir=obs_dir, saves_dir=saves_dir)
+
+    try:
+        try:
+            Sessions(policy=Policy.of(kind="train"), max_sessions=1, idle_seconds=0, record_dir=None,
+                     max_steps=None, parameters=parameters)
+            failures.append("a train server started without a saves directory")
+        except ValueError:
+            pass
+        sessions = serve()
+        if {t["task_id"] for t in sessions.listed()} != allowed:
+            failures.append(f"a train server listed {sorted(t['task_id'] for t in sessions.listed())}, "
+                            f"not {sorted(allowed)}")
+        for task_id in sorted(playthroughs - allowed) + [other]:
+            try:
+                sessions.open(task_id=task_id)
+                failures.append(f"a train server opened {task_id}")
+                sessions.close_all()
+            except SessionError:
+                pass
+
+        task_id = sorted(allowed)[0]
+        session = sessions.open(task_id=task_id, want_state=True)
+        session.reset()
+        for _ in range(steps):
+            payload = session.step(action=action)
+        if not codec.audit_scored(payload=payload):
+            failures.append("a train session asked for state got only the scored groups")
+        for bad in ("", "../escape", "a b", "x" * 129):
+            try:
+                session.save(name=bad)
+                failures.append(f"a train session accepted the save name {bad!r}")
+            except SessionError:
+                pass
+        saved = session.save(name="checkpointA")
+        saved_frame = session.observe()["obs"]["frame"]
+        for _ in range(steps):
+            session.step(action="wait()")
+        loaded = session.load(handle="checkpointA")
+        if loaded["obs"]["frame"] != saved_frame or loaded["obs"]["steps"] != saved["steps"]:
+            failures.append("loading a named save did not bring back its screen and step count")
+        try:
+            session.load(handle="neverSaved")
+            failures.append("a train session loaded a save that does not exist")
+        except SessionError as exc:
+            if exc.status != 404:
+                failures.append(f"loading a missing save failed with {exc.status}, not 404")
+        session.reset()
+        if session.reset()["obs"]["steps"] != 0:
+            failures.append("a train session could not reset again")
+
+        replacement = sessions.open(task_id=task_id)
+        if not session.closed:
+            failures.append("opening a second train session left the first open")
+        sessions.close_all()
+
+        sessions = serve()
+        session = sessions.open(task_id=task_id)
+        if replacement.id == session.id:
+            failures.append("a new train server reused a session id")
+        loaded = session.load(handle="checkpointA")
+        if loaded["obs"]["frame"] != saved_frame or loaded["obs"]["steps"] != saved["steps"]:
+            failures.append("a named save did not survive a server restart")
+        session.step(action="wait()")
+        sessions.close_all()
+
+        videos = _videos(obs_dir)
+        if len(videos) < 3:
+            failures.append(f"a train server wrote {len(videos)} videos under obs_dir; wanted one per segment")
+        if any(os.path.getsize(path) == 0 for path in videos):
+            failures.append("a train server left an empty video")
+
+        test_obs = os.path.join(root, "test_obs")
+        test_id = next(t for t, v in sorted(table.items()) if v["split"] == "test")
+        sessions = Sessions(policy=Policy.of(kind="test"), max_sessions=1, idle_seconds=600, record_dir=None,
+                            max_steps=None, parameters=parameters, obs_dir=test_obs)
+        session = sessions.open(task_id=test_id)
+        session.reset()
+        for _ in range(steps):
+            session.step(action="A")
+        sessions.close_all()
+        if not _videos(test_obs):
+            failures.append("a test server with obs_dir wrote no video")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    return failures
+
+
 def _raw_request(path: str, raw: bytes) -> tuple:
     # Raw bytes, so a check can send what a client library would refuse to: a malformed length, a non-ASCII bearer.
     with socket.socket(socket.AF_UNIX) as sock:
@@ -320,7 +427,8 @@ def check_http(*, parameters: dict) -> list:
 
 def run(*, parameters: dict) -> bool:
     failures = (check_http(parameters=parameters) + check_dev_policy(parameters=parameters)
-                + check_test_policy(parameters=parameters) + check_playthrough_policy(parameters=parameters))
+                + check_test_policy(parameters=parameters) + check_playthrough_policy(parameters=parameters)
+                + check_train_policy(parameters=parameters))
     for failure in failures:
         log_info(f"FAIL {failure}", parameters=parameters)
     if not failures:

@@ -104,11 +104,13 @@ class RemoteEmulator:
 
 
 class RemoteEnvironment:
-    def __init__(self, session) -> None:
+    def __init__(self, session, owned: bool = False) -> None:
         self._session = session
+        self._owned = owned
         self._emulator = RemoteEmulator(self)
         self.described = session.describe()
         self.game = self.described["game"]
+        self._named_saves = bool(self.described.get("named_saves"))
         self._absorb(session.observe(), frame_changed=False)
 
     @classmethod
@@ -117,6 +119,16 @@ class RemoteEnvironment:
         if not session_id:
             raise RuntimeError("no session to attach to: pass one or set $ENVCTL_SESSION")
         return cls(Client.from_config().attach(session_id))
+
+    @classmethod
+    def open(cls, game: str) -> "RemoteEnvironment":
+        session = Client.from_config().open(task_id=f"gb.{game}.playthrough")
+        try:
+            session.reset()
+            return cls(session, owned=True)
+        except Exception:
+            session.close()
+            raise
 
     def _absorb(self, out: dict, *, frame_changed: bool) -> None:
         obs = out["obs"]
@@ -176,16 +188,27 @@ class RemoteEnvironment:
         return self.get_observation(), 0.0, terminated, self.done and not terminated, info
 
     def save_custom_state(self, name: str) -> None:
-        self._session.checkpoint(name)
+        if self._named_saves:
+            self._session.save(name)
+        else:
+            self._session.checkpoint(name)
 
     def load_custom_state(self, name: str) -> None:
+        if self._named_saves:
+            self._absorb(self._session.load(name), frame_changed=True)
+            return
         label = self._session.describe().get("label")
         if label != name:
             raise RuntimeError(f"the server resumed from checkpoint {label!r}, not {name!r}: the game and this "
                                "harness's saved memory are out of step")
 
     def reset(self):
-        raise RuntimeError("a remote session is opened and reset by the server's operator, not the harness")
+        if not self._owned:
+            raise RuntimeError("a remote session is opened and reset by the server's operator, not the harness")
+        self._absorb(self._session.reset(), frame_changed=True)
+        return self.get_observation(), self.get_info()
 
     def close(self) -> None:
-        pass
+        if self._owned:
+            self._session.close()
+            self._owned = False

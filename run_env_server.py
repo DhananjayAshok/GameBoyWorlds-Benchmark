@@ -37,8 +37,9 @@ def check():
 
 
 @main.command("serve")
-@click.option("--kind", required=True, type=click.Choice(["dev", "test", "playthrough"]),
-              help="dev (train + val), test (held-out tasks) or playthrough (one whole game).")
+@click.option("--kind", required=True, type=click.Choice(["dev", "test", "playthrough", "train"]),
+              help="dev (train + val), test (held-out tasks), playthrough (one whole game) or train "
+                   "(the train_sandbox_games playthroughs, with named saves).")
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=None, type=int, help="TCP port. Give this or --unix_socket.")
 @click.option("--unix_socket", default=None,
@@ -54,8 +55,10 @@ def check():
               help="Playthrough only: save the session here so a restarted server continues it.")
 @click.option("--checkpoint_every", default=500, show_default=True, type=int,
               help="Steps between checkpoints. One is also written on shutdown.")
+@click.option("--obs_dir", default=None, help="Write every session's video under this directory.")
+@click.option("--saves_dir", default=None, help="Train only: where named saves are kept.")
 def serve(kind, host, port, unix_socket, token_file, max_sessions, idle_seconds, max_steps, record_dir,
-          checkpoint_dir, checkpoint_every):
+          checkpoint_dir, checkpoint_every, obs_dir, saves_dir):
     """Serve one policy on host:port or on a Unix socket."""
     from env_server.policy import Policy
     from env_server.server import serve as serve_forever
@@ -64,10 +67,13 @@ def serve(kind, host, port, unix_socket, token_file, max_sessions, idle_seconds,
         raise click.ClickException("give exactly one of --port or --unix_socket")
     if checkpoint_dir and kind != "playthrough":
         raise click.ClickException("--checkpoint_dir is only for --kind playthrough")
+    if (kind == "train") != bool(saves_dir):
+        raise click.ClickException("--saves_dir is required for --kind train and only for it")
     parameters = load_parameters()
     sessions = Sessions(policy=Policy.of(kind=kind), max_sessions=max_sessions, idle_seconds=idle_seconds,
                         record_dir=record_dir, max_steps=max_steps, parameters=parameters,
-                        checkpoint_dir=checkpoint_dir, checkpoint_every=checkpoint_every)
+                        checkpoint_dir=checkpoint_dir, checkpoint_every=checkpoint_every,
+                        obs_dir=obs_dir, saves_dir=saves_dir)
     serve_forever(sessions=sessions, host=host, port=port, token=_read_token(token_file),
                   parameters=parameters, unix_socket=unix_socket)
 

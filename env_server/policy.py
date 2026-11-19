@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from env_server import codec, splits
 
-KINDS = ("dev", "test", "playthrough")
+KINDS = ("dev", "test", "playthrough", "train")
 
 # run_benchmark.py's --max_steps: the budget a benchmark task is scored against.
 TASK_MAX_STEPS = 200
@@ -29,6 +29,9 @@ class Policy:
     # high-level action strings, which every observation lists under obs.actions.
     controller: str = "low_level"
     transitions: bool = False
+    train_games_only: bool = False
+    named_saves: bool = False
+    opening_replaces: bool = False
 
     @classmethod
     def of(cls, *, kind: str) -> "Policy":
@@ -46,6 +49,12 @@ class Policy:
                        state_optional=False, save_load=False, reset_again=False,
                        max_steps=PLAYTHROUGH_MAX_STEPS, long_running=True, controller="state_wise",
                        transitions=True)
+        if kind == "train":
+            return cls(kind=kind, splits_open=splits.PLAYTHROUGH_SPLITS,
+                       splits_listed=splits.PLAYTHROUGH_SPLITS, free_play=False, state_mode="full",
+                       state_optional=True, save_load=True, reset_again=True,
+                       max_steps=PLAYTHROUGH_MAX_STEPS, long_running=True, controller="state_wise",
+                       transitions=True, train_games_only=True, named_saves=True, opening_replaces=True)
         raise ValueError(f"unknown server kind {kind!r}; one of {KINDS}")
 
     def __post_init__(self) -> None:
@@ -54,4 +63,7 @@ class Policy:
 
     def visible(self, *, task_id: str, parameters: dict) -> bool:
         entry = splits.load_splits(parameters=parameters).get(task_id)
-        return entry is not None and entry["split"] in self.splits_open
+        if entry is None or entry["split"] not in self.splits_open:
+            return False
+        return not self.train_games_only or \
+            splits.game_of(task_id=task_id) in splits.train_sandbox_games(parameters=parameters)
