@@ -19,8 +19,11 @@
 #         --remote --name <name> --model <model> --vlm_kind gateway
 #
 #   train  harness development: the agent opens the train_sandbox_games playthroughs itself, with named
-#          saves. The harness is copied to /work/harness once and is the agent's from then on; git is
-#          disabled. containers/run_train_agent.sh runs prime-agent in it:
+#          saves. /work/harness is a clone of --harness_repo (harnesses/strategist by default; see
+#          containers/harness_repo.sh) on its own branch; each launch merges the repo's main into it.
+#          The server logs each session's progress from game memory to /work/obs/progress. On the host,
+#          containers/train_watch.sh mirrors the agent's commits (and pushes them with --push_url) and
+#          archives its artifacts. containers/run_train_agent.sh runs prime-agent in it:
 #     bash containers/run_sandbox.sh --kind train --run_dir <dir> --model <model> --max_cost 1000 -- <command>
 #
 # Every kind writes the sessions' videos to /work/obs, read-only. --max_cost caps the model spend in dollars.
@@ -45,13 +48,17 @@ STATE_DIR=""
 CHECKPOINT_EVERY=500
 HARNESS=false
 MAX_COST=""
+HARNESS_REPO=harnesses/strategist
+PUSH_URL=""
+PUSH_PREFIX=""
 
 usage() {
-    sed -n '2,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     echo
     echo "Options: --kind dev|test|playthrough|train  --model <openrouter id>  --task_id <id>  --sif <image>"
     echo "         --workspace <dir>  --log_dir <dir>  --record_dir <dir>  --time_limit <seconds>"
     echo "         --max_steps <n>  --run_dir <dir>  --checkpoint_every <steps>  --harness  --max_cost <dollars>"
+    echo "         --harness_repo <dir>  --push_url <git url>  --push_prefix <branch prefix>   (train)"
     exit 1
 }
 
@@ -70,6 +77,9 @@ while [[ $# -gt 0 ]]; do
         --checkpoint_every) CHECKPOINT_EVERY="$2"; shift 2 ;;
         --harness) HARNESS=true; shift ;;
         --max_cost) MAX_COST="$2"; shift 2 ;;
+        --harness_repo) HARNESS_REPO="$2"; shift 2 ;;
+        --push_url) PUSH_URL="$2"; shift 2 ;;
+        --push_prefix) PUSH_PREFIX="$2"; shift 2 ;;
         --) shift; break ;;
         *) usage ;;
     esac
@@ -88,6 +98,9 @@ OPENS_OWN=false
 [[ "$KIND" == playthrough || "$KIND" == train || -z "$STATE_DIR" ]] \
     || die "--run_dir is only for --kind playthrough or train"
 [[ "$KIND" != train || "$HARNESS" == false ]] || die "--kind train always copies the harness; drop --harness"
+[[ "$KIND" != train || -d "$HARNESS_REPO/.git" ]] \
+    || die "no harness repository at $HARNESS_REPO; make it with containers/harness_repo.sh sync"
+[[ -z "$PUSH_URL" || -n "$PUSH_PREFIX" ]] || die "--push_url needs --push_prefix"
 [[ -f "$SIF" ]] || die "no image at $SIF; build it first (see containers/sandbox.def)"
 [[ -n "${OPENROUTER_API_KEY:-}" ]] || die "OPENROUTER_API_KEY is not set; the model gateway needs it"
 require_apptainer
@@ -117,10 +130,13 @@ mkdir -p "$NET" "$AGENT_HOME/.prime/agent" "$WORKSPACE/obs" "$LOG_DIR" "$OBS_DIR
 
 SERVER_PID=""
 GATEWAY_PID=""
+WATCH_PID=""
 cleanup() {
+    [[ -n "$WATCH_PID" ]] && kill "$WATCH_PID" 2>/dev/null
     [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null
     [[ -n "$GATEWAY_PID" ]] && kill "$GATEWAY_PID" 2>/dev/null
     wait 2>/dev/null
+    [[ -n "$WATCH_PID" ]] && bash containers/train_watch.sh once "$STATE_DIR" "$PUSH_URL" "$PUSH_PREFIX"
     rm -rf "$RUN_DIR"
 }
 trap cleanup EXIT
@@ -132,7 +148,8 @@ server_args=(serve --kind "$KIND" --unix_socket "$NET/envserver.sock" --token_fi
 [[ -n "$MAX_STEPS" ]] && server_args+=(--max_steps "$MAX_STEPS")
 [[ -n "$RECORD_DIR" ]] && server_args+=(--record_dir "$RECORD_DIR")
 [[ "$KIND" == playthrough ]] && server_args+=(--checkpoint_dir "$STATE_DIR/checkpoint" --checkpoint_every "$CHECKPOINT_EVERY")
-[[ "$KIND" == train ]] && server_args+=(--saves_dir "$STATE_DIR/saves" --max_sessions 1)
+[[ "$KIND" == train ]] && server_args+=(--saves_dir "$STATE_DIR/saves" --max_sessions 1
+                                         --progress_dir "$OBS_DIR/progress")
 "$PYTHON" run_env_server.py "${server_args[@]}" > "$LOG_DIR/server.log" 2>&1 &
 SERVER_PID=$!
 gateway_args=(--socket "$NET/model.sock" --allow "$MODEL" --log "$LOG_DIR/gateway.jsonl")
@@ -159,11 +176,16 @@ PY
 }
 if [[ "$HARNESS" == true ]]; then
     copy_harness
-elif [[ "$KIND" == train && ! -e "$HARNESS_DIR/run_playthrough.py" ]]; then
-    copy_harness
-    cp README.md README_dev.md "$HARNESS_DIR/"
 fi
-[[ "$KIND" != train ]] || touch "$WORKSPACE/AGENTS.md"
+if [[ "$KIND" == train ]]; then
+    touch "$WORKSPACE/AGENTS.md"
+    mkdir -p "$WORKSPACE/agent_logs"
+    bash containers/harness_repo.sh prepare "$HARNESS_REPO" "$HARNESS_DIR" "agent/$(basename "$STATE_DIR")" \
+        "$WORKSPACE/agent_logs/next_prompt_note.md"
+    export APPTAINERENV_TRAIN_GAMES="$("$PYTHON" -c 'from env_server import splits; from utils import load_parameters; print(" ".join(splits.train_sandbox_games(parameters=load_parameters())))')"
+    bash containers/train_watch.sh loop "$STATE_DIR" "$PUSH_URL" "$PUSH_PREFIX" &
+    WATCH_PID=$!
+fi
 cat > "$AGENT_HOME/.prime/agent/models.json" <<JSON
 { "providers": { "gateway": {
     "baseUrl": "http://127.0.0.1:$MODEL_GATEWAY_PORT/v1", "apiKey": "none", "api": "openai-completions",
@@ -191,9 +213,7 @@ export APPTAINERENV_SANDBOX_MODEL="$MODEL"
 binds=(--bind "$WORKSPACE":/work --bind "$NET":/sandboxnet --bind "$OBS_DIR":/work/obs:ro)
 if [[ "$KIND" == train ]]; then
     binds+=(--bind "$PWD/containers/train_agent":/opt/train:ro
-            --bind "$PWD/containers/train_agent/AGENTS.md":/work/AGENTS.md:ro
-            --bind "$PWD/containers/train_agent/git_disabled":/usr/bin/git:ro
-            --bind "$RUN_DIR/empty":/usr/lib/git-core:ro)
+            --bind "$PWD/containers/train_agent/AGENTS.md":/work/AGENTS.md:ro)
 fi
 
 limit=()

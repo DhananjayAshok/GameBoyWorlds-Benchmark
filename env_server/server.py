@@ -77,7 +77,7 @@ def _handler(*, sessions: Sessions, token: str, parameters: dict):
                 body = self._body()
                 session = sessions.open(task_id=body.get("task_id"), game=body.get("game"),
                                         init_state=body.get("init_state"),
-                                        want_state=bool(body.get("state", False)))
+                                        want_state=bool(body.get("state", False)), run=body.get("run"))
                 return {**session.describe(), "token": session.token}
             if parts[0] == "sessions" and len(parts) in (2, 3):
                 session_id = parts[1]

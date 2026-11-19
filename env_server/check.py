@@ -266,10 +266,19 @@ def check_train_policy(*, steps: int = 4, parameters: dict, action: str = "butto
     other = next(t for t, v in sorted(table.items()) if v["split"] == "test")
     root = tempfile.mkdtemp(prefix="envcheck.", dir="/dev/shm" if os.path.isdir("/dev/shm") else None)
     obs_dir, saves_dir = os.path.join(root, "obs"), os.path.join(root, "saves")
+    progress_dir = os.path.join(root, "progress")
 
     def serve() -> Sessions:
         return Sessions(policy=Policy.of(kind="train"), max_sessions=1, idle_seconds=0, record_dir=None,
-                        max_steps=None, parameters=parameters, obs_dir=obs_dir, saves_dir=saves_dir)
+                        max_steps=None, parameters=parameters, obs_dir=obs_dir, saves_dir=saves_dir,
+                        progress_dir=progress_dir)
+
+    def progress_of(session_id: str) -> list:
+        path = os.path.join(progress_dir, f"{session_id}.jsonl")
+        if not os.path.exists(path):
+            return []
+        with open(path) as f:
+            return [json.loads(line) for line in f if line.strip()]
 
     try:
         try:
@@ -291,7 +300,14 @@ def check_train_policy(*, steps: int = 4, parameters: dict, action: str = "butto
                 pass
 
         task_id = sorted(allowed)[0]
-        session = sessions.open(task_id=task_id, want_state=True)
+        try:
+            sessions.open(task_id=task_id, run="bad run/name")
+            failures.append("a train server accepted the run name 'bad run/name'")
+            sessions.close_all()
+        except SessionError:
+            pass
+        session = sessions.open(task_id=task_id, want_state=True, run="check_run")
+        first_id = session.id
         session.reset()
         for _ in range(steps):
             payload = session.step(action=action)
@@ -334,6 +350,21 @@ def check_train_policy(*, steps: int = 4, parameters: dict, action: str = "butto
             failures.append("a named save did not survive a server restart")
         session.step(action="wait()")
         sessions.close_all()
+
+        first = progress_of(first_id)
+        kinds = [r["kind"] for r in first]
+        for kind in ("reset", "save", "load", "close"):
+            if kind not in kinds:
+                failures.append(f"a train session's progress log has no {kind!r} record (has {kinds})")
+        if any(r["run"] != "check_run" for r in first):
+            failures.append("a train session's progress records do not carry its run name")
+        if first and not first[0]["map"]:
+            failures.append("a train session's progress records name no map")
+        reloaded = [r for r in progress_of(session.id) if r["kind"] == "load"]
+        if not reloaded or reloaded[0]["maps_reached"] < 1:
+            failures.append("a named save did not carry the maps reached across a server restart")
+        if os.path.exists(os.path.join(progress_dir, "clears.jsonl")):
+            failures.append("a train session that did not clear its game was recorded as a clear")
 
         videos = _videos(obs_dir)
         if len(videos) < 3:

@@ -12,6 +12,7 @@ from gameboy_worlds import get_environment, get_test_environment
 
 from env_server import codec, splits
 from env_server.policy import Policy
+from env_server.progress import Progress
 from env_server.recorder import Recorder
 from utils.log_handling import log_info, log_warn
 
@@ -43,9 +44,11 @@ class Session:
                  record_dir: Optional[str], session_name: Optional[str], parameters: dict,
                  checkpoint_dir: Optional[str] = None, checkpoint_every: int = 0,
                  saved: Optional[dict] = None, obs_dir: Optional[str] = None,
-                 saves_dir: Optional[str] = None) -> None:
+                 saves_dir: Optional[str] = None, progress_dir: Optional[str] = None,
+                 run: Optional[str] = None) -> None:
         self._parameters = parameters
         self.saves_dir = saves_dir
+        self.run = run
         self.policy = policy
         self.task_id = task_id
         self.id = saved["session"] if saved else uuid.uuid4().hex[:16]
@@ -89,6 +92,10 @@ class Session:
                                  parameters=parameters) if record_dir else None
         if self.env._emulator.save_video:
             log_info(f"session {self.id} video: {self.env._emulator.session_path}", parameters=parameters)
+        memory = getattr(self.env._emulator.state_parser, "memory", None)
+        self.progress = Progress(directory=progress_dir, session=self.id, game=self.game, run=run,
+                                 memory=memory, parameters=parameters) \
+            if progress_dir and memory is not None else None
         if saved:
             self._restore(saved=saved)
 
@@ -97,7 +104,7 @@ class Session:
         return self.task_id is not None
 
     def describe(self) -> dict:
-        return {"session": self.id, "task_id": self.task_id, "game": self.game, "goal": self.goal,
+        return {"session": self.id, "run": self.run, "task_id": self.task_id, "game": self.game, "goal": self.goal,
                 "policy": self.policy.kind, "controller": self.policy.controller, "state_enabled": self.want_state,
                 "state_mode": self.policy.state_mode,
                 "can_reset": self.policy.reset_again or not self.started,
@@ -211,6 +218,9 @@ class Session:
         _, info = self.env.reset()
         self.episode_over = False
         self.success = None
+        if self.progress:
+            self.progress.start_over()
+            self._write_progress(kind="reset")
         if self.recorder:
             self.recorder.write(kind="reset", action=None, info=info, success=None,
                                 frame=self.env.get_observation())
@@ -238,6 +248,12 @@ class Session:
         if self.recorder:
             self.recorder.write(kind="step", action=action, info=info, success=self.success,
                                 frame=self.env.get_observation())
+        if self.progress:
+            self.progress.observe()
+            if self.success == 1.0:
+                self._write_progress(kind="cleared")
+            elif self.progress.due(steps=self._steps()):
+                self._write_progress(kind="periodic")
         # One high-level action can take many presses, so this counts presses since the last checkpoint.
         if self.episode_over or (self.checkpoint_every and self.label is None
                                  and self._steps() - self._checkpointed_at >= self.checkpoint_every):
@@ -247,6 +263,13 @@ class Session:
     def observe(self) -> dict:
         self.last_used = time.time()
         return self._payload(info=None)
+
+    def _write_progress(self, *, kind: str, save: Optional[str] = None) -> None:
+        try:
+            self.progress.write(kind=kind, steps=self._steps(), subgoals=self._subgoals(),
+                                success=self.success, save=save)
+        except Exception as exc:
+            log_warn(f"progress for session {self.id}: {exc}", parameters=self._parameters)
 
     def _named_paths(self, *, name) -> tuple:
         if not isinstance(name, str) or not SAVE_NAME.match(name):
@@ -264,9 +287,14 @@ class Session:
             with open(state_path + ".tmp", "wb") as f:
                 self.env._emulator._pyboy.save_state(f)
             os.replace(state_path + ".tmp", state_path)
+            meta = {"steps": self._steps(), "subgoals": self._subgoals()}
+            if self.progress:
+                meta["progress"] = self.progress.lineage()
             with open(meta_path + ".tmp", "w") as f:
-                json.dump({"steps": self._steps(), "subgoals": self._subgoals()}, f)
+                json.dump(meta, f)
             os.replace(meta_path + ".tmp", meta_path)
+            if self.progress:
+                self._write_progress(kind="save", save=name)
             emulator = self.env._emulator
             if emulator.save_video and emulator.video_writer.video_running:
                 emulator.video_writer.start_video()
@@ -288,6 +316,9 @@ class Session:
                 saved = json.load(f)
             self.started = True
             self._apply_state(state_path=state_path, saved=saved)
+            if self.progress:
+                self.progress.restore(lineage=saved.get("progress"))
+                self._write_progress(kind="load", save=handle)
         else:
             if handle not in self._handles:
                 raise SessionError("unknown handle", 404)
@@ -314,6 +345,8 @@ class Session:
                     self._discard_since_checkpoint()
             except Exception as exc:
                 log_warn(f"checkpointing session {self.id}: {exc}", parameters=self._parameters)
+            if self.progress and self.started:
+                self._write_progress(kind="close")
             try:
                 self.env.close()
             except Exception as exc:
@@ -327,9 +360,10 @@ class Sessions:
                  record_dir: Optional[str], max_steps: Optional[int], parameters: dict,
                  session_name: Optional[str] = None, checkpoint_dir: Optional[str] = None,
                  checkpoint_every: int = 500, obs_dir: Optional[str] = None,
-                 saves_dir: Optional[str] = None) -> None:
+                 saves_dir: Optional[str] = None, progress_dir: Optional[str] = None) -> None:
         self._parameters = parameters
         self.policy = policy
+        self.progress_dir = progress_dir
         if checkpoint_dir and policy.kind != "playthrough":
             raise ValueError(f"a {policy.kind} server does not checkpoint; only playthrough does")
         if policy.named_saves != bool(saves_dir):
@@ -348,12 +382,13 @@ class Sessions:
         self._opening = 0
         self._lock = threading.Lock()
 
-    def _build(self, *, task_id, game, init_state, want_state, saved=None) -> Session:
+    def _build(self, *, task_id, game, init_state, want_state, saved=None, run=None) -> Session:
         return Session(policy=self.policy, task_id=task_id, game=game, init_state=init_state,
                        want_state=want_state, max_steps=self.max_steps, record_dir=self.record_dir,
                        session_name=self.session_name, parameters=self._parameters,
                        checkpoint_dir=self.checkpoint_dir, checkpoint_every=self.checkpoint_every,
-                       saved=saved, obs_dir=self.obs_dir, saves_dir=self.saves_dir)
+                       saved=saved, obs_dir=self.obs_dir, saves_dir=self.saves_dir,
+                       progress_dir=self.progress_dir, run=run)
 
     def listed(self) -> list:
         tasks = splits.listed(splits_wanted=self.policy.splits_listed, parameters=self._parameters)
@@ -368,9 +403,12 @@ class Sessions:
         return splits.free_play_states(parameters=self._parameters)
 
     def open(self, *, task_id: Optional[str] = None, game: Optional[str] = None,
-             init_state: Optional[str] = None, want_state: bool = False) -> Session:
+             init_state: Optional[str] = None, want_state: bool = False,
+             run: Optional[str] = None) -> Session:
         if (task_id is None) == (game is None):
             raise SessionError("pass exactly one of task_id or game (with init_state)")
+        if run is not None and (not isinstance(run, str) or not SAVE_NAME.match(run)):
+            raise SessionError("a run name is 1-128 letters, digits or underscores")
         if task_id is not None:
             if not self.policy.visible(task_id=task_id, parameters=self._parameters):
                 raise SessionError("no such task", 404)
@@ -403,7 +441,7 @@ class Sessions:
         session = None
         try:
             session = self._build(task_id=task_id, game=game, init_state=init_state, want_state=want_state,
-                                  saved=saved)
+                                  saved=saved, run=run)
         finally:
             with self._lock:
                 self._opening -= 1

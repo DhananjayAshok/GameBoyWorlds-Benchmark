@@ -130,9 +130,11 @@ class Client:
     def scenes(self):
         return self.server.request("GET", "/scenes")["scenes"]
 
-    def open(self, task_id=None, game=None, init_state=None, state=False, raw=False):
+    def open(self, task_id=None, game=None, init_state=None, state=False, raw=False, run=None):
         body = {"task_id": task_id} if task_id else {"game": game, "init_state": init_state}
         body["state"] = state
+        if run is not None:
+            body["run"] = run
         return Session(self.server, self.server.request("POST", "/sessions", body, raw=raw))
 
     def attach(self, session_id):

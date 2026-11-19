@@ -124,6 +124,7 @@ A run writes to three places:
 | `run_env_server.py` | CLI: `serve`, `check`, `generate_splits`, `open_session`, `session_info`. |
 | `env_server/server.py` | The HTTP handler and bearer-token checks. |
 | `env_server/sessions.py` | One emulator per session; applies the policy to reset, step, save and load. Checkpoints and restores a playthrough session (`emulator.state` and `session.json` in `--checkpoint_dir`), keeps a train server's named saves in `--saves_dir`, and writes every session's video under `--obs_dir`. |
+| `env_server/progress.py` | With `--progress_dir`, each session's progress read from game memory: badges, maps reached (carried across named saves), story events and engine flags raised, the party. One `<session>.jsonl` line per reset, save, load, close and 500 steps; a session that clears its game also goes in `clears.jsonl`. A session opened with `"run"` carries that name in its records. |
 | `env_server/policy.py` | The `dev`, `test`, `playthrough` and `train` policies, including which GameBoyWorlds controller each serves (`low_level` buttons, or `state_wise` for playthrough and train). `train` opens only the `train_sandbox_games` of `split_config.yaml`, one session at a time (opening one closes the other), with full state on request, resets, and named saves that outlive the session. |
 | `env_server/splits.py` | Generates, loads and verifies `configs/splits/benchmark_splits.json`. |
 | `env_server/codec.py` | What a response may contain: the frame as PNG, and full or scored-only state. |
@@ -132,7 +133,9 @@ A run writes to three places:
 | `env_server/check.py` | Asserts the policies and the HTTP layer against live sessions. |
 | `containers/sandbox.def` | The image. Everything it pins is in `containers/versions.env`. |
 | `containers/run_sandbox.sh` | Starts the server and gateway, runs a command in the sandbox, cleans up. Session videos go to `/work/obs`, read-only; `--max_cost` caps the model spend. |
-| `containers/run_train_agent.sh`, `containers/train_agent/` | prime-agent developing the harness in a `--kind train` sandbox: its instructions (`AGENTS.md`, read-only at `/work/AGENTS.md`), the loop that restarts it, and the stub that disables git. |
+| `containers/run_train_agent.sh`, `containers/train_agent/` | prime-agent developing a harness in a `--kind train` sandbox: its instructions (`AGENTS.md`, read-only at `/work/AGENTS.md`, the same whatever the harness), the loop that restarts it and checks a `/work/FINISHED` claim against `clears.jsonl` or accepts `/work/GIVE_UP`, `progress.py` for reading the progress records, and `harness_docs/<harness>.md`, each harness's `HARNESS.md`. The run exits 0 on a confirmed finish and 3 on giving up. |
+| `containers/harness_repo.sh` | `sync <name> [--ref <ref>]` builds `harnesses/<name>` (gitignored here; its own repository with a fresh history) from a committed ref, `train_only` by default, refusing one that mentions a held-out game. `prepare` is how `run_sandbox.sh` clones it into `/work/harness` on branch `agent/<run>` the first time, and on later launches commits what the agent left uncommitted and merges the harness's `main` (kept as branch `upstream`), leaving a conflict for the agent. |
+| `containers/train_watch.sh` | On the host during a train run: every 10 minutes fetches the agent's branches into `<run_dir>/harness_mirror.git` (a rewritten branch is kept beside the old one) and, with `--push_url`, pushes them under `--push_prefix/`; every hour, and at the end, snapshots its artifacts, logs and notes into `<run_dir>/archive/<time>/`, hard-linking unchanged files. |
 | `containers/verify_sandbox.sh` | Checks a built image's contents and isolation. |
 | `containers/sandbox_run.sh`, `netbridge.py` | Inside the image: expose the two Unix sockets as loopback ports, then run the command. |
 | `containers/prime_agent_*.sh`, `kernel_*`, `seed_kernel_skills.py` | prime-agent specifics: the vendored installer, and the pinned Python environment it runs tools in. |
@@ -147,7 +150,7 @@ Routes, all JSON with `Authorization: Bearer <token>`. The server token reaches 
 |-------|-------------|
 | `GET /tasks` | Tasks the policy lists. |
 | `GET /scenes` | Free-play start states, `{game: [init_state]}`. |
-| `POST /sessions` | Open a session: `{"task_id": ...}` or `{"game": ..., "init_state": ...}`, optional `"state": true`. Returns the session and its token. |
+| `POST /sessions` | Open a session: `{"task_id": ...}` or `{"game": ..., "init_state": ...}`, optional `"state": true` and `"run": <name>`. Returns the session and its token. |
 | `GET /sessions/<id>` | Status: steps, `episode_over`, `success`, `subgoals`, `label`, `discarded_steps`. |
 | `POST /sessions/<id>/reset`, `step`, `observe`, `save`, `load` | `step` takes `{"action": ...}`, `load` takes `{"handle": ...}`. On a train server `save` takes `{"name": ...}` and the name is the handle. |
 | `POST /sessions/<id>/checkpoint` | Playthrough only: `{"label": ...}` checkpoints now; from then on the session resumes only from the latest label. |
