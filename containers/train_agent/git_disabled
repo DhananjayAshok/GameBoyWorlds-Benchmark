@@ -1,3 +1,0 @@
-#!/bin/sh
-echo "git is disabled in this sandbox" >&2
-exit 1

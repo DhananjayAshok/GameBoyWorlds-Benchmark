@@ -15,25 +15,44 @@ from abc import ABC, abstractmethod
 import uuid
 
 
+MARKUP_CHARS = "*`"
+
+
+def strip_markup(value: str, chars: str = MARKUP_CHARS) -> str:
+    while True:
+        stripped = value.strip().strip(chars).strip()
+        if len(stripped) > 1 and stripped[0] == "<" and stripped[-1] == ">":
+            stripped = stripped[1:-1]
+        if stripped == value:
+            return value
+        value = stripped
+
+
+def unmark_line(line: str) -> str:
+    return line.replace("**", "").replace("__", "").replace("`", "")
+
+
 def parse_key_value(text: str, key: str) -> Optional[str]:
     key_lower = key.lower()
     marker = f"{key_lower}:"
 
     def clean(value: str) -> Optional[str]:
-        value = value.strip()
+        value = strip_markup(value)
         return value or None
 
     text_lower = text.lower()
     if text_lower.count("response:") == 1:
         idx = text_lower.index("response:") + len("response:")
         text = text[idx:].strip()
-        text_lower = text.lower()
 
-    for line, line_lower in zip(text.splitlines(), text_lower.splitlines()):
-        idx = line_lower.find(marker)
+    lines = [unmark_line(line) for line in text.splitlines()]
+    for line in lines:
+        idx = line.lower().find(marker)
         if idx != -1:
             return clean(line[idx + len(marker) :])
 
+    text = "\n".join(lines)
+    text_lower = text.lower()
     if text_lower.count(key_lower) == 1:
         idx = text_lower.index(key_lower)
         rest_of_line = text[idx + len(key) :].splitlines()
@@ -43,7 +62,7 @@ def parse_key_value(text: str, key: str) -> Optional[str]:
 
 
 def clean_value(value: Optional[str]) -> Optional[str]:
-    value = (value or "").strip().strip('"\'').strip()
+    value = strip_markup(value or "", MARKUP_CHARS + "\"'")
     if not value or value.lower() in ("none", "n/a", "na", "unknown"):
         return None
     return value

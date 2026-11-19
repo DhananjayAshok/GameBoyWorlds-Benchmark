@@ -227,7 +227,7 @@ class GridMoveExecutor(PolicyExecutor):
 
 class OnScreenMoveExecutor(GridMoveExecutor):
     LOCATE_TAG = "locate_target"
-    LOCATE_PROMPT = """You are helping a player move to something on the screen in the Game Boy game Pokemon Red.
+    LOCATE_PROMPT = """You are helping a player move to something on the screen in a Game Boy Pokemon game.
 
 The player wants to move to: "[TARGET]"
 
@@ -281,7 +281,7 @@ Candidates: <if Ambiguous, each candidate with its coordinates and what sets it 
 
 class OffScreenMoveExecutor(GridMoveExecutor):
     LOCATE_TAG = "locate_edge"
-    LOCATE_PROMPT = """You are helping a player walk off the edge of the screen in the Game Boy game Pokemon Red.
+    LOCATE_PROMPT = """You are helping a player walk off the edge of the screen in a Game Boy Pokemon game.
 
 The player wants to: "[TARGET]"
 
@@ -355,7 +355,7 @@ class CombatExecutor(PolicyExecutor):
     MAX_INVALID = 3
     STEP_TAG = "battle_step"
 
-    STEP_PROMPT = """You are playing Pokemon Red and are in a battle.
+    STEP_PROMPT = """You are playing a Game Boy Pokemon game and are in a battle.
 
 [INSTRUCTIONS]
 The image is the current battle screen.
@@ -371,6 +371,25 @@ Respond in exactly this format:
 Reasoning: <what the screen shows and what to do about it>
 Action: <one of fight, progress, run, bag, pokemon>
 Move: <1, 2, 3 or 4 if the action is fight, otherwise None>
+[STOP]"""
+
+    MOVE_TAG = "battle_move"
+    MOVE_ATTEMPTS = 3
+    MAX_PREVIOUS_CHARS = 1500
+
+    MOVE_PROMPT = """You are playing a Game Boy Pokemon game and chose to fight in a battle.
+
+[INSTRUCTIONS]
+The image is the current battle screen, showing your moves.
+[HISTORY]
+Your previous reply was:
+[PREVIOUS]
+
+That reply could not be used: it did not give the number of a move. Choose which of the four moves to use, where 1 is the top one.
+
+Respond in exactly this format:
+Reasoning: <which move to use and why>
+Move: <1, 2, 3 or 4>
 [STOP]"""
 
     def __init__(self, env, task, max_steps: int = 60, **kwargs):
@@ -411,6 +430,23 @@ Move: <1, 2, 3 or 4 if the action is fight, otherwise None>
         if not task or task.lower() in ("win the current battle", "none"):
             return "Win this battle.\n"
         return f"Your instructions for this battle: \"{task}\"\n"
+
+    def _choose_move(self, output: str) -> Optional[int]:
+        move = parse_int(output, "Move", lo=1, hi=4)
+        for _ in range(self.MOVE_ATTEMPTS):
+            if move is not None:
+                return move
+            self._record_invalid(output, reason="no move number")
+            frame = self._get_state()["core"]["current_frame"]
+            prompt = (self.MOVE_PROMPT.replace("[INSTRUCTIONS]", self._instructions_block())
+                      .replace("[HISTORY]", self._history_block())
+                      .replace("[PREVIOUS]", output[:self.MAX_PREVIOUS_CHARS]))
+            output = self._vlm_call(self.MOVE_TAG, texts=prompt, images=[frame],
+                                    max_new_tokens=self.MAX_NEW_TOKENS)
+            move = parse_int(output, "Move", lo=1, hi=4)
+        if move is None:
+            self._record_invalid(output, reason="no move number")
+        return move
 
     def _record_outcome(self, state) -> int:
         code = LEFT_BATTLE_CODES.get(state, BATTLE_ENDED)
@@ -484,9 +520,8 @@ Move: <1, 2, 3 or 4 if the action is fight, otherwise None>
                 consecutive_failures = 0
 
             if option == "fight" and record.action_success == 0:
-                move = parse_int(output, "Move", lo=1, hi=4)
+                move = self._choose_move(output)
                 if move is None:
-                    self._record_invalid(output, reason="unrecognised action")
                     entry += ", but no move number was given"
                 else:
                     attack = self._take_action(PickAttackAction, option=move)
@@ -546,7 +581,7 @@ class MenuExecutor(PolicyExecutor):
     OPEN_TAG = "menu_open"
     STEP_TAG = "menu_step"
 
-    OPEN_PROMPT = """You are playing Pokemon Red and are about to open the main menu with the Start button.
+    OPEN_PROMPT = """You are playing a Game Boy Pokemon game and are about to open the main menu with the Start button.
 
 Objective: "[TASK]"
 
@@ -563,7 +598,7 @@ Reasoning: <which entry the objective needs and why>
 Entry: <one of pokedex, pokemon, bag, trainer>
 [STOP]"""
 
-    STEP_PROMPT = """You are playing Pokemon Red and are using the game's menus.
+    STEP_PROMPT = """You are playing a Game Boy Pokemon game and are using the game's menus.
 
 Objective: "[TASK]"
 
@@ -741,7 +776,7 @@ class FreeExecutor(PolicyExecutor):
     MAX_INVALID = 3
     STEP_TAG = "free_step"
 
-    STEP_PROMPT = """You are playing Pokemon Red, pressing one button at a time.
+    STEP_PROMPT = """You are playing a Game Boy Pokemon game, pressing one button at a time.
 
 What you have been asked to do: "[TASK]"
 

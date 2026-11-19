@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
@@ -140,6 +141,11 @@ def _node_prompt(template: str, game: str, text: str, path: KnowledgePath, node:
 
 def _child_index(choice: str, children: List[KnowledgeSubtree]) -> Optional[int]:
     choice = choice.strip().rstrip(".").strip()
+    numbered = re.match(r"(\d+)\s*[.):\-]?\s+(.+)$", choice)
+    if numbered and int(numbered.group(1)) < len(children):
+        title = children[int(numbered.group(1))].root.title.strip().lower()
+        if numbered.group(2).strip().lower() == title:
+            choice = numbered.group(1)
     if choice.isdigit():
         return int(choice) if int(choice) < len(children) else None
     matches = [i for i, child in enumerate(children) if child.root.title.strip().lower() == choice.lower()]

@@ -6,7 +6,7 @@ TILE_TAGS = (
     "special ground tile", "unknown",
 )
 
-CLASSIFY_PROMPT ="""You are looking at a screen from the Game Boy game Pokemon Red. The screen is divided into a grid of 16x16 pixel cells.
+CLASSIFY_PROMPT ="""You are looking at a screen from a Game Boy Pokemon game. The screen is divided into a grid of 16x16 pixel cells.
 
 You are given two images:
 1. The full game screen, with one grid cell outlined by a red box.
