@@ -4,6 +4,10 @@ A vision-language model plays the game through three layers. A strategist picks 
 supervisor plans it, and executors press buttons. Between episodes the strategist keeps memory: a global map built
 from frames, a goal tree, a knowledge tree, a notepad, a strategy guide and a people registry.
 
+The tile recognizer and the global map are examples of the third kind of revision in `/work/AGENTS.md`: they
+solve whole problems for the player (what is on screen, where things are, how places connect) by building real
+machinery rather than by tweaking prompts.
+
 Read `README.md` and `README_dev.md` here, then `run_playthrough.py` and `execution/strategist/`. The docs mention
 `debug.py`; it is not in this repository, so write your own inspection scripts with the classes below.
 
