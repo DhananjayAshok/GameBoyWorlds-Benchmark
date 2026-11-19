@@ -132,7 +132,7 @@ SERVER_PID=""
 GATEWAY_PID=""
 WATCH_PID=""
 cleanup() {
-    [[ -n "$WATCH_PID" ]] && kill "$WATCH_PID" 2>/dev/null
+    [[ -n "$WATCH_PID" ]] && kill -- -"$WATCH_PID" 2>/dev/null
     [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null
     [[ -n "$GATEWAY_PID" ]] && kill "$GATEWAY_PID" 2>/dev/null
     wait 2>/dev/null
@@ -179,11 +179,11 @@ if [[ "$HARNESS" == true ]]; then
 fi
 if [[ "$KIND" == train ]]; then
     touch "$WORKSPACE/AGENTS.md"
-    mkdir -p "$WORKSPACE/agent_logs"
+    mkdir -p "$WORKSPACE/agent_logs" "$OBS_DIR/progress"
     bash containers/harness_repo.sh prepare "$HARNESS_REPO" "$HARNESS_DIR" "agent/$(basename "$STATE_DIR")" \
         "$WORKSPACE/agent_logs/next_prompt_note.md"
     export APPTAINERENV_TRAIN_GAMES="$("$PYTHON" -c 'from env_server import splits; from utils import load_parameters; print(" ".join(splits.train_sandbox_games(parameters=load_parameters())))')"
-    bash containers/train_watch.sh loop "$STATE_DIR" "$PUSH_URL" "$PUSH_PREFIX" &
+    setsid bash containers/train_watch.sh loop "$STATE_DIR" "$PUSH_URL" "$PUSH_PREFIX" 9>&- &
     WATCH_PID=$!
 fi
 cat > "$AGENT_HOME/.prime/agent/models.json" <<JSON
