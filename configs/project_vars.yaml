@@ -19,3 +19,5 @@ text_embedding_model_kind: qwen3
 text_embedding_model_max_length: 512
 image_embedding_model: random_patch
 image_embedding_model_kind: random_patch
+# Where train-sandbox harnesses (harness/<name>) and agent runs (runs/<run>/<branch>) are published.
+harness_remote: https://github.com/DhananjayAshok/GameBoyWorlds-Harnesses.git
