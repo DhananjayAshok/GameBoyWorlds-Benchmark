@@ -197,3 +197,6 @@ containers/smoke_e2e.sh
 obs/
 .envctl/
 agent_workspace/env.json
+
+# Train sandbox harness repositories: each is its own git repository (containers/harness_repo.sh)
+harnesses/

@@ -57,8 +57,10 @@ def check():
               help="Steps between checkpoints. One is also written on shutdown.")
 @click.option("--obs_dir", default=None, help="Write every session's video under this directory.")
 @click.option("--saves_dir", default=None, help="Train only: where named saves are kept.")
+@click.option("--progress_dir", default=None,
+              help="Log each session's progress read from game memory (badges, maps, events) here.")
 def serve(kind, host, port, unix_socket, token_file, max_sessions, idle_seconds, max_steps, record_dir,
-          checkpoint_dir, checkpoint_every, obs_dir, saves_dir):
+          checkpoint_dir, checkpoint_every, obs_dir, saves_dir, progress_dir):
     """Serve one policy on host:port or on a Unix socket."""
     from env_server.policy import Policy
     from env_server.server import serve as serve_forever
@@ -73,7 +75,7 @@ def serve(kind, host, port, unix_socket, token_file, max_sessions, idle_seconds,
     sessions = Sessions(policy=Policy.of(kind=kind), max_sessions=max_sessions, idle_seconds=idle_seconds,
                         record_dir=record_dir, max_steps=max_steps, parameters=parameters,
                         checkpoint_dir=checkpoint_dir, checkpoint_every=checkpoint_every,
-                        obs_dir=obs_dir, saves_dir=saves_dir)
+                        obs_dir=obs_dir, saves_dir=saves_dir, progress_dir=progress_dir)
     serve_forever(sessions=sessions, host=host, port=port, token=_read_token(token_file),
                   parameters=parameters, unix_socket=unix_socket)
 

@@ -121,8 +121,8 @@ class RemoteEnvironment:
         return cls(Client.from_config().attach(session_id))
 
     @classmethod
-    def open(cls, game: str) -> "RemoteEnvironment":
-        session = Client.from_config().open(task_id=f"gb.{game}.playthrough")
+    def open(cls, game: str, run: Optional[str] = None) -> "RemoteEnvironment":
+        session = Client.from_config().open(task_id=f"gb.{game}.playthrough", run=run)
         try:
             session.reset()
             return cls(session, owned=True)

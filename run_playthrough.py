@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
+import subprocess
+import time
 from datetime import datetime
 
 import click
@@ -11,6 +14,29 @@ from utils import load_parameters, log_info
 
 # GameBoyWorlds' gameboy_hard_max_steps: the emulator clamps anything larger.
 DEFAULT_ENV_MAX_STEPS = 1_000_000
+HARNESS_COMMITS_FILE = "harness_commits.jsonl"
+
+
+def harness_commit() -> dict:
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        head = subprocess.run(["git", "-C", here, "rev-parse", "HEAD"], capture_output=True, text=True, timeout=60)
+        status = subprocess.run(["git", "-C", here, "status", "--porcelain"], capture_output=True, text=True,
+                                timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return {"commit": None, "dirty": None}
+    if head.returncode != 0:
+        return {"commit": None, "dirty": None}
+    return {"commit": head.stdout.strip(), "dirty": bool(status.stdout.strip())}
+
+
+def record_harness_commit(directory: str, parameters: dict) -> None:
+    record = {"t": round(time.time(), 1), **harness_commit()}
+    log_info(f"Harness commit: {record['commit']}{' (uncommitted changes)' if record['dirty'] else ''}",
+             parameters)
+    os.makedirs(directory, exist_ok=True)
+    with open(os.path.join(directory, HARNESS_COMMITS_FILE), "a") as f:
+        f.write(json.dumps(record) + "\n")
 
 
 @click.command()
@@ -75,7 +101,7 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
         if os.environ.get("ENVCTL_SESSION"):
             environment = RemoteEnvironment.attach()
         else:
-            environment = RemoteEnvironment.open(game)
+            environment = RemoteEnvironment.open(game, run=paths.depathify(name))
         if resume_run is not None and not environment.described.get("named_saves"):
             environment.close()
             raise click.UsageError("--resume_run needs a server with named saves (run_sandbox.sh --kind train)")
@@ -122,6 +148,7 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
             vlm_model=executor_vlm_model or model,
             vlm_kind=executor_vlm_kind or vlm_kind,
         )
+        record_harness_commit(paths.playthrough_dir(parameters, game=game, name=name), parameters)
         report = strategist.run()
     finally:
         # Closing finalises the video, so a crashed run's partial recording stays readable.

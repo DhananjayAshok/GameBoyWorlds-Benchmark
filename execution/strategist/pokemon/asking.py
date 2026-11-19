@@ -4,7 +4,7 @@ from typing import Any, Callable, List, Optional, Tuple
 
 from execution.strategist.pokemon import prompts as P
 from utils import log_warn
-from utils.lm_inference import clean_value
+from utils.lm_inference import clean_value, unmark_line
 
 Parser = Callable[[str], Tuple[Any, Optional[str]]]
 
@@ -31,7 +31,7 @@ def field_values(output: str, key: str) -> List[str]:
     marker = f"{key.lower()}:"
     values = []
     for line in output.splitlines():
-        line = line.replace("**", "").strip().lstrip("-*• ").strip()
+        line = unmark_line(line).strip().lstrip("#-*• ").strip()
         if line.lower().startswith(marker):
             values.append(line[len(marker):].strip())
     return values

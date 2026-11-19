@@ -313,7 +313,7 @@ The tasks you gave the player recently, oldest first:
 Other areas you have already named:
 [NAMED]
 
-[ASK] Use the name the game gives it if a sign, the town map or dialogue said so; otherwise a short descriptive name, such as "Pewter City Pokemon Center" or "the cave north of Route 3". Name the whole area, not one building in it. If this area is part of a place you have already named, such as another floor of the same building or another part of the same town, make that clear in its name. The description is for finding your way back later: what kind of place it is, how it is laid out, its notable buildings, people and objects, and its exits.
+[ASK] Use the name the game gives it if a sign, the town map or dialogue said so; otherwise a short descriptive name, such as "the Pokemon Center in the second town" or "the cave north of the first route". Name the whole area, not one building in it. If this area is part of a place you have already named, such as another floor of the same building or another part of the same town, make that clear in its name. The description is for finding your way back later: what kind of place it is, how it is laid out, its notable buildings, people and objects, and its exits.
 
 Also say what kind of area it is: outdoors (a town, city or route under the open sky), building (any floor inside a building, such as a house, a Pokemon Center, a shop, a gym, a lab or a gatehouse), or cave (a cave, forest, tunnel or other enclosed place that is not a building).
 

@@ -47,7 +47,7 @@ NPC_SUMMARY_PROMPT = """In [GAME] the player just had this exchange [WITH] in [A
 [HINT]
 Respond in exactly this format:
 Summary: <one sentence: what was said and anything the player got or must do>
-Speaker name: <the speaker's own name if the text gives it (for example "I'm PROF. OAK" or "OAK: ..."), else None>
+Speaker name: <the speaker's own name if the text gives it (for example "I'm PROF. HAZEL" or "HAZEL: ..."), else None>
 Name type: <personal | class | None>
 Outcome: <info | gift | battle | choice | other>
 [STOP]
