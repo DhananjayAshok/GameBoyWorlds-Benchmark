@@ -4,7 +4,8 @@
 #
 #   sync <name> [--ref <git ref>]   build harnesses/<name> from <ref> of this repo (default train_only), with
 #                                   containers/train_agent/harness_docs/<name>.md as its HARNESS.md, and
-#                                   commit it on the harness's main branch; run again after changing <ref>
+#                                   commit it on the harness's main branch; run again after changing <ref>.
+#                                   HARNESS_DOC_REF=<ref> takes HARNESS.md from another ref
 #   prepare <repo> <worktree> <branch> <note_file>
 #                                   used by run_sandbox.sh: clone <repo> into <worktree> on <branch> the first
 #                                   time; afterwards commit anything uncommitted and merge <repo>'s main
@@ -33,8 +34,9 @@ sync_harness() {
     local stage
     stage="$(mktemp -d "$(sandbox_runtime_dir)/harness_stage.XXXXXX")"
     git archive "$sha" "${HARNESS_PATHS[@]}" | tar -x -C "$stage"
-    git show "$sha:containers/train_agent/harness_docs/$name.md" > "$stage/HARNESS.md" 2>/dev/null \
-        || { rm -rf "$stage"; die "$ref has no containers/train_agent/harness_docs/$name.md"; }
+    local doc_ref="${HARNESS_DOC_REF:-$sha}"
+    git show "$doc_ref:containers/train_agent/harness_docs/$name.md" > "$stage/HARNESS.md" 2>/dev/null \
+        || { rm -rf "$stage"; die "$doc_ref has no containers/train_agent/harness_docs/$name.md"; }
     mkdir -p "$stage/configs"
     "$PYTHON" - "$stage/configs" "$sha" <<'PY'
 import subprocess, sys, yaml
