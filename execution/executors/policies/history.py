@@ -125,7 +125,7 @@ In one short sentence, say what changed between the two screens as a result of t
             return
 
         responses = iter(self._call("frame_diff", texts=prompts, images=images,
-                                    max_new_tokens=60) if prompts else [])
+                                    max_new_tokens=1000) if prompts else [])
         for entry in pending:
             if entry[1] is None:
                 entry[1] = _first_sentence(next(responses, ""))
