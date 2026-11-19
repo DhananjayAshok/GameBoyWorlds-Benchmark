@@ -52,15 +52,30 @@ Repeat this loop:
 2. Look at the latest playthroughs: how far each got (below), their videos, and the harness's own records of them.
    Watch the videos; logs and summaries hide failures.
 3. Find where the long playthroughs stall: the furthest point each game has reached, and what keeps the harness
-   from getting past it. Fix that first. Smaller problems matter only when they stand between the harness and
-   further progress.
-4. Find its cause in the code. Fix it in the harness, generally.
+   from getting past it. Also note the smaller errors that keep recurring along the way.
+4. Find the causes in the code, and revise the harness (the three kinds of revision below), generally.
 5. Check the fix on a short run first: fork the run that showed the failure (`--resume_run`) and see whether it
    gets past that point. Then carry on with a long playthrough of **both** games.
 6. Keep the change if it helps and breaks nothing; otherwise revert it (`git revert`).
 7. Commit each fix on its own (below). Write down what you changed, why, and the evidence in `DEVLOG.md`; add each
    run to `EXPERIMENTS.md` (run name, game, start, harness commit, episodes, furthest point reached, badges, maps
    reached, story events, stuck episodes, notes).
+
+**Three kinds of revision.** A suggested rhythm: let the playthrough play until it is stuck, then revise the
+harness in three ways.
+
+1. **Small errors.** Look for errors, oddities and wasted effort that recur across the run. They may not stop it
+   from making progress, but they build up over time. Find them and patch them.
+2. **Blocking errors.** When the playthrough is stuck and cannot get to the next stage of the game, work out why.
+   You may use what you know about how players get through games like these to understand what the stage needs.
+   Then build features into the harness that get past this kind of obstacle robustly, in any game, not just here.
+3. **New capabilities.** Ambitious changes that solve whole classes of problems for the player at a more
+   fundamental level, through real engineering rather than tweaks to prompts or a few edited lines. `HARNESS.md`
+   points to examples of this in the harness. Consider designs like these: build one, test it, and see whether
+   it gets the playthroughs further.
+
+Any of these changes may turn out not to help once built. Throwing one away then is fine. Write down each
+decision as you go, what you built and why you kept or dropped it, in `DEVLOG.md`.
 
 **Judging progress.** Progress is how far into the game a run gets: badges won, new maps reached and new story
 events. Fewer model calls, fewer episodes or more episodes ending `completed` mean nothing if the run gets no
