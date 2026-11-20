@@ -103,9 +103,11 @@ Every check ends with a verdict, insights and a condition:
   mean **stuck**, whatever else is going on:
   - the previous condition was not met;
   - the run lost a battle since the last check;
-  - `progress.py` says `STALLED` (no new badge, map or event for 30 minutes). Treat it as stuck unless you can
-    name what the run is doing that the counter cannot see and show it is advancing, such as levelling up the
-    party for a fight it lost. New squares on the harness's own map do not count: any wandering adds those.
+  - `progress.py` says `STALLED`: for 30 minutes, no new badge, map or event, and fewer than 25 tiles the player
+    had never stood on (the server counts tiles from game memory, so exploring a large map counts and walking in
+    circles does not). Treat it as stuck unless you can name what the run is doing that the counter cannot see
+    and show it is advancing, such as levelling up the party for a fight it lost. New squares on the harness's
+    own map do not count: they say what the harness believes, not where the player has been.
 
   A stuck run is stopped and diagnosed, not given more time in the hope that it recovers. **The diagnosis comes
   before the run restarts**, and is written in `DEVLOG.md`: go through the episode reports and the video since the

@@ -151,7 +151,8 @@ def record(args, rows):
                         f"not show it: the previous condition was not met, so the verdict is stuck")
     if args.verdict == "in_progress":
         if minutes >= progress.STALL_MINUTES and not args.advancing:
-            problems.append(f"the run is STALLED ({minutes} min with no new badge, map or event), so the verdict "
+            problems.append(f"the run is STALLED ({minutes} min with no new badge, map, event or {progress.TILE_ADVANCE} "
+                            f"new tiles), so the verdict "
                             f"is stuck; say in_progress only with --advancing naming what it is doing that the "
                             f"counter cannot see, and the evidence that it is advancing")
         if judged and judged[-1]["step"] is not None and last["steps"] <= judged[-1]["step"]:

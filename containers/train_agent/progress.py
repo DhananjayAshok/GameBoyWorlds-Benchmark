@@ -25,6 +25,7 @@ def records(directory):
 
 
 STALL_MINUTES = 30
+TILE_ADVANCE = 25
 SETUP_KINDS = ("reset", "load")
 
 
@@ -35,18 +36,23 @@ def stamp(t):
 def last_advance(rs):
     best_badges = None
     advance = None
+    tiles = 0
     for r in rs:
         if r["kind"] in SETUP_KINDS:
             continue
         reasons = []
+        tiles += r.get("new_tiles", 0)
         if best_badges is not None and len(r["badges"]) > best_badges:
             reasons.append("badge")
         if r["new_maps"]:
             reasons.append("map " + ", ".join(r["new_maps"]))
         if r["new_events"]:
             reasons.append("event " + ", ".join(r["new_events"]))
+        if tiles >= TILE_ADVANCE:
+            reasons.append(f"{tiles} new tiles")
         if reasons or advance is None:
             advance = (r, reasons)
+            tiles = 0
         best_badges = len(r["badges"]) if best_badges is None else max(best_badges, len(r["badges"]))
     return advance
 
@@ -65,11 +71,13 @@ def stall(rs):
     minutes = int((now - advance["t"]) / 60)
     steps = last["steps"] - advance["steps"]
     what = "; ".join(reasons) if reasons else "nothing new since the run started"
+    tiles = sum(r.get("new_tiles", 0) for r in played if r["t"] > advance["t"])
     lines = [f"last advance: {stamp(advance['t'])}, step {advance['steps']}, at {advance['map']} ({what})",
-             f"since then:   {minutes} min, {steps} steps, no new badge, map or event; "
+             f"since then:   {minutes} min, {steps} steps, no new badge, map or event, {tiles} new tiles; "
              f"party {party_text(advance)} -> {party_text(last)}"]
     if minutes >= STALL_MINUTES:
-        lines.append(f"STALLED: no new badge, map or event for {minutes} min (limit {STALL_MINUTES})")
+        lines.append(f"STALLED: no new badge, map or event, and fewer than {TILE_ADVANCE} new tiles, for {minutes} "
+                     f"min (limit {STALL_MINUTES})")
     return lines, minutes
 
 
@@ -90,7 +98,8 @@ def summary(rows):
         print(f"{game:16} {run[:28]:28} {stamp(last['t']):12} {last['steps']:>8} {best_badges:>6} {best_maps:>5} "
               f"{best_events:>6}  {last['subgoals_completed']:>3}/{last['subgoals_total']:<4}  {stalled:>8}  "
               f"{last['map']}{cleared}")
-    print("stalled: minutes since the run last won a badge, reached a new map or set a new story event")
+    print(f"stalled: minutes since the run last won a badge, reached a new map, set a new story event or stood on "
+          f"{TILE_ADVANCE} tiles it had never stood on")
 
 
 def timeline(rows, run):
@@ -107,8 +116,9 @@ def timeline(rows, run):
         if r["new_flags"]:
             changes.append("flags: " + ", ".join(r["new_flags"]))
         party = ", ".join(f"{m['species']} {m['level']}" for m in r["party"])
+        tiles = f"  tiles {r['tiles']} (+{r['new_tiles']})" if "tiles" in r else ""
         print(f"{stamp(r['t'])} {r['kind']:8} step {r['steps']:>7}  badges {len(r['badges'])}  maps {r['maps_reached']}"
-              f"  events {r['events']}  at {r['map']}  [{party}]")
+              f"  events {r['events']}{tiles}  at {r['map']}  [{party}]")
         for change in changes:
             print(f"    + {change}")
     stalled = stall(rs)

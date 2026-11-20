@@ -363,6 +363,10 @@ def check_train_policy(*, steps: int = 4, parameters: dict, action: str = "butto
         reloaded = [r for r in progress_of(session.id) if r["kind"] == "load"]
         if not reloaded or reloaded[0]["maps_reached"] < 1:
             failures.append("a named save did not carry the maps reached across a server restart")
+        if not first or first[-1].get("tiles", 0) < 1:
+            failures.append("a train session's progress records count no tiles stood on")
+        if not reloaded or reloaded[0].get("tiles", 0) < 1 or reloaded[0].get("new_tiles") != 0:
+            failures.append("a named save did not carry the tiles stood on across a server restart")
         if os.path.exists(os.path.join(progress_dir, "clears.jsonl")):
             failures.append("a train session that did not clear its game was recorded as a clear")
 
