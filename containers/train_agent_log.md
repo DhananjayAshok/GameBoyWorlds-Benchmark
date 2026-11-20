@@ -398,3 +398,51 @@ not see it.
   "continue straight along the corridor after beating a trainer"), losing the episode in flight.
 - **Changed `watch_check.py`:** an expectation also counts as met when the run reached a new map, event or badge
   since the check that set it, so a fight won is not judged a stall. Tested on the real records.
+
+## 2026-11-20 15:33: check 24 of our watch: an untested change crashes the run
+
+- **Seen:** fair checks (15:20 met on 7 tiles; 15:29 stuck, `tiles:5` missed), but the 15:30 restart (29cf277,
+  off-screen moves take 2 steps to cross a door threshold) reloaded step 9027 after the run had reached 9348 and
+  Squirtle 13: the in-flight episode ran ~320 steps without a save, and the restart lost it. Then the playthrough
+  crashed at 15:31: `AttributeError: 'OnScreenMoveExecutor' object has no attribute '_steps_taken'`, in fcaa463's
+  change to `GridMoveExecutor._walk` (14:26). That path is rare, so it only now ran; the agent checks code changes
+  with `py_compile` only. No playthrough is running; the agent's session is active and its next check should show
+  it. Left for the agent to find.
+- **To watch:** whether it finds the crash from its check, and whether it starts testing changes on a short fork
+  before the long run (which `AGENTS.md` already asks). If crashes recur, the next step is a test the tool runs
+  before accepting `restarted`.
+
+## 2026-11-20 15:43: check 25 of our watch
+
+- **Seen:** the agent found the crash and fixed it (f14a562, the partial-path code used the wrong attribute name),
+  and restarted the run, which has been playing since 15:37. It did not record that restart as a check or write
+  the crash up in `DEVLOG.md`; the loop ended pass 31 at 15:43 for 12 minutes without a check, and the new pass
+  opened with a fair stuck verdict (`STALLED` 36 min, 94 tiles, `tiles:5` not met). Still `VIRIDIAN_FOREST`.
+- **No change.**
+
+## 2026-11-20 16:04: check 26 of our watch: flailing
+
+- **Seen:** three stuck checks in a row (15:49, 15:55, 16:01), conditions back to the far exit
+  (`map:VIRIDIAN_FOREST_NORTH_GATE`), and a restart at 16:01 with no new commit (still f14a562), which reloaded
+  step 9027 after the run had reached 9157. `watch_check.py` cannot stop a restart the agent does not record.
+  `STALLED` 56 min since the trainer win; 94 tiles. The larger change from its own stall review (commit to a
+  direction or frontier target across episodes) is still unbuilt after about ten small fixes since 13:03.
+- **Note to the agent** (pass ended so the next one reads it): no restarts without a fix; build the committed-target
+  change from its review, test it on a short fork (`forest_commit` from `red_long`) and carry it into `red_long`
+  only if the fork gains tiles faster; use `tiles:<N>` in the forest.
+- **Assessment:** the supervision catches stalls, but the agent's fixes are small and its experiments untested; it
+  does what notes ask more readily than what rules ask. If notes are what move it, the design question is whether
+  a stronger reviewer (us, or a stronger model) should write them on a schedule.
+
+## 2026-11-20 16:25: check 27 of our watch: the larger change, on a fork
+
+- **Seen:** the note worked again: the agent built the change from its stall review, 25da7af (the exploration
+  override's frontier target is kept across episodes for the current map segment instead of re-chosen each
+  episode), and is testing it on a fork, `forest_commit` from `red_long`, with `tiles:5`. Result so far is worse:
+  828 steps in 15 minutes for 0 new tiles (`red_long` before: 8 tiles in 362 steps). The step rate (about 55 a
+  minute against about 10 usually) suggests the player walking into an obstacle or battles back to back (Squirtle
+  12 to 13). The agent recorded one fork check (16:09); the loop ended pass 33 at 16:22 for 12 minutes without a
+  check. Left for the agent to judge and, by its own test plan, drop.
+- **Pattern:** notes that name a concrete next step get done; rules get complied with in form. Kept for the
+  design question of who writes the notes.
+- **No change.**
