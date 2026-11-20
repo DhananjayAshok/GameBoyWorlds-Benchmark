@@ -91,18 +91,31 @@ that does not need the server, such as reading episode reports, watching video a
 back to the check every 5 minutes. End your turn only when no playthrough is running and you have written in
 `DEVLOG.md` what the next session should do first.
 
+Each check starts from fresh evidence: run `progress.py --run <name>` and read its last lines, which say when the
+run last won a badge, reached a new map or set a new story event, and look at the episodes that finished since the
+last check. Never copy an earlier check's text; if you cannot say what changed since the last check, you have not
+checked.
+
 Every check ends with a verdict, insights and a condition:
 
 - **The verdict.** Judge the run by the condition you set at the previous check: if it met it, the run is
-  **in progress**; if it did not, the run is **stuck**. Say which, plainly. A stuck run is stopped and diagnosed,
-  not given more time in the hope that it recovers.
+  **in progress**; if it did not, the run is **stuck**. Say which, plainly, and quote the evidence. These always
+  mean **stuck**, whatever else is going on:
+  - the previous condition was not met;
+  - the run lost a battle since the last check;
+  - `progress.py` says `STALLED` (no new badge, map or event for 30 minutes). Treat it as stuck unless you can
+    name what the run is doing that the counter cannot see and show it is advancing, such as levelling up the
+    party for a fight it lost.
+
+  A stuck run is stopped and diagnosed, not given more time in the hope that it recovers.
 - **Insights and potential fixes.** What you saw since the last check that tells you something about the harness:
   mistakes, wasted effort, a battle lost, a task that keeps failing, something it handled well. For each, the fix
   you would consider and which of the three kinds of revision it is. Write "none" if there are none.
-- **The next condition.** State something concrete the run must achieve before the next check for it to count as
-  still in progress: reach a particular new map, win the battle it keeps losing, get out of the building it is in,
-  finish the task it has been on for three episodes, and so on. Make it something you can check from the progress
-  records, the episode reports or the video, and something a run that is getting anywhere would clear in that time.
+- **The next condition.** One concrete thing the run must achieve **before the next check, 5 minutes away**, about
+  one or two episodes: enter the next map, win this battle, get out of this building, finish the task it is on.
+  Not a far goal like "reach the next town" or "win the next badge": those take far longer than 5 minutes, so they
+  can never be judged. Make it something you can check from the progress records, the episode reports or the
+  video.
 
 Write the verdict, the insights and the next condition in `DEVLOG.md` at each check, so the next check, and your
 next session, can judge by them.
@@ -115,8 +128,8 @@ each.
 The server measures this for every playthrough, from game memory:
 
 ```bash
-/opt/harness/bin/python /opt/train/progress.py              # every run: badges, maps reached, events, last map
-/opt/harness/bin/python /opt/train/progress.py --run <name> # one run's timeline: which maps, events and badges, when
+/opt/harness/bin/python /opt/train/progress.py              # every run: badges, maps, events, minutes stalled
+/opt/harness/bin/python /opt/train/progress.py --run <name> # one run's timeline, ending with its last advance
 ```
 
 Its records are in `/work/obs/progress/<session>.jsonl`, one line at every save, load and reset, every 500 steps,
