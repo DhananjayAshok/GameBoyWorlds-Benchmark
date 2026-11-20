@@ -6,6 +6,7 @@ from typing import Optional
 from utils import log_warn
 
 PERIODIC_STEPS = 500
+PERIODIC_SECONDS = 120
 CLEARS_FILE = "clears.jsonl"
 
 
@@ -35,6 +36,7 @@ class Progress:
         self._reported_events: set = set(self._events())
         self._reported_flags: set = set(self._flags())
         self._written_at = 0
+        self._written_time = time.time()
         os.makedirs(directory, exist_ok=True)
 
     def _events(self) -> list:
@@ -88,11 +90,14 @@ class Progress:
             self._tile_count += 1
 
     def due(self, *, steps: int) -> bool:
-        return steps - self._written_at >= PERIODIC_STEPS
+        if steps - self._written_at >= PERIODIC_STEPS:
+            return True
+        return steps != self._written_at and time.time() - self._written_time >= PERIODIC_SECONDS
 
     def write(self, *, kind: str, steps: int, subgoals: Optional[dict], success: Optional[float],
               save: Optional[str] = None) -> dict:
         self._written_at = steps
+        self._written_time = time.time()
         events = self._events()
         flags = self._flags()
         party = _call(self.memory.party, [])

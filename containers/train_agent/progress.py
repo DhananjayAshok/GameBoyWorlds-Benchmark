@@ -26,7 +26,7 @@ def records(directory):
 
 STALL_MINUTES = 30
 TILE_ADVANCE = 25
-SETUP_KINDS = ("reset", "load")
+SETUP_KINDS = ("reset", "load", "close")
 
 
 def stamp(t):
