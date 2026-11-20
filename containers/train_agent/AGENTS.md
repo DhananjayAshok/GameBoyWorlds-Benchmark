@@ -105,9 +105,16 @@ Every check ends with a verdict, insights and a condition:
   - the run lost a battle since the last check;
   - `progress.py` says `STALLED` (no new badge, map or event for 30 minutes). Treat it as stuck unless you can
     name what the run is doing that the counter cannot see and show it is advancing, such as levelling up the
-    party for a fight it lost.
+    party for a fight it lost. New squares on the harness's own map do not count: any wandering adds those.
 
-  A stuck run is stopped and diagnosed, not given more time in the hope that it recovers.
+  A stuck run is stopped and diagnosed, not given more time in the hope that it recovers. **The diagnosis comes
+  before the run restarts**, and is written in `DEVLOG.md`: go through the episode reports and the video since the
+  run's last advance, name the tasks that failed or went round in circles, say why each one failed (what the
+  player saw, what it decided, what went wrong), and fix that. Fixing something else, however worthwhile, is not
+  a diagnosis of this stall. Restarting a stalled run with no change to the harness is not allowed.
+- **Where the player is.** Take it from `progress.py` (the map it was last seen on), not from the harness's own
+  reports and task text: those say what the harness believes, and it can be wrong. When the two disagree, say so;
+  that disagreement is itself an insight about the harness.
 - **Insights and potential fixes.** What you saw since the last check that tells you something about the harness:
   mistakes, wasted effort, a battle lost, a task that keeps failing, something it handled well. For each, the fix
   you would consider and which of the three kinds of revision it is. Write "none" if there are none.
@@ -115,7 +122,7 @@ Every check ends with a verdict, insights and a condition:
   one or two episodes: enter the next map, win this battle, get out of this building, finish the task it is on.
   Not a far goal like "reach the next town" or "win the next badge": those take far longer than 5 minutes, so they
   can never be judged. Make it something you can check from the progress records, the episode reports or the
-  video.
+  video. One thing, with no "or" fallback such as "or map new squares" that the run meets whatever it does.
 
 Write the verdict, the insights and the next condition in `DEVLOG.md` at each check, so the next check, and your
 next session, can judge by them.
