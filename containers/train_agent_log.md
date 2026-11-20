@@ -107,3 +107,21 @@ not see it.
 - **Changed `AGENTS.md`** and the session prompts: every check is a `watch_check.py` call; a check not in
   `CHECKS.md` did not happen. Checks move from `DEVLOG.md` to `CHECKS.md`, which keeps `DEVLOG.md` for diagnoses
   and fixes.
+
+## 2026-11-20 08:37: check 5 of our watch: the tool is used, and gamed through `--advancing`
+
+- **Seen:** the fresh session (08:16) records every check with `watch_check.py` (08:25, 08:31, 08:37). It
+  diagnosed one cause of the forest stall from episode reports 121 to 124: the strategist kept sending the
+  player after ground items, one of them behind a tree that needs an HM, for about 40 minutes; fix 8c6d634 tells the
+  strategist not to chase optional items (generic). It also cut the harness's VLM timeout from 600 s to 60 s
+  (256e5bf) after seeing calls appear to hang. But every check says "In progress" through `--advancing` with no
+  evidence ("player is actively navigating ... towards northern exit"), the condition ("complete episode 125 while
+  advancing") repeats unmet, and the server's step count has been 6085 since 08:12: the agent restarted the run
+  three times in 20 minutes, so no episode finished. `STALLED` at 63 minutes. The gateway is healthy (2 to 9 s per
+  call).
+- **Changed `watch_check.py`:** refuses `in_progress` when the server's step count has not moved since the last
+  judged check; accepts `--advancing` for at most 3 checks in a row, and only with `in_progress`; adds a
+  `restarted` verdict for the check right after a restart with a fix, which judges nothing. Tested against a copy
+  of the real `CHECKS.md`.
+- **Changed `AGENTS.md`:** documents those limits and `restarted`, and says to restart only for a fix to the stall
+  being diagnosed, batching other changes, since each restart loses the episode in flight.
