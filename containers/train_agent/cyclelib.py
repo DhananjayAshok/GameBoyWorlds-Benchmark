@@ -186,7 +186,7 @@ def cleared_games():
 
 def signal(run, since, now=None):
     now = now or time.time()
-    played = [r for r in progress_records(run) if r["kind"] not in SETUP_KINDS]
+    played = [r for r in progress_records(run) if r["kind"] not in SETUP_KINDS and r["t"] <= now]
     if not played:
         return {"recommendation": "unclear", "text": "The server has no progress records for this run yet."}
 
@@ -197,6 +197,15 @@ def signal(run, since, now=None):
 
     window = [r for r in played if r["t"] > since]
     last = played[-1]
+    before = [r for r in played if r["t"] <= since]
+    steps_window = last["steps"] - (before[-1]["steps"] if before else played[0]["steps"])
+    seconds_window = max(1.0, now - since)
+    if steps_window > 0:
+        acting = (f"{steps_window} steps in the last {seconds_window / 60:.0f} minutes: the harness is acting "
+                  "on the game, so it is not frozen, whatever the trajectory and video show.")
+    else:
+        acting = (f"No steps in the last {seconds_window / 60:.0f} minutes: the game has received no action, so "
+                  "the harness is waiting on a model call or is frozen. Its log says which.")
     fresh = [r for r in played if r.get("new_tiles", 0) > 0 or r.get("new_maps")]
     quiet_from = fresh[-1] if fresh else played[0]
     quiet_minutes = (now - quiet_from["t"]) / 60
@@ -221,6 +230,7 @@ def signal(run, since, now=None):
         f"records every 30 seconds of play, so later events are not in it yet): at {last.get('map')}, step "
         f"{last['steps']}, {badges} badge(s), {last.get('maps_reached')} maps "
         f"reached, {last.get('tiles')} grid spots stood on in all.",
+        f"Steps taken: {acting}",
         f"Since the last check: {sum(r.get('new_tiles', 0) for r in window)} new grid spots, new maps: "
         f"{sorted({m for r in window for m in r.get('new_maps', [])}) or 'none'}.",
         f"Last 15 minutes: {tiles_15} new grid spots, new maps: {maps_15 or 'none'}.",
@@ -231,7 +241,7 @@ def signal(run, since, now=None):
         f"CONTROLLER RECOMMENDATION: {recommendation.upper()} ({why}).",
     ]
     return {"recommendation": recommendation, "why": why, "text": "\n".join(lines), "map": last.get("map"),
-            "steps": last["steps"], "tiles": last.get("tiles"), "maps_reached": last.get("maps_reached"),
+            "steps": last["steps"], "steps_window": steps_window, "tiles": last.get("tiles"), "maps_reached": last.get("maps_reached"),
             "badges": badges, "new_tiles_window": sum(r.get("new_tiles", 0) for r in window),
             "new_tiles_15": tiles_15, "new_tiles_30": tiles_30, "quiet_minutes": round(quiet_minutes, 1)}
 
@@ -322,8 +332,10 @@ def digest(run, since, until, label, describe=True, text_limit=700):
     lines += ["", "## What the harness intended, planned, tried and concluded (its own record; it can be wrong)", ""]
     events = trajectory(run, since, until)
     if not events:
-        lines.append("No trajectory events in this window: no episode started or finished, or the harness has "
-                     "stopped writing trajectory.jsonl, which is itself a harness problem.")
+        lines.append("No trajectory events in this window. The harness records a plan when it is made and an "
+                     "executor leg when the leg ends, so an empty window means one long model call or one long leg "
+                     "is under way. Whether the game is still being played is the 'Steps taken' line above; only "
+                     "no steps at all means the harness has stopped.")
     for e in events:
         text = e["text"] if len(e["text"]) <= text_limit else e["text"][:text_limit] + " [...]"
         lines.append(f"- {stamp(e['t'])} episode {e['episode']} {e['layer']} {e['kind']} (step {e.get('steps')}): "
@@ -331,7 +343,10 @@ def digest(run, since, until, label, describe=True, text_limit=700):
     lines += ["", "## What the screen showed", ""]
     sheets = frame_sheets(run, since, until, os.path.join(directory, "frames"), label) if directory else []
     if not sheets:
-        lines.append("No finished video in this window (a video file closes when an episode ends).")
+        lines.append("No frames in this window. A video file only becomes readable when the harness next saves, at "
+                     "the end of an episode, so a missing video means the episode is still running, not that "
+                     "nothing happened. Judge whether the player moved from the 'Steps taken' line and the server "
+                     "records above.")
     else:
         lines.append("Frame sheets, in time order: " + ", ".join(sheets))
         if describe:
