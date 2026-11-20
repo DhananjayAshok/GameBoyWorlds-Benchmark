@@ -165,7 +165,8 @@ tool. A check that is not in `CHECKS.md` did not happen.
 
 Use `--verdict restarted` for the check right after you restart a run with a fix: there is nothing to judge yet.
 Restarting costs the episode in flight, so restart for a fix to the stall you are diagnosing, not for every
-change; batch other changes until the next restart.
+change; batch other changes until the next restart. Two restarts in a row are refused: judge the fix you started
+(a stuck or in_progress check) before starting another, or you will never know which change did what.
 
 **Judging progress.** Progress is how far into the game a run gets: badges won, new maps reached and new story
 events. Fewer model calls, fewer episodes or more episodes ending `completed` mean nothing if the run gets no
