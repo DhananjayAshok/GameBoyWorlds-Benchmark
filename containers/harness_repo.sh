@@ -15,7 +15,10 @@
 #                                   into it, writing <note_file> for the agent when that cannot be done cleanly
 #
 # A harness is used as `cd /work/harness; python run_playthrough.py --remote --game <game> --name <name>
-# --model <model> --vlm_kind gateway [--max_episodes <n>] [--resume_run <name>]`.
+# --model <model> --vlm_kind gateway --record_dir <dir> [--max_episodes <n>] [--start_checkpoint <run>:<id>]`.
+# In <dir> it keeps checkpoints.jsonl (id, t, episode, steps, server_save, memory: every point the run can be
+# forked from with --start_checkpoint) and trajectory.jsonl (t, episode, layer, kind, steps, text: its
+# intentions, plans, attempts and outcomes). containers/train_agent/cycle.py relies on both.
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -111,14 +114,14 @@ prepare_worktree() {
     if git_agent "$worktree" merge -q --no-edit -m "Merge upstream harness changes" upstream >/dev/null 2>&1; then
         echo "harness: merged upstream $(git -C "$worktree" rev-parse --short upstream) into $(git -C "$worktree" rev-parse --abbrev-ref HEAD)"
         cat >> "$note" <<EOF
-Changes from outside the sandbox were merged into your harness (branch upstream, commit $(git -C "$worktree" rev-parse --short upstream)). Read them with \`git log -p HEAD^2 --not HEAD^1\` in /work/harness before you go on, and note them in DEVLOG.md.
+Changes from outside the sandbox were merged into your harness (branch upstream, commit $(git -C "$worktree" rev-parse --short upstream)). Read them with \`git log -p HEAD^2 --not HEAD^1\` in /work/harness before you go on.
 EOF
         return
     fi
     git -C "$worktree" merge --abort || true
     echo "harness: upstream does not merge cleanly into $(git -C "$worktree" rev-parse --abbrev-ref HEAD); left for the agent"
     cat >> "$note" <<EOF
-There are changes from outside the sandbox on branch upstream (commit $(git -C "$worktree" rev-parse --short upstream)) that do not merge cleanly into your branch. Merge them yourself first (\`git merge upstream\` in /work/harness), resolving each conflict so that both your fix and theirs survive, and note what you did in DEVLOG.md.
+There are changes from outside the sandbox on branch upstream (commit $(git -C "$worktree" rev-parse --short upstream)) that do not merge cleanly into your branch. Merge them yourself first (\`git merge upstream\` in /work/harness), resolving each conflict so that both your fix and theirs survive, and commit the merge.
 EOF
 }
 

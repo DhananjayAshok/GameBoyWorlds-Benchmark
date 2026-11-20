@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
-# Run prime-agent in a train sandbox, developing a harness on its own until it finishes or gives up, /work/STOP
-# exists, the spending cap is reached, or --time_limit passes.
+# Run prime-agent in a train sandbox, developing a harness on its own, in the fixed cycle that
+# containers/train_agent/cycle.py drives, until both games are cleared, /work/STOP exists, the spending cap is
+# reached, or --time_limit passes.
 #
 #     bash containers/run_train_agent.sh --name <run> --harness strategist --model google/gemini-3.6-flash \
-#         --max_cost 1000
+#         --max_cost 1000 [--from_run <earlier run>]
 #
 # A run is named once and kept in <runs_root>/<run> (default: $storage_dir/env_server/runs). A new name starts
-# from the current main of harnesses/<harness> on a branch of its own, agent/<run>; an existing name continues
-# where it stopped, and must name the harness it started from (recorded in <run_dir>/run.json, with the commit
-# it started from and every launch). The starting harness itself is never changed by a run.
+# from the current main of harnesses/<harness> on a branch of its own, agent/<run>, or with --from_run from the
+# harness branch of that earlier run; an existing name continues where it stopped, and must name the harness
+# it started from (recorded in <run_dir>/run.json, with the commit it started from and every launch). The
+# starting harness itself is never changed by a run.
 #
 # The run's branches are pushed to runs/<run>/ at harness_remote (configs/project_vars.yaml), or --push_url;
-# --no_push keeps them in the run directory only. Its instructions are containers/train_agent/AGENTS.md.
-# To stop it: touch <run_dir>/work/STOP. Exits 0 when the agent finished and the server confirms both games
-# cleared, 3 when it gave up.
+# --no_push keeps them in the run directory only. The agent's rules are containers/train_agent/AGENTS.md and
+# its step prompts containers/train_agent/prompts/. To stop it: touch <run_dir>/work/STOP. Exits 0 when the
+# server confirms both games cleared, 1 when the agent's calls keep failing at once.
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -27,9 +29,10 @@ MODEL=""
 MAX_COST=1000
 TIME_LIMIT=""
 PUSH_URL="${harness_remote:-}"
+FROM_RUN=""
 PYTHON=setup/.venv/bin/python
 
-usage() { sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 1; }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -41,6 +44,7 @@ while [[ $# -gt 0 ]]; do
         --time_limit) TIME_LIMIT="$2"; shift 2 ;;
         --push_url) PUSH_URL="$2"; shift 2 ;;
         --no_push) PUSH_URL=""; shift ;;
+        --from_run) FROM_RUN="$2"; shift 2 ;;
         *) usage ;;
     esac
 done
@@ -52,6 +56,19 @@ HARNESS_REPO="harnesses/$HARNESS"
     || die "no harness $HARNESS at $HARNESS_REPO; make it with containers/harness_repo.sh sync $HARNESS"
 RUN_DIR="$RUNS_ROOT/$NAME"
 mkdir -p "$RUN_DIR"
+if [[ -n "$FROM_RUN" && ! -d "$RUN_DIR/work/harness/.git" ]]; then
+    SOURCE="$RUNS_ROOT/$FROM_RUN/work/harness"
+    [[ -d "$SOURCE/.git" ]] || die "no harness of an earlier run at $SOURCE"
+    [[ -z "$(git -C "$SOURCE" status --porcelain)" ]] || die "$SOURCE has uncommitted changes; commit them first"
+    mkdir -p "$RUN_DIR/work"
+    git clone -q --no-tags "$SOURCE" "$RUN_DIR/work/harness"
+    git -C "$RUN_DIR/work/harness" fetch -q --no-tags origin upstream:upstream
+    git -C "$RUN_DIR/work/harness" remote remove origin
+    git -C "$RUN_DIR/work/harness" branch -q -m "agent/$NAME"
+    git -C "$RUN_DIR/work/harness" config user.name "train agent"
+    git -C "$RUN_DIR/work/harness" config user.email "agent@train-sandbox"
+    echo "run $NAME: harness copied from run $FROM_RUN at $(git -C "$RUN_DIR/work/harness" rev-parse --short HEAD)"
+fi
 
 "$PYTHON" - "$RUN_DIR" "$NAME" "$HARNESS" "$HARNESS_REPO" "$MODEL" "$MAX_COST" "$PUSH_URL" <<'PY'
 import datetime, json, os, subprocess, sys
@@ -84,4 +101,4 @@ PY
 args=(--kind train --run_dir "$RUN_DIR" --model "$MODEL" --max_cost "$MAX_COST" --harness_repo "$HARNESS_REPO")
 [[ -z "$PUSH_URL" ]] || args+=(--push_url "$PUSH_URL" --push_prefix "runs/$NAME")
 [[ -z "$TIME_LIMIT" ]] || args+=(--time_limit "$TIME_LIMIT")
-exec bash containers/run_sandbox.sh "${args[@]}" -- sh /opt/train/agent_loop.sh
+exec bash containers/run_sandbox.sh "${args[@]}" -- /opt/harness/bin/python /opt/train/cycle.py
