@@ -650,8 +650,8 @@ class PokemonStrategist:
     def _env_steps(self) -> Optional[int]:
         return getattr(getattr(self._env, "_emulator", None), "step_count", None)
 
-    def _record_supervisor(self, report: SupervisorReport, n: int) -> None:
-        for event in report.event_log:
+    def _record_supervisor(self, events: List[Any], n: int) -> None:
+        for event in events:
             if isinstance(event, SupervisorVLMCallRecord):
                 if event.stage == "perception":
                     continue
@@ -743,8 +743,17 @@ class PokemonStrategist:
 
         self._record.event(episode=n, layer="strategist", kind="intention", steps=self._env_steps(),
                            text=f"Task: {task}" + (f"\nGuidance: {guidance}" if guidance else ""))
+        recorded = 0
+
+        def record_so_far(_event=None) -> None:
+            nonlocal recorded
+            events = supervisor.report.event_log
+            self._record_supervisor(events[recorded:], n)
+            recorded = len(events)
+
+        listeners = [self.npcs.on_env_step] if self.npcs is not None else []
         env = MappingEnvironment(self._env, self.global_map, self.tiles, self._parameters,
-                                 listeners=[self.npcs.on_env_step] if self.npcs is not None else [])
+                                 listeners=listeners + [record_so_far])
         warps_from = len(self.global_map.warps)
         supervisor = PokemonPlayThroughSupervisor(
             task=task, env=env, game=self._game, max_steps=self._supervisor_max_steps,
@@ -759,7 +768,7 @@ class PokemonStrategist:
         record.supervisor_report = report
         record.status = str(result.get("status", "unknown"))
         self.report.event_log.append(report)
-        self._record_supervisor(report, n)
+        record_so_far()
         # Let a mid-door-warp black screen clear, so the next task starts from the new place.
         settle_screen(self._env)
         self._name_segments(report, n)
