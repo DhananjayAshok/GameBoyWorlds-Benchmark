@@ -653,6 +653,8 @@ class PokemonStrategist:
     def _record_supervisor(self, report: SupervisorReport, n: int) -> None:
         for event in report.event_log:
             if isinstance(event, SupervisorVLMCallRecord):
+                if event.stage == "perception":
+                    continue
                 self._record.event(episode=n, layer="supervisor", kind="plan", steps=self._env_steps(),
                                    text=f"[{event.stage}] {event.response}")
                 continue
