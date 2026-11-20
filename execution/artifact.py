@@ -62,13 +62,18 @@ class StrategistArtifact(ABC):
         return os.path.join(strategist_dir, f"episode_{episode_number}", cls._filename())
 
     @classmethod
-    def saved_episodes(cls, strategist_dir: str) -> List[int]:
+    def saved_episodes(cls, strategist_dir: str, upto: Optional[int] = None) -> List[int]:
         return sorted(n for n, path in episode_dirs(strategist_dir).items()
-                      if os.path.exists(os.path.join(path, cls._filename())))
+                      if (upto is None or n <= upto) and os.path.exists(os.path.join(path, cls._filename())))
 
     @classmethod
-    def exists(cls, strategist_dir: str) -> bool:
-        return bool(cls.saved_episodes(strategist_dir))
+    def exists(cls, strategist_dir: str, upto: Optional[int] = None) -> bool:
+        return bool(cls.saved_episodes(strategist_dir, upto))
+
+    @classmethod
+    def latest_path(cls, strategist_dir: str, upto: Optional[int] = None) -> Optional[str]:
+        saved = cls.saved_episodes(strategist_dir, upto)
+        return cls._episode_path(strategist_dir, saved[-1]) if saved else None
 
     def save(self, strategist_dir: str, episode_number: int, parameters: Optional[dict] = None) -> Optional[str]:
         if self.last_written is not None and self.last_written != episode_number:

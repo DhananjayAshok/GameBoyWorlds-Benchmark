@@ -15,7 +15,8 @@ from execution.perception.pokemon.tiles import TileRecognizer, verbalize_tiles
 from execution.pokemon.executors import CombatExecutor
 from execution.pokemon.supervisors import PokemonPlayThroughSupervisor
 from execution.report import (EnvironmentStepRecord, ExecutorVLMCallRecord, SupervisorReport, SupervisorVLMCallRecord,
-                              per_prompt_token_counts)
+                              action_name, per_prompt_token_counts)
+from execution.run_record import RunRecord
 from execution.strategist.pokemon import prompts as P
 from execution.strategist.pokemon.asking import ask, single_value
 from execution.strategist.pokemon.goals import (GoalNode, GoalSubtree, PokemonGoalTree, check_goals,
@@ -89,6 +90,8 @@ class PokemonStrategist:
         override_goal: Optional[str] = None,
         npc_registry: bool = True,
         parameters: Optional[dict] = None,
+        resume_episode: Optional[int] = None,
+        record_dir: Optional[str] = None,
         **supervisor_kwargs: Any,
     ) -> None:
         self._env = env
@@ -116,12 +119,21 @@ class PokemonStrategist:
 
         self._dir = playthrough_dir(self._parameters, game=game, name=name)
         self._resume_run = resume_run
+        self._resume_episode = resume_episode
         self._resume_dir = self._dir
         if resume_run is not None and resume_run != name:
             if os.path.exists(self._dir):
                 log_error(f"resume_run={resume_run!r} would fork that run's state into {name!r}, "
                           f"but {self._dir} already exists.", self._parameters)
             self._resume_dir = playthrough_dir(self._parameters, game=game, name=resume_run)
+        if resume_episode is not None:
+            if self._resume_dir == self._dir:
+                log_error("resume_episode forks another run at one of its episodes, so it needs resume_run "
+                          "naming that run.", self._parameters)
+            if resume_episode not in episode_dirs(self._resume_dir):
+                log_error(f"Run {resume_run!r} has no episode {resume_episode} under {self._resume_dir!r}.",
+                          self._parameters)
+        self._record = RunRecord(record_dir, name, self._parameters)
 
         self.tiles = self._load_or_default(
             TileRecognizer, lambda: TileRecognizer(name=name, game=game, parameters=self._parameters))
@@ -140,6 +152,8 @@ class PokemonStrategist:
 
         resumed_from = episode_dirs(self._resume_dir)
         self.start_episode = (max(resumed_from) + 1) if resumed_from else 0
+        if resume_episode is not None:
+            self.start_episode = resume_episode + 1
         self._override_goal = override_goal
         if override_goal is not None and self.start_episode == 0:
             self.goals.tree = GoalSubtree.create_tree(
@@ -186,6 +200,7 @@ class PokemonStrategist:
             "report_detail": self._report_detail,
             "storage": self._dir,
             "resume_run": self._resume_run,
+            "resume_episode": self._resume_episode,
             "resume_dir": self._resume_dir,
             "supervisor_kwargs": dict(self._supervisor_kwargs),
             "override_goal": self._override_goal,
@@ -221,8 +236,9 @@ class PokemonStrategist:
         return os.path.join(self._dir, filename)
 
     def _load_or_default(self, cls, factory: Callable[[], Any]) -> Any:
-        if cls.exists(self._resume_dir):
-            artifact = cls.load(self._resume_dir, parameters=self._parameters)
+        saved = cls.saved_episodes(self._resume_dir, self._resume_episode)
+        if saved:
+            artifact = cls.load(self._resume_dir, saved[-1], parameters=self._parameters)
             if self._resume_dir != self._dir:
                 artifact.last_written = None
             return artifact
@@ -625,7 +641,27 @@ class PokemonStrategist:
             artifacts.append(self.npcs)
         for artifact in artifacts:
             artifact.save(self._dir, episode_number, parameters=self._parameters)
-        self._env.save_custom_state(self._emulator_state_name(self._name, episode_number))
+        state_name = self._emulator_state_name(self._name, episode_number)
+        self._env.save_custom_state(state_name)
+        memory = [type(artifact).latest_path(self._dir, episode_number) for artifact in artifacts]
+        self._record.checkpoint(checkpoint_id=episode_number, episode=episode_number, steps=self._env_steps(),
+                                server_save=state_name, memory=[path for path in memory if path])
+
+    def _env_steps(self) -> Optional[int]:
+        return getattr(getattr(self._env, "_emulator", None), "step_count", None)
+
+    def _record_supervisor(self, report: SupervisorReport, n: int) -> None:
+        for event in report.event_log:
+            if isinstance(event, SupervisorVLMCallRecord):
+                self._record.event(episode=n, layer="supervisor", kind="plan", steps=self._env_steps(),
+                                   text=f"[{event.stage}] {event.response}")
+                continue
+            actions = ", ".join(action_name(step) if isinstance(step, EnvironmentStepRecord) else "invalid reply"
+                                for step in event.steps)
+            hint = (event.init_kwargs or {}).get("hint")
+            self._record.event(episode=n, layer="executor", kind="attempt", steps=self._env_steps(),
+                               text=f"Leg: {event.task}" + (f"\nHint: {hint}" if hint else "")
+                               + f"\nActions: {actions or 'none'}\nEnded: {event.termination_reason}")
 
     @staticmethod
     def _emulator_state_name(run_name: str, episode_number: int) -> str:
@@ -703,6 +739,8 @@ class PokemonStrategist:
             self._finish_episode(record, calls_from)
             return record
 
+        self._record.event(episode=n, layer="strategist", kind="intention", steps=self._env_steps(),
+                           text=f"Task: {task}" + (f"\nGuidance: {guidance}" if guidance else ""))
         env = MappingEnvironment(self._env, self.global_map, self.tiles, self._parameters,
                                  listeners=[self.npcs.on_env_step] if self.npcs is not None else [])
         warps_from = len(self.global_map.warps)
@@ -719,6 +757,7 @@ class PokemonStrategist:
         record.supervisor_report = report
         record.status = str(result.get("status", "unknown"))
         self.report.event_log.append(report)
+        self._record_supervisor(report, n)
         # Let a mid-door-warp black screen clear, so the next task starts from the new place.
         settle_screen(self._env)
         self._name_segments(report, n)
@@ -793,6 +832,8 @@ class PokemonStrategist:
             except Exception as e:
                 log_warn(f"NPC registry end-of-episode failed and was skipped: {type(e).__name__}: {e}",
                          self._parameters)
+        self._record.event(episode=record.n, layer="strategist", kind="outcome", steps=self._env_steps(),
+                           text=f"Status: {record.status}. {record.summary}")
         self.save_all(record.n)
         self._archive_episode(record, calls_from)
 
