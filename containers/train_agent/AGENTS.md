@@ -128,16 +128,21 @@ Every check ends with a verdict, insights and a condition:
 
 ```bash
 /opt/harness/bin/python /opt/train/watch_check.py --run <name>   # the run's state, and the condition you set last
-/opt/harness/bin/python /opt/train/watch_check.py --run <name> --verdict stuck|in_progress \
+/opt/harness/bin/python /opt/train/watch_check.py --run <name> --verdict stuck|in_progress|restarted \
     --evidence "<what you looked at since the last check, and what changed>" \
     --insights "<insights and potential fixes, with the kind of revision>" --condition "<one thing, 5 minutes>"
 ```
 
 It appends the check to `/work/CHECKS.md`, with the server's view of the run and the condition you set at the
 previous check, so the next check and your next session can judge by them. It refuses an `in_progress` verdict
-while the run is `STALLED` (unless `--advancing` says what the run is doing that the counter cannot see) and a
-condition with an "or" in it. When it refuses, the check is not recorded: fix the verdict, do not argue with the
+while the run is `STALLED` (unless `--advancing` says what the run is doing that the counter cannot see, which it
+accepts for at most three checks in a row), while the server's step count has not moved since the last check, and
+a condition with an "or" in it. When it refuses, the check is not recorded: fix the verdict, do not argue with the
 tool. A check that is not in `CHECKS.md` did not happen.
+
+Use `--verdict restarted` for the check right after you restart a run with a fix: there is nothing to judge yet.
+Restarting costs the episode in flight, so restart for a fix to the stall you are diagnosing, not for every
+change; batch other changes until the next restart.
 
 **Judging progress.** Progress is how far into the game a run gets: badges won, new maps reached and new story
 events. Fewer model calls, fewer episodes or more episodes ending `completed` mean nothing if the run gets no
