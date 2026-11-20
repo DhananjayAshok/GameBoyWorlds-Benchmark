@@ -4,6 +4,8 @@ PASS_SECONDS="${TRAIN_PASS_SECONDS:-10800}"
 FRESH_SECONDS="${TRAIN_FRESH_SECONDS:-43200}"
 IDLE_SECONDS="${TRAIN_IDLE_SECONDS:-600}"
 WATCH_GAP_SECONDS="${TRAIN_WATCH_GAP_SECONDS:-240}"
+CHECK_SECONDS="${TRAIN_CHECK_SECONDS:-720}"
+CHECKS=/work/CHECKS.md
 QUICK_SECONDS=120
 QUICK_BEFORE_FRESH=3
 QUICK_BEFORE_STOP=6
@@ -33,6 +35,16 @@ session_age() {
     echo $(( $(date +%s) - $(stat -c %Y "$latest") ))
 }
 
+check_age() {
+    since="$1"
+    last="$since"
+    if [ -f "$CHECKS" ]; then
+        written="$(stat -c %Y "$CHECKS")"
+        [ "$written" -gt "$last" ] && last="$written"
+    fi
+    echo $(( $(date +%s) - last ))
+}
+
 while [ ! -e /work/STOP ]; do
     now="$(date +%s)"
     conversation_started=0
@@ -59,12 +71,21 @@ $(cat "$note")"
         > "/work/agent_logs/pass_$n.log" 2>&1 &
     pid=$!
     idle=0
+    unchecked=0
     while kill -0 "$pid" 2>/dev/null; do
         sleep 30
+        playthrough_running || continue
         age="$(session_age)"
-        if [ "$age" -ge "$IDLE_SECONDS" ] && playthrough_running && kill -0 "$pid" 2>/dev/null; then
+        if [ "$age" -ge "$IDLE_SECONDS" ] && kill -0 "$pid" 2>/dev/null; then
             echo "pass $n idle for ${age}s with a playthrough running; ending it" >> "$log"
             idle="$age"
+            kill -TERM "$pid" 2>/dev/null
+            break
+        fi
+        age="$(check_age "$started")"
+        if [ "$age" -ge "$CHECK_SECONDS" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "pass $n recorded no check for ${age}s with a playthrough running; ending it" >> "$log"
+            unchecked="$age"
             kill -TERM "$pid" 2>/dev/null
             break
         fi
@@ -98,6 +119,14 @@ A game counts as cleared only when the server has seen a playthrough beat its Ch
 EOF
     fi
 
+    if [ "$unchecked" -gt 0 ]; then
+        quick=0
+        cat >> "$note" <<EOF
+Your last session went $((unchecked / 60)) minutes without recording a check of the running playthrough in /work/CHECKS.md, so it was ended for you. /work/AGENTS.md says to record a check with /opt/train/watch_check.py every 5 minutes, whether or not an episode has finished: waiting for something to change is not a check. Record one now, judged by the condition you set last, and if the tool says the run is stuck, stop it and diagnose it.
+EOF
+        sleep 5
+        continue
+    fi
     if [ "$idle" -gt 0 ] || playthrough_running; then
         quick=0
         cat >> "$note" <<EOF
