@@ -255,3 +255,16 @@ not see it.
   scans clean. Synced into `harnesses/strategist` and published, so the relaunch merges it into the agent's branch.
 - **Changed `AGENTS.md`:** directions count as walkthrough knowledge ("the exit is to the north" is one map's
   layout), and names `agnostic_check.py` and the gate.
+
+## 2026-11-20 11:57: check 14 of our watch: watching without checking
+
+- **Seen:** the note worked: the agent replaced its compass rule with a direction-agnostic one (7003b34, "prefer
+  exits not yet tried") and restarted. But `red_long` is now circling: 255 steps between 11:39 and 11:54 reached 1
+  new tile; `STALLED` 51 min. The agent is in its turn, sleeping in 3-minute chunks "for episode 1 to finish",
+  and has recorded no check since 11:39 (18 min): it checks only when an episode ends, so the tool never gets to
+  force the stuck verdict.
+- **Changed `agent_loop.sh`:** while a playthrough runs, a session that has recorded nothing in `CHECKS.md` for 12
+  minutes (counted from the later of the pass start and the file's last write) is ended, and resumed 5 seconds
+  later with a note: record a check now, every 5 minutes whether or not an episode finished. The idle rule (10 min
+  without any transcript activity) stays. Checked with `sh -n`; the relaunch is its test.
+- **Changed `AGENTS.md`** to say both.
