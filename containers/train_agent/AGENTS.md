@@ -136,8 +136,10 @@ Every check ends with a verdict, insights and a condition:
 It appends the check to `/work/CHECKS.md`, with the server's view of the run and the condition you set at the
 previous check, so the next check and your next session can judge by them. It refuses an `in_progress` verdict
 while the run is `STALLED` (unless `--advancing` says what the run is doing that the counter cannot see, which it
-accepts for at most three checks in a row), while the server's step count has not moved since the last check, and
-a condition with an "or" in it. When it refuses, the check is not recorded: fix the verdict, do not argue with the
+accepts for at most three checks in a row), while the server's step count has not moved since the last check, a
+condition with an "or" in it, and a condition about an episode finishing rather than something the player does.
+Each check records the harness commit; `restarted` is refused unless the harness has a new commit since the last
+check. When it refuses, the check is not recorded: fix the verdict, do not argue with the
 tool. A check that is not in `CHECKS.md` did not happen.
 
 Use `--verdict restarted` for the check right after you restart a run with a fix: there is nothing to judge yet.

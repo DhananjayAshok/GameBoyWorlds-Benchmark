@@ -1,6 +1,7 @@
 import argparse
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 
@@ -11,7 +12,10 @@ CHECKS_FILE = "/work/CHECKS.md"
 CONDITION_RE = re.compile(r"^- \*\*Next condition\*\*: (.*)$")
 SERVER_RE = re.compile(r"^- \*\*Server\*\*: at \S+, step (\d+)$")
 VERDICT_RE = re.compile(r"^- \*\*Verdict\*\*: (.*)$")
+HARNESS_RE = re.compile(r"^- \*\*Harness\*\*: (\S+)")
+HARNESS_DIR = "/work/harness"
 FALLBACK_RE = re.compile(r"\b(or|and/or)\b", re.IGNORECASE)
+EPISODE_RE = re.compile(r"\bepisodes?\b", re.IGNORECASE)
 MAX_ADVANCING_CHECKS = 3
 VERDICTS = {"in_progress": "In progress", "stuck": "Stuck", "restarted": "Restarted"}
 
@@ -25,7 +29,7 @@ def previous_checks(path, run):
         for line in f:
             line = line.rstrip("\n")
             if line.startswith("## "):
-                current = {"step": None, "verdict": None, "condition": None, "advancing": False}
+                current = {"step": None, "verdict": None, "condition": None, "advancing": False, "harness": None}
                 if "`" in line and line.split("`")[1] == run:
                     checks.append(current)
                 continue
@@ -37,9 +41,22 @@ def previous_checks(path, run):
                 current["verdict"] = match.group(1)
             elif match := CONDITION_RE.match(line):
                 current["condition"] = match.group(1)
+            elif match := HARNESS_RE.match(line):
+                current["harness"] = match.group(1)
             elif line.startswith("- **Advancing, though stalled**"):
                 current["advancing"] = True
     return checks
+
+
+def harness_commit(directory):
+    try:
+        head = subprocess.run(["git", "-C", directory, "rev-parse", "--short", "HEAD"], capture_output=True,
+                              text=True, check=True).stdout.strip()
+        dirty = subprocess.run(["git", "-C", directory, "status", "--porcelain", "--untracked-files=no"],
+                               capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return head + ("+uncommitted" if dirty else "")
 
 
 def previous_condition(path, run):
@@ -93,8 +110,21 @@ def record(args, rows):
                             f"after that is a stall: the verdict is stuck")
     if args.advancing and args.verdict != "in_progress":
         problems.append("--advancing only goes with --verdict in_progress")
+    commit = harness_commit(args.harness)
+    if args.verdict == "restarted":
+        before = checks[-1]["harness"] if checks else None
+        if commit is None or commit.endswith("+uncommitted"):
+            problems.append("restarted needs the fix committed in /work/harness first, so the run is tied to it")
+        elif before == commit:
+            problems.append(f"the harness is still at {commit}, as at the last check: restarted is for the check "
+                            f"right after a restart with a new fix; without one, judge the run (stuck or "
+                            f"in_progress)")
     if FALLBACK_RE.search(args.condition):
         problems.append("the next condition must be one thing, with no 'or' fallback")
+    if EPISODE_RE.search(args.condition):
+        problems.append("the next condition must be something the player does in the game (enter a map, win a "
+                        "battle, leave a building), not an episode finishing: episodes finish whether or not the "
+                        "run gets anywhere")
     if not args.evidence.strip():
         problems.append("--evidence is empty: say what you looked at since the last check and what changed")
     if problems:
@@ -108,6 +138,7 @@ def record(args, rows):
     entry = [f"## `{args.run}` check, {now} UTC", "",
              f"- **Server**: at {last['map']}, step {last['steps']}"]
     entry += [f"  - {line}" for line in lines]
+    entry.append(f"- **Harness**: {commit or 'unknown'}")
     entry += [f"- **Previous condition**: {previous or 'none'}",
               f"- **Verdict**: {verdict}",
               f"- **Evidence**: {args.evidence}"]
@@ -137,6 +168,7 @@ def main():
                         help="only for in_progress on a stalled run: what it is doing that the counter cannot see")
     parser.add_argument("--dir", default=progress.PROGRESS_DIR)
     parser.add_argument("--checks", default=CHECKS_FILE)
+    parser.add_argument("--harness", default=HARNESS_DIR)
     args = parser.parse_args()
     rows = progress.records(args.dir)
     if args.verdict is None:
