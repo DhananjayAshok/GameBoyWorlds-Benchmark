@@ -46,3 +46,24 @@ not see it.
 - **Changed the session prompts** to start each check from `progress.py --run <name>`.
 - Relaunched with a note telling the agent the rules changed and that its compass-bias commit may break the
   game-agnostic rule.
+- **Gotcha:** quitting the screen session ends the running pass, and the loop starts one more pass that dies in
+  the teardown (pass 22, 0 s); that pass takes `next_prompt_note.md` with it. Write the note after the relaunch
+  and end the new pass's prime-agent, so the next pass picks it up. Done here: pass 24 (06:50) took the note, and
+  is a fresh session (every 6th pass is), so it reads `AGENTS.md` from scratch.
+
+## 2026-11-20 07:11: check 1 of our 20-minute watch
+
+- **Seen:** pass 24 read the new rules. Its first check said **Stuck** (quoting `STALLED: 247 min`), and it
+  reverted the compass bias of 39879eb, keeping a general anti-backtracking line (b04a51a). The insights section is
+  now filled in. But:
+  - it restarted the stalled run with only that unrelated fix, without diagnosing why the run cannot get from
+    Viridian City into Viridian Forest;
+  - its next conditions end in "or map new squares", which any wandering meets, so checks 1 to 3 say "In progress"
+    while `progress.py` still says `STALLED` (268 min);
+  - checks 2 and 3 say the player is "moving north up Route 2" while `progress.py` has it in Viridian City: it
+    trusts the harness's own task text.
+- **Changed `AGENTS.md`:** a stuck verdict must be followed, before restarting, by a written diagnosis of the
+  stall from the episode reports and video (which tasks failed or looped, and why) and a fix for it; restarting a
+  stalled run with no harness change is not allowed. New squares on the harness's map do not count as advance.
+  Conditions are one thing with no "or" fallback. The player's location comes from `progress.py`, and a
+  disagreement with the harness's belief is an insight.
