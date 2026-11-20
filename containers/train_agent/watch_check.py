@@ -224,6 +224,11 @@ def record(args, rows):
     commit = harness_commit(args.harness)
     if args.verdict == "restarted":
         before = checks[-1]["harness"] if checks else None
+        if checks and checks[-1]["verdict"] == VERDICTS["restarted"]:
+            problems.append("the last check was also a restart, so the fix it started was never judged; let the "
+                            "run play under it and record a stuck or in_progress check (after at least one "
+                            "progress record) before restarting again, and batch further changes into that "
+                            "restart")
         if commit is None or commit.endswith("+uncommitted"):
             problems.append("restarted needs the fix committed in /work/harness first, so the run is tied to it")
         elif before == commit:

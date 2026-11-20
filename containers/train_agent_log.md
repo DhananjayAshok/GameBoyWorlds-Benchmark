@@ -346,3 +346,18 @@ not see it.
   prompts, and stop to review. What they cannot supply is the quality of its diagnosis: its explanations are
   plausible-sounding and loosely tied to evidence, and it rationalises its own changes. That is the model's
   judgement; more rules of this kind will keep producing compliance in form.
+
+## 2026-11-20 14:08: check 20 of our watch: a real review, then untested restarts
+
+- **Seen:** the note worked. The agent reverted 931d443 (8b8da9c) and rewrote its review: tiles per 100 steps for
+  each fix from the server's records, and a diagnosis of the forest loop that fits the evidence: wild battles in
+  tall grass use up the supervisor's 10 calls, the episode ends `out_of_calls` with no new squares, the strategist
+  reads the tree line as a dead end and sends the player back, a pendulum between two corridors. Its proposed
+  larger change is a direction commitment kept across episodes until a new map is entered. Not built yet; b0e20cd
+  (tell the strategist `out_of_calls` means interrupted, not blocked) is a step toward it. But it then restarted
+  three times in 11 minutes (13:52, 13:54, 14:03) with no judged check between, so no fix was tested; 72dfc5c
+  (supervisor decision parsing) has nothing to do with the stall. `STALLED` 65 min.
+- **Changed `watch_check.py`:** a `restarted` right after another `restarted` is refused: judge the fix first.
+  (A first version also demanded a progress record since the last check; that would have blocked the normal
+  stuck, stop, fix, restart sequence, so it was removed before committing.) Tested both paths on the real records.
+- **Changed `AGENTS.md`** to say so.
