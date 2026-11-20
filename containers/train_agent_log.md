@@ -201,3 +201,22 @@ not see it.
   records.
 - **Changed `AGENTS.md`** to document `--expect`. Live at once in the tool; `AGENTS.md` at the next relaunch,
   meanwhile the tool's refusal explains the new argument.
+
+## 2026-11-20 10:47: check 11 of our watch: the stall counter counts tiles
+
+- **Seen:** the `--expect` rule worked: at 10:36 the tool judged "Enter VIRIDIAN_FOREST_NORTH_GATE" not met and
+  the agent recorded **Stuck**. Its diagnosis was thin ("the forest is a large single map", "the condition was
+  too far") plus an unrelated fix (4f20a1a, 405b192: NPC-card parsing) that unlocked `restarted`; then it switched
+  to `--expect none`. Its one fair point: in a large map, "no new map in 30 minutes" can be true while the player
+  is still exploring, so `STALLED` cannot tell exploring from circling, and the agent's word fills that gap.
+- **Changed `env_server/progress.py`:** the server now records the tiles the player has stood on (map, x, y from
+  game memory, both generations), carried through named saves like maps reached; each record has `tiles` and
+  `new_tiles`. `env_server/check.py` checks tiles are counted and survive a save and a server restart;
+  `run_env_server.py check` passes.
+- **Changed `containers/train_agent/progress.py`:** 25 new tiles since the last advance now count as an advance,
+  so exploring a big map is not `STALLED` and circling over known tiles still is; the timeline shows tiles per
+  record, and the stall lines show new tiles. Older records have no tile counts and read as 0. Saves made before
+  this have no tile history, so the first records after the relaunch will count every tile as new: a short burst
+  of false advances.
+- **Changed `AGENTS.md`** to describe the new `STALLED`. Relaunching, since the env server must restart to count
+  tiles.
