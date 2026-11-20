@@ -21,6 +21,7 @@ HARNESS_DIR = "/work/harness"
 FALLBACK_RE = re.compile(r"\b(or|and/or)\b", re.IGNORECASE)
 EPISODE_RE = re.compile(r"\bepisodes?\b", re.IGNORECASE)
 MAX_ADVANCING_CHECKS = 3
+PROMPT_ONLY_RESTARTS = 2
 VERDICTS = {"in_progress": "In progress", "stuck": "Stuck", "restarted": "Restarted"}
 
 
@@ -92,6 +93,24 @@ def judge_expect(expect, since, rs):
         before = [len(r["badges"]) for r in rs if r["t"] <= since]
         met = max(len(r["badges"]) for r in after) > (max(before) if before else 0)
     return met, "met" if met else "not met"
+
+
+def server_change(since, rs):
+    after = [r for r in rs if r["t"] > since and r["kind"] not in progress.SETUP_KINDS]
+    before = [r for r in rs if r["t"] <= since and r["kind"] not in progress.SETUP_KINDS]
+    tiles = sum(r.get("new_tiles", 0) for r in after)
+    levels_before = sum(m["level"] or 0 for m in before[-1]["party"]) if before else 0
+    levels_after = sum(m["level"] or 0 for m in after[-1]["party"]) if after else levels_before
+    return tiles, levels_after - levels_before
+
+
+def changed_files(directory, old, new):
+    try:
+        out = subprocess.run(["git", "-C", directory, "diff", "--name-only", old, new], capture_output=True,
+                             text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return [line for line in out.splitlines() if line]
 
 
 def previous_condition(path, run):
@@ -168,6 +187,13 @@ def record(args, rows):
         if args.advancing and streak >= MAX_ADVANCING_CHECKS:
             problems.append(f"--advancing was used at the last {streak} checks; a stall the counter still shows "
                             f"after that is a stall: the verdict is stuck")
+        if args.advancing and checks and checks[-1]["t"] is not None:
+            tiles, levels = server_change(checks[-1]["t"], rs)
+            if tiles <= 0 and levels <= 0:
+                problems.append("--advancing needs the server to show something since the last check, and it "
+                                "shows no new tiles stood on and no levels gained; squares on the harness's own "
+                                "map are what the harness believes, not where the player has been: the verdict "
+                                "is stuck")
     if args.advancing and args.verdict != "in_progress":
         problems.append("--advancing only goes with --verdict in_progress")
     commit = harness_commit(args.harness)
@@ -179,6 +205,17 @@ def record(args, rows):
             problems.append(f"the harness is still at {commit}, as at the last check: restarted is for the check "
                             f"right after a restart with a new fix; without one, judge the run (stuck or "
                             f"in_progress)")
+        advance_t = progress.last_advance(rs)[0]["t"] if [r for r in rs if r["kind"] not in progress.SETUP_KINDS] \
+            else 0
+        this_stall = [c for c in checks if c["verdict"] == VERDICTS["restarted"] and (c["t"] or 0) > advance_t]
+        if before and commit and len(this_stall) >= PROMPT_ONLY_RESTARTS:
+            files = changed_files(args.harness, before.split("+")[0], commit.split("+")[0])
+            if files and all(os.path.basename(path) == "prompts.py" for path in files):
+                problems.append(f"the run has been restarted {len(this_stall)} times in this stall (since its last "
+                                f"advance) and this fix again changes only prompt text ({', '.join(files)}); "
+                                f"rewording has not got it moving, so change what the harness does: its "
+                                f"navigation, perception, memory or executors (the second or third kind of "
+                                f"revision)")
         try:
             named = agnostic_check.hits(args.harness)
         except (OSError, subprocess.CalledProcessError):

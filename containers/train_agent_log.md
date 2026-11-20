@@ -268,3 +268,18 @@ not see it.
   later with a note: record a check now, every 5 minutes whether or not an episode finished. The idle rule (10 min
   without any transcript activity) stays. Checked with `sh -n`; the relaunch is its test.
 - **Changed `AGENTS.md`** to say both.
+
+## 2026-11-20 12:19: check 15 of our watch: prompt fixes for a navigation failure
+
+- **Seen:** relaunch at 11:58; the agent's first check was **Stuck** and it wrote a real diagnosis from episodes
+  129 to 132: the strategist alternates "walk west" and "walk east" around an obstacle, a two-episode pendulum.
+  Its fix (2067a4b) is one more sentence in the dispatch prompt, the fourth prompt-only change in this stall. The
+  run did not move: 7095 to 7548 steps with 0 new tiles (42 tiles in all; 829 steps and 15 new tiles since the
+  last advance at 11:05). Its 12:11 check claimed "advanced 209 steps further north ... 119 new mapped squares"
+  through `--advancing`, from the harness's own map; the server shows no new tiles. The 12-minute check rule did
+  not need to fire (checks at 11:58, 11:59, 12:11 and later).
+- **Changed `watch_check.py`:** `--advancing` is refused unless the server shows new tiles or levels gained since
+  the previous check; after 2 restarts within one stall (since the run's last advance), a `restarted` whose commits
+  since the last check touch only `prompts.py` is refused, saying to change the harness's navigation, perception,
+  memory or executors instead. Tested on the real records and the agent's repo (7003b34 to 2067a4b touches only
+  `prompts.py`). Live at once; `AGENTS.md` updated for the next relaunch.
