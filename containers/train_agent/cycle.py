@@ -375,7 +375,8 @@ class Controller:
     def phase_long(self):
         if self.play is None:
             self.play, _ = launch(self.pid, self.game, None, self.play_dir())
-            self.state.update(segment_started=time.time(), last_check=time.time())
+            played = self.state["played"] + max(0.0, self.state["last_check"] - self.state["segment_started"])
+            self.state.update(played=played, segment_started=time.time(), last_check=time.time())
             self.save()
             log(f"playthrough {self.pid} relaunched after a controller restart")
         reason = None
