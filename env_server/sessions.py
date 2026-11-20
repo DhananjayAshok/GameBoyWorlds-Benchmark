@@ -249,7 +249,7 @@ class Session:
             self.recorder.write(kind="step", action=action, info=info, success=self.success,
                                 frame=self.env.get_observation())
         if self.progress:
-            self.progress.observe()
+            self.progress.observe(steps=self._steps())
             if self.success == 1.0:
                 self._write_progress(kind="cleared")
             elif self.progress.due(steps=self._steps()):
