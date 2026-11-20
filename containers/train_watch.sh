@@ -22,7 +22,7 @@ ARCHIVE="$RUN/archive"
 LOG="$RUN/watch.log"
 ROUND_SECONDS="${TRAIN_WATCH_SECONDS:-600}"
 ARCHIVE_SECONDS="${TRAIN_ARCHIVE_SECONDS:-3600}"
-ARCHIVED=(storage logs agent_logs DEVLOG.md EXPERIMENTS.md)
+ARCHIVED=(storage logs agent_logs playthroughs tests iterations cycle)
 
 say() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; }
 
