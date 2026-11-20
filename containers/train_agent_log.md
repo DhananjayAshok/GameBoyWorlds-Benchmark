@@ -300,3 +300,31 @@ not see it.
   the records keep up with the run; `containers/train_agent/progress.py` treats `close` records like `reset` and
   `load` (their gains were never saved), which `watch_check.py` inherits. `run_env_server.py check` passes; the
   stall now reads correctly (95 min since 11:05). Relaunched just after a save, so no episode was lost.
+
+## 2026-11-20 13:05: check 17 of our watch
+
+- **Seen:** the 2-minute periodic records work (a `periodic` record at 13:05 between saves). The agent keeps making
+  code fixes: da9eaeb (exploration override picks the nearest unexplored frontier on screen, not a distant
+  entrance; `STALE_EPISODES` 3 to 5) and 7083f1d (the navigation map treats door, mat, carpet, path and warp tiles
+  as walkable). The run is moving again: tiles stood on went 49 to 64 since 13:00, an advance at 13:03 (26 new
+  tiles), still in `VIRIDIAN_FOREST`. Checks are on time; the tool's server-visible rule is what the 13:05
+  `--advancing` cites (11 new tiles since the last check).
+- **Still weak:** restarts every 10 to 15 minutes, each on a new commit, and 7083f1d's `DEVLOG.md` entry has no
+  stall evidence, only the change. Not worth a rule yet while the run advances.
+- **No change.**
+
+## 2026-11-20 13:26: check 18 of our watch: twelve patches, one forest
+
+- **Seen:** the run is back to stuck, fix, restart about every 10 minutes: ae6845e (exploration override skips
+  targets at distance 1; prompt about following walls to an exit) and 931d443, which reorders the path search's
+  `DIRECTIONS` so that ties go up, left, right, then down: "prefer forward progress", that is a north bias, the
+  third time a compass preference has come in, now in code where `agnostic_check.py` cannot see it. Since
+  `red_long` entered `VIRIDIAN_FOREST` at 09:57 it has been restarted 12 times on small patches; 64 tiles stood
+  on; 23 min since the last tile advance.
+- **Changed `watch_check.py`:** after every 6 restarts since the run last reached a new map, event or badge,
+  `restarted` is refused until a stall review exists in `/work/reviews/` newer than the 6th (12th, ...) restart.
+  The refusal says what the review must hold: every fix tried, whether the server's counters moved after each,
+  the cause it points to, any fix that only works because of this map's layout (a preferred direction is one),
+  and the larger change it will make instead or why not. Tested: refused at 12 restarts with no review; recorded
+  once a review file exists. The tool does not judge the review's content; the review is there to be read.
+- **Changed `AGENTS.md`** to describe stall reviews. Tool live at once; `AGENTS.md` at the next relaunch.

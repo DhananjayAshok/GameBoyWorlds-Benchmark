@@ -22,6 +22,8 @@ FALLBACK_RE = re.compile(r"\b(or|and/or)\b", re.IGNORECASE)
 EPISODE_RE = re.compile(r"\bepisodes?\b", re.IGNORECASE)
 MAX_ADVANCING_CHECKS = 3
 PROMPT_ONLY_RESTARTS = 2
+REVIEW_EVERY_RESTARTS = 6
+REVIEWS_DIR = "/work/reviews"
 VERDICTS = {"in_progress": "In progress", "stuck": "Stuck", "restarted": "Restarted"}
 
 
@@ -102,6 +104,27 @@ def server_change(since, rs):
     levels_before = sum(m["level"] or 0 for m in before[-1]["party"]) if before else 0
     levels_after = sum(m["level"] or 0 for m in after[-1]["party"]) if after else levels_before
     return tiles, levels_after - levels_before
+
+
+def major_advance_t(rs):
+    best_badges = None
+    t = 0
+    for r in rs:
+        if r["kind"] in progress.SETUP_KINDS:
+            continue
+        badges = len(r["badges"])
+        if r["new_maps"] or r["new_events"] or (best_badges is not None and badges > best_badges):
+            t = r["t"]
+        best_badges = badges if best_badges is None else max(best_badges, badges)
+    return t
+
+
+def latest_review(directory):
+    try:
+        paths = [os.path.join(directory, name) for name in os.listdir(directory) if name.endswith(".md")]
+    except OSError:
+        return 0
+    return max((os.path.getmtime(path) for path in paths), default=0)
 
 
 def changed_files(directory, old, new):
@@ -216,6 +239,18 @@ def record(args, rows):
                                 f"rewording has not got it moving, so change what the harness does: its "
                                 f"navigation, perception, memory or executors (the second or third kind of "
                                 f"revision)")
+        major_t = major_advance_t(rs)
+        since_major = [c for c in checks if c["verdict"] == VERDICTS["restarted"] and (c["t"] or 0) > major_t]
+        due = len(since_major) // REVIEW_EVERY_RESTARTS
+        if due:
+            due_t = since_major[due * REVIEW_EVERY_RESTARTS - 1]["t"]
+            if latest_review(args.reviews) <= due_t:
+                problems.append(f"the run has been restarted {len(since_major)} times since it last reached a new "
+                                f"map, event or badge; before another restart, write a stall review in "
+                                f"{args.reviews}/<name>.md: every fix tried since then, whether the server's "
+                                f"counters (tiles, maps) moved after each, what that says about the cause, any fix "
+                                f"that only helps because of this map's layout (a preferred direction is one), and "
+                                f"the larger change you will make instead (the third kind of revision) or why not")
         try:
             named = agnostic_check.hits(args.harness)
         except (OSError, subprocess.CalledProcessError):
@@ -281,6 +316,7 @@ def main():
     parser.add_argument("--dir", default=progress.PROGRESS_DIR)
     parser.add_argument("--checks", default=CHECKS_FILE)
     parser.add_argument("--harness", default=HARNESS_DIR)
+    parser.add_argument("--reviews", default=REVIEWS_DIR)
     args = parser.parse_args()
     rows = progress.records(args.dir)
     if args.verdict is None:
