@@ -8,7 +8,7 @@ from typing import Optional
 from utils import log_warn
 
 PERIODIC_STEPS = 500
-PERIODIC_SECONDS = 120
+PERIODIC_SECONDS = 30
 CLEARS_FILE = "clears.jsonl"
 SUMMARY_FILE = "summary.json"
 RATE_WINDOW_STEPS = 2000
