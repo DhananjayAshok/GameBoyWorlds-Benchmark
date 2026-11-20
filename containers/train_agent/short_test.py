@@ -71,7 +71,10 @@ def wait(args):
     print(f"The stopping point: {info['stop']}")
     print()
     print(lib.digest(tid, since, now, f"minute_{len(waits) + 1}"))
-    if info.get("status") != "running":
+    if info.get("crashed"):
+        print(f"THE TEST HAS ENDED: {info.get('end_reason')}. A crash is a failed test, whatever happened before "
+              "it: record the verdict `failed`, find the cause in the log, and fix it.")
+    elif info.get("status") != "running":
         print(f"THE TEST HAS ENDED ({info.get('end_reason')}). Record your final verdict now: fixed, failed or "
               "stop_point_reached.")
     else:
@@ -90,6 +93,8 @@ def verdict(args):
         sys.exit("stop_point_reached needs --passed yes|no: did the test pass by the time it got there?")
     if args.verdict == "not_yet" and info.get("status") != "running":
         sys.exit("the test has ended, so the verdict is fixed, failed or stop_point_reached")
+    if info.get("crashed") and (args.verdict == "fixed" or args.passed == "yes"):
+        sys.exit(f"the harness crashed in this test ({info['crashed']}), so it did not pass: record `failed`")
     lib.append_jsonl(os.path.join(directory, "checks.jsonl"),
                      {"t": time.time(), "minute": len(waits), "verdict": args.verdict, "passed": args.passed,
                       "evidence": args.evidence})

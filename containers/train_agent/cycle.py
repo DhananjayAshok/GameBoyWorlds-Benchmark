@@ -228,7 +228,11 @@ class Controller:
             if self.test_stop:
                 self.end_test("a verdict ended it")
             elif self.test["process"].poll() is not None:
-                self.end_test("the run ended by itself; see its log")
+                error = lib.crash(os.path.join(RUN_LOGS, f"{info['tid']}.log"))
+                if error:
+                    self.end_test(f"the harness crashed ({error}); see /work/logs/{info['tid']}.log", crashed=error)
+                else:
+                    self.end_test("the run ended by itself; see its log")
             elif time.time() - info["started"] >= info["minutes"] * 60:
                 self.end_test(f"the {info['minutes']}-minute limit")
 
@@ -284,9 +288,9 @@ class Controller:
         log(f"short test {tid} started from {start} for issue {issue['id']}")
         return {"ok": True, "tid": tid, "commit": info["commit"], "minutes": minutes}
 
-    def end_test(self, reason):
+    def end_test(self, reason, crashed=None):
         stop_process(self.test["process"])
-        info = dict(self.test["info"], status="ended", end_reason=reason, ended=time.time())
+        info = dict(self.test["info"], status="ended", end_reason=reason, ended=time.time(), crashed=crashed)
         lib.write_json(os.path.join(self.test["directory"], "test.json"), info)
         log(f"short test {info['tid']} ended: {reason}")
         self.test = None
@@ -387,7 +391,8 @@ class Controller:
                     r.get("kind") == "cleared" for r in lib.progress_records(self.pid)):
                 reason = "the game was cleared"
             elif self.play.poll() is not None:
-                reason = "the run ended by itself; see its log"
+                error = lib.crash(os.path.join(RUN_LOGS, f"{self.pid}.log"))
+                reason = f"the harness crashed ({error})" if error else "the run ended by itself; see its log"
             elif self.played() >= lib.LONG_SECONDS:
                 reason = f"the {lib.LONG_SECONDS // 60}-minute limit"
             elif time.time() - self.state["last_check"] >= lib.CHECK_SECONDS:
