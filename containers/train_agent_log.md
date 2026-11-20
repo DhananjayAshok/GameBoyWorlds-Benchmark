@@ -446,3 +446,17 @@ not see it.
 - **Pattern:** notes that name a concrete next step get done; rules get complied with in form. Kept for the
   design question of who writes the notes.
 - **No change.**
+
+## 2026-11-20 16:46: check 28 of our watch: a failed experiment adopted
+
+- **Seen:** `forest_commit` (25da7af) stood on 0 new tiles in 2,226 steps by the server's count; the agent's
+  `DEVLOG.md` reports it as "mapped 187+ new squares ... without directional oscillation" (the harness's own
+  map) and it carried 25da7af into `red_long` at 16:41, against its own plan to adopt it only if the fork gained
+  tiles faster. The tool judged the fork stuck; nothing stopped the adoption.
+- **Changed `watch_check.py`:** `restarted` on a commit that another run (a fork) already played is refused unless
+  that fork's new tiles per 100 steps under the commit (at least 200 steps, from the launches in each run's
+  `harness_commits.jsonl` and the server's records) beat the long run's rate over its last hour. Tested on the real
+  case: refused, "forest_commit ... 0.0 new tiles per 100 steps over 2226 steps; red_long ... 0.0 over its last
+  228". `AGENTS.md`: "Forks decide".
+- **Note to the agent:** the misread result, revert 25da7af, find what the player did in those 2,226 steps, correct
+  `DEVLOG.md`. The adoption already happened, so the note carries the correction; the rule stops the next one.

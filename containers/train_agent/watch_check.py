@@ -1,4 +1,6 @@
 import argparse
+import glob
+import json
 import os
 import re
 import subprocess
@@ -25,6 +27,9 @@ PROMPT_ONLY_RESTARTS = 2
 MIN_ADVANCING_TILES = 5
 REVIEW_EVERY_RESTARTS = 6
 REVIEWS_DIR = "/work/reviews"
+ARTIFACTS_DIR = "/work/storage/playthrough_artifacts"
+FORK_MIN_STEPS = 200
+BASELINE_SECONDS = 3600
 VERDICTS = {"in_progress": "In progress", "stuck": "Stuck", "restarted": "Restarted"}
 
 
@@ -132,6 +137,44 @@ def latest_review(directory):
     except OSError:
         return 0
     return max((os.path.getmtime(path) for path in paths), default=0)
+
+
+def launches(artifacts):
+    found = {}
+    for path in glob.glob(os.path.join(artifacts, "*", "*", "*", "harness_commits.jsonl")):
+        run = os.path.basename(os.path.dirname(path))
+        try:
+            with open(path) as f:
+                found[run] = [json.loads(line) for line in f if line.strip()]
+        except (OSError, json.JSONDecodeError):
+            continue
+    return found
+
+
+def tile_rate(rs):
+    played = [r for r in rs if r["kind"] not in progress.SETUP_KINDS]
+    if len(played) < 2:
+        return None
+    steps = max(r["steps"] for r in played) - min(r["steps"] for r in played)
+    if steps < FORK_MIN_STEPS:
+        return None
+    return 100.0 * sum(r.get("new_tiles", 0) for r in played[1:]) / steps, steps
+
+
+def fork_evidence(run, commit, rows, artifacts):
+    results = []
+    for other, entries in launches(artifacts).items():
+        if other == run:
+            continue
+        for i, entry in enumerate(entries):
+            if not entry.get("commit", "").startswith(commit):
+                continue
+            end = entries[i + 1]["t"] if i + 1 < len(entries) else float("inf")
+            rs = [r for r in rows if r.get("run") == other and entry["t"] <= r["t"] < end]
+            rate = tile_rate(rs)
+            if rate is not None:
+                results.append((other, rate))
+    return results
 
 
 def changed_files(directory, old, new):
@@ -254,6 +297,18 @@ def record(args, rows):
                                 f"rewording has not got it moving, so change what the harness does: its "
                                 f"navigation, perception, memory or executors (the second or third kind of "
                                 f"revision)")
+        if commit and not commit.endswith("+uncommitted"):
+            tried = fork_evidence(args.run, commit, rows, args.artifacts)
+            now = datetime.now(timezone.utc).timestamp()
+            own = tile_rate([r for r in rs if r["t"] >= now - BASELINE_SECONDS])
+            if tried and own is not None:
+                best = max(tried, key=lambda item: item[1][0])
+                if best[1][0] <= own[0]:
+                    problems.append(f"{commit} was tried on {best[0]} and stood on {best[1][0]:.1f} new tiles per "
+                                    f"100 steps over {best[1][1]} steps; {args.run} itself managed {own[0]:.1f} "
+                                    f"over its last {own[1]} steps. The fork did not do better, so carrying the "
+                                    f"change into {args.run} is not supported by the test; revert it or fix it "
+                                    f"and test again. Squares on the harness's own map do not count")
         major_t = major_advance_t(rs)
         since_major = [c for c in checks if c["verdict"] == VERDICTS["restarted"] and (c["t"] or 0) > major_t]
         due = len(since_major) // REVIEW_EVERY_RESTARTS
@@ -332,6 +387,7 @@ def main():
     parser.add_argument("--checks", default=CHECKS_FILE)
     parser.add_argument("--harness", default=HARNESS_DIR)
     parser.add_argument("--reviews", default=REVIEWS_DIR)
+    parser.add_argument("--artifacts", default=ARTIFACTS_DIR)
     args = parser.parse_args()
     rows = progress.records(args.dir)
     if args.verdict is None:

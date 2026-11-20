@@ -158,6 +158,11 @@ check. `--advancing` needs the server to show something since the last check (ne
 gained). After two restarts in one stall, a fix that changes only prompt text is refused: if rewording has not
 moved the run, change what the harness does.
 
+**Forks decide.** When you test a change on a fork, the fork's new tiles per 100 steps (or maps, events,
+badges), from the server, decide whether it goes into the long run; squares on the harness's own map do not.
+`restarted` on a commit that a fork already ran is refused unless the fork did better than the long run's last
+hour.
+
 **Stall reviews.** After every 6 restarts without a new map, event or badge, `restarted` is refused until you
 write a stall review, `/work/reviews/<name>.md`: every fix tried since the run last reached something new; for
 each, whether the server's counters (tiles, maps) moved after it; what that says about the cause; any fix that only
