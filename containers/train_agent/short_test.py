@@ -1,4 +1,5 @@
 import argparse
+import fcntl
 import os
 import sys
 import time
@@ -45,6 +46,11 @@ def start(args):
 
 def wait(args):
     tid, directory, info = current()
+    lock = open(os.path.join(directory, "wait.lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit("another `short_test.py wait` is already running; run one at a time and judge each minute")
     waits = lib.read_jsonl(os.path.join(directory, "waits.jsonl"))
     verdicts = lib.read_jsonl(os.path.join(directory, "checks.jsonl"))
     if len(waits) > len(verdicts):

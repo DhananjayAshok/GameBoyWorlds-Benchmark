@@ -217,7 +217,9 @@ def signal(run, since, now=None):
         why = (f"{tiles_15} new grid spots, {len(maps_15)} new map(s) and {events_15} new story event(s) in the "
                f"last 15 minutes")
     lines = [
-        f"Now at: {last.get('map')}, step {last['steps']}, {badges} badge(s), {last.get('maps_reached')} maps "
+        f"As of {stamp(last['t'])} UTC, {max(0, now - last['t']):.0f} seconds before this was written (the server "
+        f"records every 30 seconds of play, so later events are not in it yet): at {last.get('map')}, step "
+        f"{last['steps']}, {badges} badge(s), {last.get('maps_reached')} maps "
         f"reached, {last.get('tiles')} grid spots stood on in all.",
         f"Since the last check: {sum(r.get('new_tiles', 0) for r in window)} new grid spots, new maps: "
         f"{sorted({m for r in window for m in r.get('new_maps', [])}) or 'none'}.",
