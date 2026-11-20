@@ -283,3 +283,20 @@ not see it.
   since the last check touch only `prompts.py` is refused, saying to change the harness's navigation, perception,
   memory or executors instead. Tested on the real records and the agent's repo (7003b34 to 2067a4b touches only
   `prompts.py`). Live at once; `AGENTS.md` updated for the next relaunch.
+
+## 2026-11-20 12:40: check 16 of our watch: code fixes at last, and a false stuck of our making
+
+- **Seen:** the 12-minute check rule fired (12:33, "recorded no check for 729s"), and the prompt-only rule did its
+  job: the agent's next fixes changed the executor, with diagnoses from episode reports: 7675920 (`GridMoveExecutor`
+  walks to the nearest reachable cell when the target is blocked, so the player walks up to a trainer blocking a
+  corridor instead of turning back) and e2a8e58 (cap that fallback at 4 tiles after it wandered into side alcoves).
+  Before those, d8ea34f (prompt) told the strategist that trainers on a path are to be fought, not avoided.
+- **Our bug:** progress records were written only at saves and every 500 steps, about 45 minutes of play here, so
+  during a long episode the step count looked frozen. At 12:33 the "step count has not moved" rule forced a stuck
+  verdict while the 12:21 run was mid-episode and doing well (it reached step 7756, 36 new tiles, Squirtle 11, as
+  the session-close record shows); the agent restarted from the last save, 7548, and lost all of it.
+  `progress.py` also counted that close record as an advance.
+- **Fixed:** `env_server/progress.py` writes a periodic record after 120 s of play as well as after 500 steps, so
+  the records keep up with the run; `containers/train_agent/progress.py` treats `close` records like `reset` and
+  `load` (their gains were never saved), which `watch_check.py` inherits. `run_env_server.py check` passes; the
+  stall now reads correctly (95 min since 11:05). Relaunched just after a save, so no episode was lost.
