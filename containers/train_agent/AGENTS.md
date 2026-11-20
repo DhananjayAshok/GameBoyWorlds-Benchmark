@@ -130,8 +130,13 @@ Every check ends with a verdict, insights and a condition:
 /opt/harness/bin/python /opt/train/watch_check.py --run <name>   # the run's state, and the condition you set last
 /opt/harness/bin/python /opt/train/watch_check.py --run <name> --verdict stuck|in_progress|restarted \
     --evidence "<what you looked at since the last check, and what changed>" \
-    --insights "<insights and potential fixes, with the kind of revision>" --condition "<one thing, 5 minutes>"
+    --insights "<insights and potential fixes, with the kind of revision>" --condition "<one thing, 5 minutes>" \
+    --expect map:<MAP>|event:<EVENT>|badge|none
 ```
+
+`--expect` says what the condition will show in the progress records: a map to be reached, an event to be set
+(names as `progress.py` prints them), a badge, or `none` when it cannot show there, such as winning a battle. The
+next check judges it from the records: if they show it was not met, `in_progress` is refused.
 
 It appends the check to `/work/CHECKS.md`, with the server's view of the run and the condition you set at the
 previous check, so the next check and your next session can judge by them. It refuses an `in_progress` verdict

@@ -13,6 +13,9 @@ CONDITION_RE = re.compile(r"^- \*\*Next condition\*\*: (.*)$")
 SERVER_RE = re.compile(r"^- \*\*Server\*\*: at \S+, step (\d+)$")
 VERDICT_RE = re.compile(r"^- \*\*Verdict\*\*: (.*)$")
 HARNESS_RE = re.compile(r"^- \*\*Harness\*\*: (\S+)")
+EXPECT_RE = re.compile(r"^- \*\*Expect\*\*: (\S+)")
+HEADER_TIME_RE = re.compile(r"check, (\d{4}-\d\d-\d\d \d\d:\d\d) UTC")
+EXPECT_KINDS = ("map", "event", "badge", "none")
 HARNESS_DIR = "/work/harness"
 FALLBACK_RE = re.compile(r"\b(or|and/or)\b", re.IGNORECASE)
 EPISODE_RE = re.compile(r"\bepisodes?\b", re.IGNORECASE)
@@ -29,7 +32,11 @@ def previous_checks(path, run):
         for line in f:
             line = line.rstrip("\n")
             if line.startswith("## "):
-                current = {"step": None, "verdict": None, "condition": None, "advancing": False, "harness": None}
+                current = {"step": None, "verdict": None, "condition": None, "advancing": False, "harness": None,
+                           "expect": None, "t": None}
+                if match := HEADER_TIME_RE.search(line):
+                    current["t"] = datetime.strptime(match.group(1), "%Y-%m-%d %H:%M").replace(
+                        tzinfo=timezone.utc).timestamp()
                 if "`" in line and line.split("`")[1] == run:
                     checks.append(current)
                 continue
@@ -43,6 +50,8 @@ def previous_checks(path, run):
                 current["condition"] = match.group(1)
             elif match := HARNESS_RE.match(line):
                 current["harness"] = match.group(1)
+            elif match := EXPECT_RE.match(line):
+                current["expect"] = match.group(1)
             elif line.startswith("- **Advancing, though stalled**"):
                 current["advancing"] = True
     return checks
@@ -57,6 +66,31 @@ def harness_commit(directory):
     except (OSError, subprocess.CalledProcessError):
         return None
     return head + ("+uncommitted" if dirty else "")
+
+
+def parse_expect(text):
+    kind, _, name = text.partition(":")
+    if kind not in EXPECT_KINDS or (kind in ("map", "event") and not name) or (kind in ("badge", "none") and name):
+        return None
+    return kind, name
+
+
+def judge_expect(expect, since, rs):
+    parsed = parse_expect(expect or "")
+    if parsed is None or parsed[0] == "none" or since is None:
+        return None, "nothing to judge"
+    kind, name = parsed
+    after = [r for r in rs if r["t"] > since and r["kind"] not in progress.SETUP_KINDS]
+    if not after:
+        return None, "no progress record since that check yet (they are written at each save)"
+    if kind == "map":
+        met = any(r["map"] == name or name in r["new_maps"] for r in after)
+    elif kind == "event":
+        met = any(name in r["new_events"] for r in after)
+    else:
+        before = [len(r["badges"]) for r in rs if r["t"] <= since]
+        met = max(len(r["badges"]) for r in after) > (max(before) if before else 0)
+    return met, "met" if met else "not met"
 
 
 def previous_condition(path, run):
@@ -79,8 +113,15 @@ def show(args, rows):
     print(f"run {args.run}: last seen at {last['map']}, step {last['steps']}")
     if stalled:
         print("\n".join(stalled[0]))
-    condition = previous_condition(args.checks, args.run)
-    print(f"condition set at the last check: {condition or 'none yet'}")
+    checks = previous_checks(args.checks, args.run)
+    if not checks:
+        print("condition set at the last check: none yet")
+        return
+    previous = checks[-1]
+    rs = [r for r in rows if r.get("run") == args.run]
+    _, how = judge_expect(previous["expect"], previous["t"], rs)
+    print(f"condition set at the last check: {previous['condition']}")
+    print(f"its expectation: {previous['expect'] or 'none'} ({how})")
 
 
 def record(args, rows):
@@ -90,7 +131,24 @@ def record(args, rows):
     lines, minutes = stalled if stalled else ([], 0)
     checks = previous_checks(args.checks, args.run)
     judged = [c for c in checks if c["verdict"] != VERDICTS["restarted"]]
+    rs = [r for r in rows if r.get("run") == args.run]
     problems = []
+    if parse_expect(args.expect) is None:
+        problems.append("--expect must be map:<MAP>, event:<EVENT>, badge, or none, naming what the next condition "
+                        "will show in the progress records (map and event names as progress.py prints them); none "
+                        "only when the condition cannot show there, such as winning a battle")
+    nones = 0
+    for check in reversed(checks):
+        if check["expect"] != "none":
+            break
+        nones += 1
+    if args.expect == "none" and nones >= MAX_ADVANCING_CHECKS:
+        problems.append(f"--expect none was used at the last {nones} checks; name a map, event or badge the run "
+                        f"should reach next")
+    met, how = judge_expect(checks[-1]["expect"], checks[-1]["t"], rs) if checks else (None, "")
+    if args.verdict == "in_progress" and met is False:
+        problems.append(f"the last check expected {checks[-1]['expect']}, and the progress records since then do "
+                        f"not show it: the previous condition was not met, so the verdict is stuck")
     if args.verdict == "in_progress":
         if minutes >= progress.STALL_MINUTES and not args.advancing:
             problems.append(f"the run is STALLED ({minutes} min with no new badge, map or event), so the verdict "
@@ -139,13 +197,16 @@ def record(args, rows):
              f"- **Server**: at {last['map']}, step {last['steps']}"]
     entry += [f"  - {line}" for line in lines]
     entry.append(f"- **Harness**: {commit or 'unknown'}")
-    entry += [f"- **Previous condition**: {previous or 'none'}",
-              f"- **Verdict**: {verdict}",
+    entry += [f"- **Previous condition**: {previous or 'none'}"]
+    if checks and checks[-1]["expect"]:
+        entry.append(f"  - expected {checks[-1]['expect']}: {how}")
+    entry += [f"- **Verdict**: {verdict}",
               f"- **Evidence**: {args.evidence}"]
     if args.advancing:
         entry.append(f"- **Advancing, though stalled**: {args.advancing}")
     entry += [f"- **Insights and potential fixes**: {args.insights or 'none'}",
-              f"- **Next condition**: {args.condition}", "", ""]
+              f"- **Next condition**: {args.condition}",
+              f"- **Expect**: {args.expect}", "", ""]
     with open(args.checks, "a") as f:
         f.write("\n".join(entry))
     print(f"recorded in {args.checks}: {verdict}")
@@ -164,6 +225,9 @@ def main():
     parser.add_argument("--evidence", default="", help="what you looked at since the last check, what changed")
     parser.add_argument("--insights", default="", help="insights and potential fixes, with the kind of revision")
     parser.add_argument("--condition", default="", help="one thing the run must do before the next check")
+    parser.add_argument("--expect", default="",
+                        help="what the next condition will show in the progress records: map:<MAP>, "
+                             "event:<EVENT>, badge, or none; the next check is judged by it")
     parser.add_argument("--advancing", default="",
                         help="only for in_progress on a stalled run: what it is doing that the counter cannot see")
     parser.add_argument("--dir", default=progress.PROGRESS_DIR)
