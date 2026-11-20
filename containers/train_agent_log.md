@@ -174,3 +174,30 @@ not see it.
   them (a session's children die with it, which is why each earlier relaunch cost the episode in flight), says
   that idle sessions are ended and resumed, and how to stop a playthrough (`pkill -f`).
 - The new loop is checked with `sh -n` only; the relaunch is its test.
+
+## 2026-11-20 10:04: check 9 of our watch: detached long run, carrying the fixes
+
+- **Seen:** the fresh conversation (09:43) went back to the long playthrough `red_long` rather than the fork that
+  had walked back to Route 1, carrying all of the fixes (harness 256e5bf), as `AGENTS.md` asks once a fix works
+  on a fork. It started it with `setsid nohup` (its own session id), so it survives the agent's sessions ending.
+  `red_long` went Viridian City, Route 2, then into `VIRIDIAN_FOREST` at step 5835 (stalled 7 min). The agent is
+  in its turn (transcript updated 29 s ago, mid-sleep; prime-agent writes progress during long tool calls, so the
+  10-minute idle rule will not misfire on a 5-minute sleep). Checks are 11 minutes apart rather than 5, and its
+  conditions are real places ("Enter VIRIDIAN_FOREST", "Enter VIRIDIAN_FOREST_SOUTH_GATE"). The idle-resume has
+  not been needed yet.
+- **No change.**
+
+## 2026-11-20 10:25: check 10 of our watch: conditions judged from the records
+
+- **Seen:** `red_long` in `VIRIDIAN_FOREST` for 28 minutes (5708 to 6159 steps). The agent is in its turn and
+  checks every ~10 minutes. At 10:15 it recorded "In progress" though its previous condition, "Enter
+  VIRIDIAN_FOREST_NORTH_GATE", was not met: "a missed condition means stuck" still rests on its honesty.
+- **Changed `watch_check.py`:** every check takes `--expect map:<MAP>|event:<EVENT>|badge|none`, recorded with
+  the condition. The next check judges the expectation from the progress records written since (map reached, event
+  set, badge count up); if they exist and do not show it, `in_progress` is refused. With only `--run` it shows the
+  previous expectation and whether it was met. `none` (for things the records cannot show, like a battle won) is
+  accepted for at most 3 checks in a row. Tested on the real records: an expected `VIRIDIAN_FOREST_NORTH_GATE`
+  since 10:05 is "not met" and refuses in-progress; an expected `VIRIDIAN_FOREST` since 09:50 is "met" and
+  records.
+- **Changed `AGENTS.md`** to document `--expect`. Live at once in the tool; `AGENTS.md` at the next relaunch,
+  meanwhile the tool's refusal explains the new argument.
