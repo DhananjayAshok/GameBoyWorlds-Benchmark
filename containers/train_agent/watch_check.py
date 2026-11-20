@@ -99,6 +99,8 @@ def judge_expect(expect, since, rs):
     else:
         before = [len(r["badges"]) for r in rs if r["t"] <= since]
         met = max(len(r["badges"]) for r in after) > (max(before) if before else 0)
+    if not met and major_advance_t(rs) > since:
+        return True, "not met, but the run reached a new map, event or badge since, which counts"
     return met, "met" if met else "not met"
 
 

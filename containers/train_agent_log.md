@@ -378,3 +378,23 @@ not see it.
   on since, from the server. The refusal message says to use it in a large map. Tested on the real records (10
   tiles since 13:00: met; since 14:10: not met; `tiles:2` refused).
 - **Changed `AGENTS.md`:** documents `tiles:<N>` and why the far exit is the wrong condition.
+
+## 2026-11-20 14:52: check 22 of our watch
+
+- **Seen:** the loop ended pass 30 for recording no check in 12 minutes (14:47); pass 31's first check was Stuck
+  with `--expect tiles:5`, the first near-term condition it has set. The run was restarted at 14:48 with no new
+  commit and no `restarted` check: the tool cannot stop a restart it is not told about. `STALLED` 109 min, 68
+  tiles, still `VIRIDIAN_FOREST`. The supervision now holds; the harness still cannot cross the forest, and the
+  agent's proposed larger change (keeping a chosen direction across episodes) is not built.
+- **No change.**
+
+## 2026-11-20 15:12: check 23 of our watch: out of the stall
+
+- **Seen:** with `tiles:5` conditions the checks are judged fairly ("met" at 14:53 and 15:02 on 26 and 8 new
+  tiles). The run moved: 68 to 91 tiles stood on, `EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_0` at 15:07 (the first new
+  story event since 09:57's maps), Squirtle 11 to 12. The fixes running were f999340 and fcaa463 (battle
+  interruptions and partial moves), which fit the agent's own diagnosis. But at 15:08 the agent judged the run
+  stuck because `tiles:5` was missed during the trainer battle, and restarted on a prompt-only tweak (488c841,
+  "continue straight along the corridor after beating a trainer"), losing the episode in flight.
+- **Changed `watch_check.py`:** an expectation also counts as met when the run reached a new map, event or badge
+  since the check that set it, so a fight won is not judged a stall. Tested on the real records.
