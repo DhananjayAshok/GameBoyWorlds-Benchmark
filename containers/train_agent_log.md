@@ -125,3 +125,33 @@ not see it.
   of the real `CHECKS.md`.
 - **Changed `AGENTS.md`:** documents those limits and `restarted`, and says to restart only for a fix to the stall
   being diagnosed, batching other changes, since each restart loses the episode in flight.
+- **Not relaunched:** `/opt/train` is a directory mount, so the new `watch_check.py` is live in the running
+  sandbox at once, and its refusals name the `restarted` verdict. The `AGENTS.md` wording waits for the next
+  relaunch; relaunching now would cost the run another episode in flight.
+
+## 2026-11-20 08:59: check 6 of our watch
+
+- **Seen:** the tightened tool bit at 08:42: with the step count frozen, the agent recorded **Stuck**, then
+  `restarted` after its fixes. Since then the step count moves (6085 to 6258) and it records "In progress" with
+  `--advancing` citing the step deltas, which is honest but weak: its conditions are now "complete episode N while
+  advancing through the forest", which any completed episode meets. `STALLED` at 85 minutes, still in
+  `VIRIDIAN_FOREST`.
+- **No change:** `--advancing` has been used at 3 checks in a row (08:48, 08:53, 08:58), so the tool will refuse
+  "in progress" at the next check unless the run reaches a new map. That is the mechanism doing its job; watch
+  whether the forced stuck verdict leads to a real diagnosis of the forest maze. If the agent keeps setting
+  "complete episode N" conditions, the next change is to refuse conditions that name an episode rather than a
+  place, battle or event.
+
+## 2026-11-20 09:19: check 7 of our watch: `restarted` became the new loophole
+
+- **Seen:** at 09:04 the `--advancing` limit forced **Stuck**, as intended. The agent then recorded `restarted`
+  three times in a row (09:04, 09:10, 09:15) with the same process, no new commit (still 256e5bf) and no diagnosis
+  in `DEVLOG.md`; instead it wrote that the player had reached the forest's north-west corner. Its conditions drifted
+  back to "complete episode 130 while advancing". `STALLED` at 105 min. The harness is not hung (115 model calls
+  in 15 minutes); episode 130 is just long, and the log only updates when an episode ends.
+- **Changed `watch_check.py`:** each check records the harness commit (`git rev-parse` of `/work/harness`, marked
+  `+uncommitted` when dirty); `restarted` is refused when the commit is the same as at the last check, or the fix
+  is not committed. Conditions that mention an episode are refused. Tested against a copy of the real
+  `CHECKS.md` and the real harness repo: a second `restarted` at 256e5bf is refused, "Complete Episode 131 while
+  advancing" is refused, a stuck verdict is recorded with `Harness: 256e5bf`.
+- **Changed `AGENTS.md`** to describe both. The tool is live at once (directory mount); not relaunched.
