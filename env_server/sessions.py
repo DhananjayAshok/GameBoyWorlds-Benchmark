@@ -470,6 +470,30 @@ class Sessions:
             raise SessionError("no such session", 404)
         session.close()
 
+    def saves(self) -> list:
+        if not self.saves_dir:
+            raise SessionError("this server keeps no named saves", 403)
+        found = []
+        for game in sorted(os.listdir(self.saves_dir)) if os.path.isdir(self.saves_dir) else []:
+            for entry in sorted(os.listdir(os.path.join(self.saves_dir, game))):
+                if entry.endswith(".state"):
+                    path = os.path.join(self.saves_dir, game, entry)
+                    found.append({"game": game, "name": entry[:-len(".state")],
+                                  "t": round(os.path.getmtime(path), 1), "bytes": os.path.getsize(path)})
+        return found
+
+    def delete_save(self, *, game: str, name: str) -> None:
+        if not self.saves_dir:
+            raise SessionError("this server keeps no named saves", 403)
+        if not SAVE_NAME.match(game) or not SAVE_NAME.match(name):
+            raise SessionError("a save is named by its game and 1-128 letters, digits or underscores")
+        base = os.path.join(self.saves_dir, game, name)
+        if not os.path.exists(base + ".state"):
+            raise SessionError("no such save", 404)
+        for path in (base + ".state", base + ".json"):
+            if os.path.exists(path):
+                os.remove(path)
+
     def close_all(self) -> None:
         with self._lock:
             sessions = list(self._sessions.values())

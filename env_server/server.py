@@ -73,6 +73,11 @@ def _handler(*, sessions: Sessions, token: str, parameters: dict):
                 return {"tasks": sessions.listed()}
             if parts == ["scenes"] and method == "GET":
                 return {"scenes": sessions.free_play()}
+            if parts == ["saves"] and method == "GET":
+                return {"saves": sessions.saves()}
+            if parts[0] == "saves" and len(parts) == 3 and method == "DELETE":
+                sessions.delete_save(game=parts[1], name=parts[2])
+                return {"deleted": parts[2]}
             if parts == ["sessions"] and method == "POST":
                 body = self._body()
                 session = sessions.open(task_id=body.get("task_id"), game=body.get("game"),
