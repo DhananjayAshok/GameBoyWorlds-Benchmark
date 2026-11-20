@@ -91,18 +91,21 @@ that does not need the server, such as reading episode reports, watching video a
 back to the check every 5 minutes. End your turn only when no playthrough is running and you have written in
 `DEVLOG.md` what the next session should do first.
 
-Every check ends with a verdict and a condition:
+Every check ends with a verdict, insights and a condition:
 
 - **The verdict.** Judge the run by the condition you set at the previous check: if it met it, the run is
   **in progress**; if it did not, the run is **stuck**. Say which, plainly. A stuck run is stopped and diagnosed,
   not given more time in the hope that it recovers.
+- **Insights and potential fixes.** What you saw since the last check that tells you something about the harness:
+  mistakes, wasted effort, a battle lost, a task that keeps failing, something it handled well. For each, the fix
+  you would consider and which of the three kinds of revision it is. Write "none" if there are none.
 - **The next condition.** State something concrete the run must achieve before the next check for it to count as
   still in progress: reach a particular new map, win the battle it keeps losing, get out of the building it is in,
   finish the task it has been on for three episodes, and so on. Make it something you can check from the progress
   records, the episode reports or the video, and something a run that is getting anywhere would clear in that time.
 
-Write the verdict and the next condition in `DEVLOG.md` at each check, so the next check, and your next session,
-can judge by it.
+Write the verdict, the insights and the next condition in `DEVLOG.md` at each check, so the next check, and your
+next session, can judge by them.
 
 **Judging progress.** Progress is how far into the game a run gets: badges won, new maps reached and new story
 events. Fewer model calls, fewer episodes or more episodes ending `completed` mean nothing if the run gets no
