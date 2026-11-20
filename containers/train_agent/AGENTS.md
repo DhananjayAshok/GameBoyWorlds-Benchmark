@@ -151,7 +151,9 @@ Record a check every 5 minutes whether or not an episode has finished: waiting f
 check. A session that records no check for 12 minutes while a playthrough runs is ended and resumed with a
 reminder; so is one that sits idle for 10.
 Each check records the harness commit; `restarted` is refused unless the harness has a new commit since the last
-check. When it refuses, the check is not recorded: fix the verdict, do not argue with the
+check. `--advancing` needs the server to show something since the last check (new tiles stood on, or levels
+gained). After two restarts in one stall, a fix that changes only prompt text is refused: if rewording has not
+moved the run, change what the harness does. When it refuses, the check is not recorded: fix the verdict, do not argue with the
 tool. A check that is not in `CHECKS.md` did not happen.
 
 Use `--verdict restarted` for the check right after you restart a run with a fix: there is nothing to judge yet.
