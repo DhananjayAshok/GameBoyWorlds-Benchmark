@@ -67,3 +67,43 @@ not see it.
   stalled run with no harness change is not allowed. New squares on the harness's map do not count as advance.
   Conditions are one thing with no "or" fallback. The player's location comes from `progress.py`, and a
   disagreement with the harness's belief is an insight.
+
+## 2026-11-20 07:33: check 2 of our watch: the diagnosis rule worked
+
+- **Seen:** the fresh session (pass 24, 07:13) followed the diagnosis rule. From episode reports 106 to 116 it
+  found the real cause of the 4.5-hour stall: inside gatehouses the screen's edge row is wall or black padding, so
+  `edge_cells` found no walkable cell, the off-screen move failed (`MOVE_BAD_LOCATION`), three failed episodes
+  triggered global-map exploration, which walked the player back south, and re-planning brought it north again: a
+  loop. Fix 05b2637 (generic: `edge_cells` searches inward when the edge row is blocked; the off-screen executor
+  snaps to the nearest edge cell). It tested on a fork, `red_gate_fix` from `red_long`, as `AGENTS.md` says, and
+  the fork reached `VIRIDIAN_FOREST` (11 maps), the first new map in about 5 hours.
+- **No change** to the design this round. To watch next: whether it carries the fix back into a long playthrough
+  rather than living on short forks, whether checks stay evidence-based, and Crystal, which has had no long
+  playthrough at all.
+
+## 2026-11-20 07:54: check 3 of our watch
+
+- **Seen:** the fork `red_gate_fix` went through `VIRIDIAN_FOREST_SOUTH_GATE` into `VIRIDIAN_FOREST` (07:30 to
+  07:33) and has been in the forest since (20 min, 112 steps). The agent stays in its turn, polling every 3 to 4
+  minutes, but writes a check to `DEVLOG.md` only now and then (last at 07:41), and its condition still ends with
+  "or discover new map squares / battle trainers", against the no-"or" rule. It locates the player from
+  `progress.py` now.
+- **No change:** not worth a relaunch while the run advances. If the forest stalls past 30 minutes and the checks
+  do not call it, the next change is to make the written check itself the 5-minute step (one `DEVLOG.md` entry per
+  check, not per batch).
+
+## 2026-11-20 08:15: check 4 of our watch: written rules do not hold, so a tool enforces them
+
+- **Seen:** `red_gate_fix` has been in `VIRIDIAN_FOREST` for 41 minutes (273 steps, `STALLED`), with episodes
+  ending `out_of_calls` and every wild battle fled. The agent's checks (07:56, 08:02) still say "In progress", still
+  end their conditions with "or map new forest squares", and stopped at 08:02. The written rules about `STALLED`
+  and "or" are read and not followed.
+- **Added `containers/train_agent/watch_check.py`** (`/opt/train/watch_check.py`): one call records one check in
+  `/work/CHECKS.md` with the server's view of the run (map, step, the stall lines) and the condition set at the
+  previous check. It refuses, and records nothing, an `in_progress` verdict while `STALLED` (unless `--advancing`
+  says what the counter cannot see), a condition containing "or", and empty evidence. With only `--run` it shows
+  the run's state and the last condition. Tested on the real records: refuses in-progress at 41 min stalled,
+  refuses an "or" condition, records a stuck verdict.
+- **Changed `AGENTS.md`** and the session prompts: every check is a `watch_check.py` call; a check not in
+  `CHECKS.md` did not happen. Checks move from `DEVLOG.md` to `CHECKS.md`, which keeps `DEVLOG.md` for diagnoses
+  and fixes.

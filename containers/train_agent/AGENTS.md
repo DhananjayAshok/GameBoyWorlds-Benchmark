@@ -124,8 +124,20 @@ Every check ends with a verdict, insights and a condition:
   can never be judged. Make it something you can check from the progress records, the episode reports or the
   video. One thing, with no "or" fallback such as "or map new squares" that the run meets whatever it does.
 
-Write the verdict, the insights and the next condition in `DEVLOG.md` at each check, so the next check, and your
-next session, can judge by them.
+**Record every check with `watch_check.py`**, every 5 minutes, one call per check:
+
+```bash
+/opt/harness/bin/python /opt/train/watch_check.py --run <name>   # the run's state, and the condition you set last
+/opt/harness/bin/python /opt/train/watch_check.py --run <name> --verdict stuck|in_progress \
+    --evidence "<what you looked at since the last check, and what changed>" \
+    --insights "<insights and potential fixes, with the kind of revision>" --condition "<one thing, 5 minutes>"
+```
+
+It appends the check to `/work/CHECKS.md`, with the server's view of the run and the condition you set at the
+previous check, so the next check and your next session can judge by them. It refuses an `in_progress` verdict
+while the run is `STALLED` (unless `--advancing` says what the run is doing that the counter cannot see) and a
+condition with an "or" in it. When it refuses, the check is not recorded: fix the verdict, do not argue with the
+tool. A check that is not in `CHECKS.md` did not happen.
 
 **Judging progress.** Progress is how far into the game a run gets: badges won, new maps reached and new story
 events. Fewer model calls, fewer episodes or more episodes ending `completed` mean nothing if the run gets no
@@ -182,6 +194,7 @@ the next one.
 - `/work/obs/<session>/`: the video of every server session, read-only. A new file starts at each save.
 - `/work/obs/progress/`: the server's progress records (above), read-only.
 - `/work/logs/`: put playthrough logs here. `/work/DEVLOG.md` and `/work/EXPERIMENTS.md`: your notes.
+  `/work/CHECKS.md`: your checks of running playthroughs, written by `watch_check.py`.
 - Python for the harness is `/opt/harness/bin/python`. There is no network and no package installs.
 - The only model is `$SANDBOX_MODEL`, through the gateway. Every call costs money and the whole run has a fixed
   budget; when it is spent, model calls fail with a spending-cap error. Spend it on long playthroughs and on
