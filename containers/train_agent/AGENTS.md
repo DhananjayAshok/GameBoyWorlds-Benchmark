@@ -214,9 +214,14 @@ Every harness is run the same way:
 
 ```bash
 cd /work/harness
-/opt/harness/bin/python run_playthrough.py --remote --game pokemon_red --name red_long \
-    --model "$SANDBOX_MODEL" --vlm_kind gateway --max_episodes 400 > /work/logs/red_long.log 2>&1
+setsid nohup /opt/harness/bin/python run_playthrough.py --remote --game pokemon_red --name red_long \
+    --model "$SANDBOX_MODEL" --vlm_kind gateway --max_episodes 400 > /work/logs/red_long.log 2>&1 < /dev/null &
 ```
+
+Start it detached like this (`setsid nohup ... &`), so that it keeps playing when your session ends; one started
+any other way stops with the session. If you end your turn while a playthrough is running, or sit idle for 10
+minutes with one running, the session is ended and resumed a few minutes later with a reminder to keep watching.
+Stop a playthrough with `pkill -f 'run_playthrough.py.*--name <name>'`.
 
 - `--game` is `pokemon_red` or `pokemon_crystal`. A new name starts at the beginning of the game.
 - `--name` is lowercase letters and underscores and must not end in a digit. Re-running the same name continues

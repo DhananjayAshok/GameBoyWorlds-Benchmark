@@ -155,3 +155,22 @@ not see it.
   `CHECKS.md` and the real harness repo: a second `restarted` at 256e5bf is refused, "Complete Episode 131 while
   advancing" is refused, a stuck verdict is recorded with `Harness: 256e5bf`.
 - **Changed `AGENTS.md`** to describe both. The tool is live at once (directory mount); not relaunched.
+
+## 2026-11-20 09:41: check 8 of our watch: the loop becomes the heartbeat
+
+- **Seen:** the agent recorded one last `restarted` at 09:20 (accepted once, as older checks had no commit line),
+  then wrote a summary and **ended its turn**, with `red_gate_fix` running. Nobody watched it for 20 minutes, in
+  which it walked from `VIRIDIAN_FOREST` back to `ROUTE_1` (`STALLED` 127 min). This is the fourth time a written
+  rule failed to keep the agent in its turn; with a large context, Flash falls back into "summarise and stop".
+- **Changed `agent_loop.sh`:** prime-agent now runs in the background and the loop watches it. If the session's
+  transcript has not changed for 10 minutes while a playthrough is running, the loop ends the session. Whenever a
+  session ends with a playthrough running (ended for being idle, or because the agent ended its turn and nothing
+  held the process open), the loop waits 4 minutes and resumes the same conversation (`--continue`) with a note:
+  you ended your turn while a playthrough ran; check it with `watch_check.py` and keep watching. These passes do
+  not count as quick passes, so they cannot stop the loop. A fresh conversation now starts every 12 hours of
+  conversation time instead of every 6th pass, which would otherwise come every half hour. This reverses the
+  earlier choice not to force watching from outside: the instructions alone did not hold.
+- **Changed `AGENTS.md`:** start playthroughs with `setsid nohup ... &`, so that ending a session does not kill
+  them (a session's children die with it, which is why each earlier relaunch cost the episode in flight), says
+  that idle sessions are ended and resumed, and how to stop a playthrough (`pkill -f`).
+- The new loop is checked with `sh -n` only; the relaunch is its test.
