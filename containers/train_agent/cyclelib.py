@@ -529,8 +529,24 @@ def validate_summary(draft, context):
     return errors
 
 
+def crash(log_path):
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(max(0, os.path.getsize(log_path) - 20000))
+            tail = f.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    if "Traceback (most recent call last)" not in tail:
+        return None
+    after = tail.rsplit("Traceback (most recent call last)", 1)[1].splitlines()
+    errors = [line.strip() for line in after if re.match(r"^[A-Za-z_.]*(Error|Exception)\b", line.strip())]
+    return errors[-1] if errors else "a Python exception (see the log)"
+
+
 def test_result(tid):
     info = read_json(os.path.join(TESTS, tid, "test.json")) or {}
+    if info.get("crashed"):
+        return "failed"
     verdicts = read_jsonl(os.path.join(TESTS, tid, "checks.jsonl"))
     last = verdicts[-1] if verdicts else {}
     if last.get("verdict") == "fixed" or (last.get("verdict") == "stop_point_reached" and last.get("passed") == "yes"):
