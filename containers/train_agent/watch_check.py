@@ -6,6 +6,7 @@ import sys
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import agnostic_check
 import progress
 
 CHECKS_FILE = "/work/CHECKS.md"
@@ -178,6 +179,15 @@ def record(args, rows):
             problems.append(f"the harness is still at {commit}, as at the last check: restarted is for the check "
                             f"right after a restart with a new fix; without one, judge the run (stuck or "
                             f"in_progress)")
+        try:
+            named = agnostic_check.hits(args.harness)
+        except (OSError, subprocess.CalledProcessError):
+            named = []
+        if named:
+            listed = "; ".join(f"{path}:{number} ({word})" for path, number, word, _ in named[:8])
+            problems.append(f"the harness code names places or people from the training games, so it only works "
+                            f"on them: {listed}. Make each generic and commit (run "
+                            f"/opt/train/agnostic_check.py to list them)")
     if FALLBACK_RE.search(args.condition):
         problems.append("the next condition must be one thing, with no 'or' fallback")
     if EPISODE_RE.search(args.condition):

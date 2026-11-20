@@ -4,9 +4,9 @@ from typing import Iterable, Set
 
 ADJECTIVES = (
     "Amber", "Ashen", "Azure", "Beige", "Birch", "Bronze", "Cedar", "Cobalt", "Copper", "Coral", "Crimson", "Dusky",
-    "Ebony", "Emerald", "Fawn", "Flint", "Golden", "Hazel", "Indigo", "Ivory", "Jade", "Khaki", "Lilac", "Linen",
-    "Maple", "Maroon", "Mint", "Misty", "Mossy", "Navy", "Oaken", "Olive", "Onyx", "Opal", "Pearl", "Plum", "Quartz",
-    "Rosy", "Rusty", "Saffron", "Sage", "Sandy", "Scarlet", "Silver", "Slate", "Smoky", "Tawny", "Teal", "Topaz",
+    "Ebony", "Emerald", "Fawn", "Flint", "Golden", "Hazel", "Ivory", "Jade", "Khaki", "Lilac", "Linen",
+    "Maple", "Maroon", "Mint", "Mossy", "Navy", "Oaken", "Olive", "Onyx", "Opal", "Pearl", "Plum", "Quartz",
+    "Rosy", "Rusty", "Sage", "Sandy", "Scarlet", "Silver", "Slate", "Smoky", "Tawny", "Teal", "Topaz",
     "Umber", "Velvet", "Violet", "Walnut", "Willow", "Argent", "Auburn", "Cinder", "Cream", "Dapple", "Ginger",
     "Heather", "Juniper", "Lemon", "Marble", "Nutmeg", "Peach", "Russet", "Sepia",
 )
@@ -14,7 +14,7 @@ ADJECTIVES = (
 NOUNS = (
     "Heron", "Finch", "Wren", "Sparrow", "Falcon", "Plover", "Swift", "Lark", "Robin", "Thrush", "Crane", "Egret",
     "Ibis", "Kestrel", "Magpie", "Osprey", "Petrel", "Quail", "Raven", "Starling", "Tern", "Warbler", "Jay",
-    "Linnet", "Pipit", "Rook", "Siskin", "Teal", "Dove", "Owl", "Birch", "Cedar", "Elm", "Fir", "Hazel", "Larch",
+    "Linnet", "Pipit", "Rook", "Siskin", "Teal", "Dove", "Owl", "Birch", "Cedar", "Fir", "Hazel", "Larch",
     "Maple", "Pine", "Rowan", "Spruce", "Willow", "Alder", "Aspen", "Beech", "Cypress", "Hickory", "Laurel",
     "Poplar", "Yew", "Agate", "Basalt", "Beryl", "Garnet", "Granite", "Jasper", "Marl", "Pebble", "Shale",
     "Cobble", "Gravel", "Obsidian", "Pumice", "Tuff", "Fennel", "Clover", "Thistle", "Bracken", "Sorrel",

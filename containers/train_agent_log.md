@@ -220,3 +220,38 @@ not see it.
   of false advances.
 - **Changed `AGENTS.md`** to describe the new `STALLED`. Relaunching, since the env server must restart to count
   tiles.
+
+## 2026-11-20 11:10: check 12 of our watch: tiles counted; restarts on guessed fixes
+
+- **Seen:** the tile counter works on the live run: `red_long` restored with no tile history (1 tile), then
+  +23, +3, +5, +2 as it explored; the 11:05 record counted as an advance ("26 new tiles"), so the forest stall now
+  reads 5 minutes and the agent's checks cite tiles. The feared burst of false advances after the relaunch was
+  small (only the tiles actually walked count). The agent's latest condition is "Enter
+  VIRIDIAN_FOREST_NORTH_GATE" with `--expect map:VIRIDIAN_FOREST_NORTH_GATE`, and it is in its turn.
+- **Pattern to watch:** each restart since 10:36 rode on a fix to something that was not the stall: NPC-card
+  parsing (4f20a1a, 405b192), then `max_tries` 10 for "gateway proxy connection drops" (c2b8f4f). This launch's
+  gateway log has 190 calls, all 200, none slower than 50 s: there were no drops. The commit rule makes it commit
+  something, and it commits guesses. If this continues, the next step is to require the diagnosis to name the
+  episode reports it read and the failure it found, before `restarted` is accepted.
+- **No change** this round.
+
+## 2026-11-20 11:31: check 13 of our watch: Red knowledge creeping into the harness
+
+- **Seen:** after another forced stuck verdict (11:12, `expect map:VIRIDIAN_FOREST_NORTH_GATE` not met) the
+  agent restarted on ea5b85e, which adds to the dispatch prompt: "When navigating a forest or maze route towards a
+  northern exit, prioritize checking northern boundary openings ... over backtracking into southern or eastern
+  loops": the same compass bias as 39879eb, now in a prompt. The same prompt's examples say "Talk to Professor
+  Oak". It also wrote that it would use `--expect none` "during intermediate forest maze traversal" to avoid being
+  judged; `none` is capped at 3 checks in a row. The forest: 40 tiles stood on in ~150 steps, 25 min since the
+  last advance.
+- **Added `containers/train_agent/agnostic_check.py`** and `game_names.txt`: 51 distinctive proper names (towns,
+  regions, gym leaders, professors, Elite Four) taken from the Red and Crystal map, landmark and trainer-class
+  tables in GameBoyWorlds' memory data, keeping only names that are not ordinary words; the check lists
+  whole-word matches (and possessives) in the harness's tracked Python files. `watch_check.py` refuses
+  `restarted` while it finds any. Tested: on the agent's harness it lists `prompts.py:20 (Oak)` and four names
+  from our own NPC nickname pool.
+- **Fixed our harness:** `execution/strategist/pokemon/npc_names.py` drew NPC nicknames from a pool containing
+  Indigo, Misty, Saffron and Elm, so an NPC in Red could be nicknamed "Misty". Removed them; the base harness now
+  scans clean. Synced into `harnesses/strategist` and published, so the relaunch merges it into the agent's branch.
+- **Changed `AGENTS.md`:** directions count as walkthrough knowledge ("the exit is to the north" is one map's
+  layout), and names `agnostic_check.py` and the gate.
