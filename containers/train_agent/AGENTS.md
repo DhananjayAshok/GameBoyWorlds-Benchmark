@@ -153,7 +153,14 @@ reminder; so is one that sits idle for 10.
 Each check records the harness commit; `restarted` is refused unless the harness has a new commit since the last
 check. `--advancing` needs the server to show something since the last check (new tiles stood on, or levels
 gained). After two restarts in one stall, a fix that changes only prompt text is refused: if rewording has not
-moved the run, change what the harness does. When it refuses, the check is not recorded: fix the verdict, do not argue with the
+moved the run, change what the harness does.
+
+**Stall reviews.** After every 6 restarts without a new map, event or badge, `restarted` is refused until you
+write a stall review, `/work/reviews/<name>.md`: every fix tried since the run last reached something new; for
+each, whether the server's counters (tiles, maps) moved after it; what that says about the cause; any fix that only
+helps because of this map's layout (a preferred direction is one, wherever it is written); and the larger change,
+the third kind of revision, that you will make instead, or why you will not. Many small patches to one stall
+mean the cause has not been found. When it refuses, the check is not recorded: fix the verdict, do not argue with the
 tool. A check that is not in `CHECKS.md` did not happen.
 
 Use `--verdict restarted` for the check right after you restart a run with a fix: there is nothing to judge yet.
