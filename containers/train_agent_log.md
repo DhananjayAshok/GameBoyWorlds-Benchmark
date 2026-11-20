@@ -361,3 +361,20 @@ not see it.
   (A first version also demanded a progress record since the last check; that would have blocked the normal
   stuck, stop, fix, restart sequence, so it was removed before committing.) Tested both paths on the real records.
 - **Changed `AGENTS.md`** to say so.
+
+## 2026-11-20 14:29: check 21 of our watch: our rules were feeding the restart churn
+
+- **Seen:** the agent now runs the proper cycle (stuck, fix, restart; no back-to-back restarts) with fixes aimed at
+  its diagnosis: f999340 (after a battle, the supervisor gets 4 more calls so the walk can finish), fcaa463 (a
+  multi-step move that hits an obstacle part-way counts the steps taken instead of failing). `STALLED` 86 min,
+  66 tiles. The save records show what each restart costs: the strategist saves at each episode's end, so a
+  restart reloads the last episode's save and loses the one in flight, 15 to 120 steps each time (for example
+  14:16 load at 8385, play to 8501, 14:26 restart reloads 8385).
+- **Our part in it:** the only judgeable conditions were a map, event or badge. In the forest the next map is the
+  exit, far more than 5 minutes away, so every condition was `map:VIRIDIAN_FOREST_NORTH_GATE`, every check judged
+  it not met, every check was stuck, and every stuck led to a restart that lost an episode. The fix was never
+  given time to work.
+- **Changed `watch_check.py`:** `--expect tiles:<N>` (N at least 5): the next check is judged by the new tiles stood
+  on since, from the server. The refusal message says to use it in a large map. Tested on the real records (10
+  tiles since 13:00: met; since 14:10: not met; `tiles:2` refused).
+- **Changed `AGENTS.md`:** documents `tiles:<N>` and why the far exit is the wrong condition.

@@ -16,7 +16,7 @@ VERDICT_RE = re.compile(r"^- \*\*Verdict\*\*: (.*)$")
 HARNESS_RE = re.compile(r"^- \*\*Harness\*\*: (\S+)")
 EXPECT_RE = re.compile(r"^- \*\*Expect\*\*: (\S+)")
 HEADER_TIME_RE = re.compile(r"check, (\d{4}-\d\d-\d\d \d\d:\d\d) UTC")
-EXPECT_KINDS = ("map", "event", "badge", "none")
+EXPECT_KINDS = ("map", "event", "badge", "tiles", "none")
 HARNESS_DIR = "/work/harness"
 FALLBACK_RE = re.compile(r"\b(or|and/or)\b", re.IGNORECASE)
 EPISODE_RE = re.compile(r"\bepisodes?\b", re.IGNORECASE)
@@ -77,6 +77,8 @@ def parse_expect(text):
     kind, _, name = text.partition(":")
     if kind not in EXPECT_KINDS or (kind in ("map", "event") and not name) or (kind in ("badge", "none") and name):
         return None
+    if kind == "tiles" and not (name.isdigit() and int(name) >= MIN_ADVANCING_TILES):
+        return None
     return kind, name
 
 
@@ -92,6 +94,8 @@ def judge_expect(expect, since, rs):
         met = any(r["map"] == name or name in r["new_maps"] for r in after)
     elif kind == "event":
         met = any(name in r["new_events"] for r in after)
+    elif kind == "tiles":
+        met = sum(r.get("new_tiles", 0) for r in after) >= int(name)
     else:
         before = [len(r["badges"]) for r in rs if r["t"] <= since]
         met = max(len(r["badges"]) for r in after) > (max(before) if before else 0)
@@ -178,9 +182,11 @@ def record(args, rows):
     rs = [r for r in rows if r.get("run") == args.run]
     problems = []
     if parse_expect(args.expect) is None:
-        problems.append("--expect must be map:<MAP>, event:<EVENT>, badge, or none, naming what the next condition "
-                        "will show in the progress records (map and event names as progress.py prints them); none "
-                        "only when the condition cannot show there, such as winning a battle")
+        problems.append(f"--expect must be map:<MAP>, event:<EVENT>, badge, tiles:<N> (at least "
+                        f"{MIN_ADVANCING_TILES} new tiles stood on), or none, naming what the next condition will "
+                        f"show in the progress records (map and event names as progress.py prints them); in a "
+                        f"large map, where the next map is more than 5 minutes away, tiles:<N> is the condition "
+                        f"to set; none only when the condition cannot show there, such as winning a battle")
     nones = 0
     for check in reversed(checks):
         if check["expect"] != "none":
@@ -317,7 +323,7 @@ def main():
     parser.add_argument("--condition", default="", help="one thing the run must do before the next check")
     parser.add_argument("--expect", default="",
                         help="what the next condition will show in the progress records: map:<MAP>, "
-                             "event:<EVENT>, badge, or none; the next check is judged by it")
+                             "event:<EVENT>, badge, tiles:<N>, or none; the next check is judged by it")
     parser.add_argument("--advancing", default="",
                         help="only for in_progress on a stalled run: what it is doing that the counter cannot see")
     parser.add_argument("--dir", default=progress.PROGRESS_DIR)
