@@ -22,6 +22,7 @@ FALLBACK_RE = re.compile(r"\b(or|and/or)\b", re.IGNORECASE)
 EPISODE_RE = re.compile(r"\bepisodes?\b", re.IGNORECASE)
 MAX_ADVANCING_CHECKS = 3
 PROMPT_ONLY_RESTARTS = 2
+MIN_ADVANCING_TILES = 5
 REVIEW_EVERY_RESTARTS = 6
 REVIEWS_DIR = "/work/reviews"
 VERDICTS = {"in_progress": "In progress", "stuck": "Stuck", "restarted": "Restarted"}
@@ -86,7 +87,7 @@ def judge_expect(expect, since, rs):
     kind, name = parsed
     after = [r for r in rs if r["t"] > since and r["kind"] not in progress.SETUP_KINDS]
     if not after:
-        return None, "no progress record since that check yet (they are written at each save)"
+        return None, "no progress record since that check yet (one is written every 2 minutes of play and at saves)"
     if kind == "map":
         met = any(r["map"] == name or name in r["new_maps"] for r in after)
     elif kind == "event":
@@ -212,9 +213,10 @@ def record(args, rows):
                             f"after that is a stall: the verdict is stuck")
         if args.advancing and checks and checks[-1]["t"] is not None:
             tiles, levels = server_change(checks[-1]["t"], rs)
-            if tiles <= 0 and levels <= 0:
-                problems.append("--advancing needs the server to show something since the last check, and it "
-                                "shows no new tiles stood on and no levels gained; squares on the harness's own "
+            if tiles < MIN_ADVANCING_TILES and levels <= 0:
+                problems.append(f"--advancing needs the server to show something since the last check, and it "
+                                f"shows {tiles} new tiles stood on (fewer than {MIN_ADVANCING_TILES}) and no levels "
+                                f"gained; squares on the harness's own "
                                 "map are what the harness believes, not where the player has been: the verdict "
                                 "is stuck")
     if args.advancing and args.verdict != "in_progress":

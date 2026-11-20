@@ -328,3 +328,21 @@ not see it.
   and the larger change it will make instead or why not. Tested: refused at 12 restarts with no review; recorded
   once a review file exists. The tool does not judge the review's content; the review is there to be read.
 - **Changed `AGENTS.md`** to describe stall reviews. Tool live at once; `AGENTS.md` at the next relaunch.
+
+## 2026-11-20 13:47: check 19 of our watch: the first stall review
+
+- **Seen:** the review rule fired; the agent wrote `/work/reviews/red_long.md` and restarted on 882e888 (edge
+  cells must be reachable from the player). The review has the requested sections but not their substance: it
+  credits tile gains to fixes that cannot move the player (API timeouts, retries, NPC-card parsing; the gains are
+  restarts reloading the save); it defends 931d443's up-first tie-break as "forward progress for standard Game Boy
+  RPG map progression"; and its "larger change" is its last three patches relabelled. `STALLED` 44 min, 448 steps
+  for 13 new tiles; its 13:46 check called that "in progress" on 2 new tiles.
+- **Changed `watch_check.py`:** `--advancing` needs at least 5 new tiles (or a level) since the last check, not 1.
+  Fixed a stale message (records now come every 2 minutes, not only at saves).
+- **Note to the agent** (ended its pass so the next one picks it up; the detached run kept playing): the review's
+  three faults, how to measure a fix (tiles per 100 steps before and after, from `progress.py`), revert 931d443,
+  and describe what the player actually does in the episodes since 13:03 before designing the larger change.
+- **Assessment:** the rules now make the agent watch, check on time, judge by the server, fix code rather than
+  prompts, and stop to review. What they cannot supply is the quality of its diagnosis: its explanations are
+  plausible-sounding and loosely tied to evidence, and it rationalises its own changes. That is the model's
+  judgement; more rules of this kind will keep producing compliance in form.
