@@ -11,7 +11,9 @@ That means:
 
 - **Game-agnostic.** No town, route, character, item, badge or map names; no coordinates; no walkthrough knowledge;
   nothing that only works because it is Red or Crystal. Prompts and examples must not mention either game or
-  anything in them.
+  anything in them. That includes directions: "the exit is to the north" is walkthrough knowledge of one map, not
+  a rule for every game. `/opt/harness/bin/python /opt/train/agnostic_check.py` lists names from the training
+  games found in the harness code; `watch_check.py` refuses `restarted` until it finds none.
 - **Vision-only.** When deployed, the harness gets the screen and nothing else. See the next section: this rule
   has no exceptions.
 - **Both generations.** Red- and Crystal-style menus, text boxes, battle screens and overworlds all differ. A fix
