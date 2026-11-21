@@ -251,9 +251,11 @@ def _routes_text(routes: List[Tuple[str, Optional[str]]]) -> str:
                        for request, found in routes)
 
 
-def _goal_prompt(template: str, game: str, path: GoalPath, subtree: GoalSubtree, notepad: str) -> str:
+def _goal_prompt(template: str, game: str, path: GoalPath, subtree: GoalSubtree, notepad: str,
+                 current: str = "Unknown") -> str:
     return (template.replace("[GAME]", game)
             .replace("[GOAL]", _goal_text(path, subtree))
+            .replace("[CURRENT]", current or "Unknown")
             .replace("[NOTEPAD]", _notepad_text(notepad)))
 
 
@@ -415,13 +417,14 @@ def create_subgoals(goals: GoalTree, knowledge: KnowledgeTree, current: str, exp
 
 
 def check_goals(goals: GoalTree, digest: str, notepad: str, vlm_caller: VLMCaller, game: str,
-                episode_number: int, parameters: Optional[dict] = None) -> List[Tuple[GoalPath, str]]:
+                episode_number: int, current: str = "Unknown",
+                parameters: Optional[dict] = None) -> List[Tuple[GoalPath, str]]:
     closed: List[Tuple[GoalPath, str]] = []
     subtree = goals.frontier()
     checked_active = False
     while subtree is not None:
         path = goals.path_to(subtree)
-        prompt = _goal_prompt(P.GOAL_CHECK_PROMPT, game, path, subtree, notepad).replace("[DIGEST]", digest)
+        prompt = _goal_prompt(P.GOAL_CHECK_PROMPT, game, path, subtree, notepad, current).replace("[DIGEST]", digest)
         achieved = ask(vlm_caller("goal_check"), prompt, _parse_achieved, "Goal check", GOAL_ATTEMPTS,
                        parameters)
         if achieved is None:
@@ -429,7 +432,7 @@ def check_goals(goals: GoalTree, digest: str, notepad: str, vlm_caller: VLMCalle
             achieved = False
         if not achieved:
             if not checked_active and subtree.root.source != "override" and _decide(
-                    goals, path, subtree, digest, notepad, vlm_caller, game, episode_number, parameters):
+                    goals, path, subtree, digest, notepad, vlm_caller, game, episode_number, current, parameters):
                 closed.append((path, "abandoned"))
             return closed
         goals.set_status(path, "complete", episode_number=episode_number)
@@ -440,12 +443,13 @@ def check_goals(goals: GoalTree, digest: str, notepad: str, vlm_caller: VLMCalle
 
 
 def _decide(goals: GoalTree, path: GoalPath, subtree: GoalSubtree, digest: str, notepad: str,
-            vlm_caller: VLMCaller, game: str, episode_number: int, parameters: Optional[dict]) -> bool:
+            vlm_caller: VLMCaller, game: str, episode_number: int, current: str,
+            parameters: Optional[dict]) -> bool:
     can_abandon = len(path) - 1 >= MIN_ABANDON_DEPTH
     choices = ("CONTINUE", "UPDATE", "ABANDON") if can_abandon else ("CONTINUE", "UPDATE")
     parent = goals.tree.at(path[:-1]) if len(path) > 1 else None
     siblings = [child.root.description for child in parent.subtrees if child is not subtree] if parent else []
-    prompt = (_goal_prompt(P.GOAL_DECISION_PROMPT, game, path, subtree, notepad)
+    prompt = (_goal_prompt(P.GOAL_DECISION_PROMPT, game, path, subtree, notepad, current)
               .replace("[DIGEST]", digest)
               .replace("[ABANDON_OPTION]", P.GOAL_ABANDON_OPTION if can_abandon else "")
               .replace("[CHOICES]", ", ".join(choices)))

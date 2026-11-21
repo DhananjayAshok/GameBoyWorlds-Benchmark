@@ -218,6 +218,9 @@ GOAL_CHECK_PROMPT = """You are playing [GAME] and are the strategist. One episod
 The goal to check, from the broadest goal down to it:
 [GOAL]
 
+Current location:
+[CURRENT]
+
 Your notepad:
 [NOTEPAD]
 
@@ -236,6 +239,9 @@ ABANDON: the goal cannot be achieved, or is no longer worth pursuing. Drop it.""
 
 GOAL_DECISION_PROMPT = """You are playing [GAME] and are the strategist. One episode has just finished, and this goal has not been achieved yet:
 [GOAL]
+
+Current location:
+[CURRENT]
 
 Your notepad:
 [NOTEPAD]

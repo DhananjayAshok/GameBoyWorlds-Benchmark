@@ -447,6 +447,12 @@ class PokemonPlayThroughSupervisor(Supervisor):
                 if self._battles_lost():
                     self._note("the player lost a battle and blacked out")
                     return "lost_battle", attempts
+                if handled.get("succeeded") and self._agent_state() == AgentState.FREE_ROAM:
+                    complete, summary = self._judge(subgoal, f"{request} (cleared {state})", handled)
+                    if complete:
+                        self._note(summary)
+                        attempts.append(f"{request}: {summary}")
+                        return "complete", attempts
                 continue
 
             if not result["succeeded"]:

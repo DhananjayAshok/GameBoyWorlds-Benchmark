@@ -47,6 +47,10 @@ def parse_key_value(text: str, key: str) -> Optional[str]:
 
     lines = [unmark_line(line) for line in text.splitlines()]
     for line in lines:
+        start = line.strip().lstrip("#-*• ").strip()
+        if start.lower().startswith(marker):
+            return clean(start[len(marker):])
+    for line in lines:
         idx = line.lower().find(marker)
         if idx != -1:
             return clean(line[idx + len(marker) :])
