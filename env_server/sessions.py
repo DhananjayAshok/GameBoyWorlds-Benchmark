@@ -27,6 +27,7 @@ CHECKPOINT_STATE = "emulator.state"
 CHECKPOINT_META = "session.json"
 SAVE_NAME = re.compile(r"^[A-Za-z0-9_]{1,128}$")
 VIDEO_ROLL_SECONDS = 60
+FRAME_INDEX = "frame_index.jsonl"
 
 
 def read_checkpoint(*, directory: Optional[str]) -> Optional[dict]:
@@ -60,6 +61,7 @@ class Session:
         self.label: Optional[str] = saved.get("label") if saved else None
         self.discarded_steps = int(saved.get("discarded_steps", 0)) if saved else 0
         self._video_started = time.time()
+        self._indexed: tuple = (None, 0)
         self._meta: Optional[dict] = saved
         self.want_state = True if not policy.state_optional else bool(want_state)
         self.success: Optional[float] = None
@@ -219,6 +221,7 @@ class Session:
         self.started = True
         self.last_used = time.time()
         _, info = self.env.reset()
+        self._index_frames(kind="reset")
         self.episode_over = False
         self.success = None
         if self.progress:
@@ -261,9 +264,27 @@ class Session:
         if self.episode_over or (self.checkpoint_every and self.label is None
                                  and self._steps() - self._checkpointed_at >= self.checkpoint_every):
             self.checkpoint()
+        self._index_frames(kind="step")
         if self.policy.long_running and time.time() - self._video_started >= VIDEO_ROLL_SECONDS:
             self._new_video()
         return self._payload(info=info, action_success=action_success)
+
+    def _index_frames(self, *, kind: str) -> None:
+        emulator = self.env._emulator
+        if not (self.policy.long_running and emulator.save_video
+                and getattr(emulator.video_writer, "video_path", None)):
+            return
+        writer = emulator.video_writer
+        video = os.path.relpath(writer.video_path, emulator.session_path)
+        first = self._indexed[1] if self._indexed[0] == video else 0
+        self._indexed = (video, writer.frames_written)
+        row = {"t": round(time.time(), 2), "kind": kind, "step": self._steps(), "video": video,
+               "frames": [first, writer.frames_written]}
+        try:
+            with open(os.path.join(emulator.session_path, FRAME_INDEX), "a") as f:
+                f.write(json.dumps(row) + "\n")
+        except OSError as exc:
+            log_warn(f"frame index for session {self.id}: {exc}", parameters=self._parameters)
 
     def _new_video(self) -> None:
         emulator = self.env._emulator
@@ -325,6 +346,7 @@ class Session:
                 saved = json.load(f)
             self.started = True
             self._apply_state(state_path=state_path, saved=saved)
+            self._index_frames(kind="load")
             if self.progress:
                 self.progress.restore(lineage=saved.get("progress"))
                 self._write_progress(kind="load", save=handle)

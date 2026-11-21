@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 
 import cyclelib as lib
+import screen_review
 
 MODEL = os.environ["SANDBOX_MODEL"]
 SERVER = os.environ["ENV_SERVER_URL"].rstrip("/")
@@ -409,9 +410,22 @@ class Controller:
                     minutes=round(self.played() / 60, 1), checks=self.state["check"],
                     final_checkpoint=f"{self.pid}:{points[-1]['id']}" if points else None)
         lib.write_json(self.play_dir("playthrough.json"), info)
-        self.state.update(phase="conclude")
+        self.state.update(phase="review")
         self.save()
         log(f"playthrough {self.pid} ended after {info['minutes']} minutes: {reason}")
+
+    def phase_review(self):
+        try:
+            rows, overview = screen_review.Reviewer(self.pid).run()
+            log(f"screen review of {self.pid}: {len(rows)} episode(s), "
+                f"{sum(1 for r in rows if r['mismatch'])} disagree with the harness"
+                + (f"; overview failed: {overview['error']}" if "error" in overview else ""))
+        except Exception as error:
+            lib.write_text(self.play_dir("screen_review.md"),
+                           f"# Screen review of {self.pid}\n\nThe review failed: {type(error).__name__}: {error}\n")
+            log(f"screen review of {self.pid} failed: {type(error).__name__}: {error}")
+        self.state.update(phase="conclude")
+        self.save()
 
     def do_check(self):
         now = time.time()
@@ -486,6 +500,8 @@ class Controller:
                       f"- Present in previous: {row['present_in_previous']}"]
             if "likely_gain" in row:
                 lines.append(f"- Likely gain: {row['likely_gain']}; solvability: {row['solvability']}")
+            if row.get("screen_review"):
+                lines.append(f"- Screen review: {row['screen_review']}")
             if "proposed_change" in row:
                 lines.append(f"- Proposed change: {row['proposed_change']}")
             if fix is None:
@@ -499,7 +515,9 @@ class Controller:
     def phase_conclude(self):
         expectations = self.expectations(self.game)
         previous = self.previous_pid()
-        self.set_context(pid=self.pid, game=self.game, expectations=expectations)
+        reviewed = lib.read_jsonl(self.play_dir("screen_review.jsonl"))
+        self.set_context(pid=self.pid, game=self.game, expectations=expectations, screen_review=bool(reviewed),
+                         mismatches=[r["episode"] for r in reviewed if r.get("mismatch")])
         staged, _ = self.run_agent("conclude", prompt(
             "conclude", PID=self.pid, GAME=self.game, DIR=self.play_dir(),
             LOG=os.path.join(RUN_LOGS, f"{self.pid}.log"), LIMIT=lib.keep_limit(self.pid),
@@ -519,6 +537,9 @@ class Controller:
         summary = staged.get("summary") or {"summary": "The conclusion step did not produce a summary.",
                                             "expectations": []}
         lines = [f"# Playthrough {self.pid}", "", summary["summary"], ""]
+        if summary.get("screen_review"):
+            lines += [f"**Against the screen review** ({self.play_dir('screen_review.md')}): "
+                      f"{summary['screen_review']}", ""]
         for text, row in zip(expectations, summary["expectations"]):
             lines.append(f"- Expected: {text} Held: {row['held']}. {row['evidence']}")
         lib.write_text(self.play_dir("summary.md"), "\n".join(lines) + "\n")

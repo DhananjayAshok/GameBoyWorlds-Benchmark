@@ -541,3 +541,23 @@ not see it.
   the issue. It is accepted only while the harness is unchanged since the step began. An issue the records do not
   show is closed as `not_confirmed` with nothing changed, and the iteration lists it. The larger-issue step does not
   have this yet.
+
+## 2026-11-20: frames by step, and a review of the whole playthrough from the screen
+
+- **Crystal's stuck verdict was judged on the wrong frames.** A check took the videos that closed in its window;
+  the one that closed at its start was the previous episode's (Elm's speech), and the one showing the window
+  (the walk to the starter table, ending on Cyndaquil) closed after the check. The run was stopped 28 seconds into
+  "choose Cyndaquil".
+- **Frame index (server).** Every step of a playthrough session appends `{t, kind, step, video, frames}` to
+  `frame_index.jsonl` beside its videos (GameBoyWorlds' video writer now counts its frames). Checks and the review
+  pick frames by their real time and step; runs without an index fall back to times estimated from when each video
+  closed, marked `~`.
+- **Screen review (controller, after every long playthrough).** Each episode is judged from its frames, given
+  only the strategist's task and the supervisor's subgoals: not the harness's outcomes, the executor's legs, the
+  server's counters or the checks. Then one call over the whole run. The harness's reported outcome is set beside
+  each episode afterwards and disagreements are flagged. The conclusion reads it first; each issue says whether
+  the screen agrees, and the summary must take up every flagged episode.
+- **Tested** on `p001_red` and `p002_crystal` (estimated frames, 12 calls, about $0.07): Red's episode 2 came out
+  as pacing along the north fence without triggering Oak, not a freeze; Crystal's episode 4 as reaching the table
+  with Cyndaquil's picture open; and Crystal's episode 3 was flagged: the harness called Elm's dialogue finished
+  while it was still going (the problem the deep dive later filed as I4).

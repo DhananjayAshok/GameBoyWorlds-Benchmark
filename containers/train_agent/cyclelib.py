@@ -246,57 +246,106 @@ def signal(run, since, now=None):
             "new_tiles_15": tiles_15, "new_tiles_30": tiles_30, "quiet_minutes": round(quiet_minutes, 1)}
 
 
-def videos(run, since, until):
-    sessions = {r["session"] for r in progress_records(run)}
+FRAME_INDEX = "frame_index.jsonl"
+
+
+def frame_locations(run):
+    records = progress_records(run)
+    if not records:
+        return []
+    begin, end = records[0]["t"] - 5, records[-1]["t"] + 3600
     found = []
-    for session in sessions:
-        for path in glob.glob(os.path.join(OBS, session, "*", "videos", "*.mp4")):
-            modified = os.path.getmtime(path)
-            if since < modified <= until:
-                found.append((modified, path))
-    return [path for _, path in sorted(found)]
+    for session in sorted({r["session"] for r in records}):
+        for index in glob.glob(os.path.join(OBS, session, "*", FRAME_INDEX)):
+            base = os.path.dirname(index)
+            for row in read_jsonl(index):
+                first, last = row["frames"]
+                if last > first and begin <= row["t"] <= end:
+                    found.append({"t": row["t"], "step": row["step"], "path": os.path.join(base, row["video"]),
+                                  "frame": last - 1, "approx": False})
+    return sorted(found, key=lambda r: r["t"]) or approximate_locations(run, records)
+
+
+def approximate_locations(run, records):
+    import cv2
+    times = [r["t"] for r in records]
+    steps = [r["steps"] for r in records]
+
+    def step_at(t):
+        if t <= times[0]:
+            return steps[0]
+        for (t0, s0), (t1, s1) in zip(zip(times, steps), zip(times[1:], steps[1:])):
+            if t0 <= t <= t1:
+                return round(s0 + (s1 - s0) * (t - t0) / max(t1 - t0, 1e-6))
+        return steps[-1]
+
+    found = []
+    for session in sorted({r["session"] for r in records}):
+        opened = min(r["t"] for r in records if r["session"] == session)
+        paths = sorted(glob.glob(os.path.join(OBS, session, "*", "videos", "*.mp4")), key=os.path.getmtime)
+        previous = opened
+        for path in paths:
+            closed = os.path.getmtime(path)
+            if closed < opened:
+                continue
+            capture = cv2.VideoCapture(path)
+            count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+            capture.release()
+            for frame in range(count):
+                t = previous + (frame + 1) * (closed - previous) / count
+                found.append({"t": t, "step": step_at(t), "path": path, "frame": frame, "approx": True})
+            previous = closed
+    return found
+
+
+def read_frames(locations):
+    import cv2
+    frames = []
+    captures = {}
+    for loc in locations:
+        capture = captures.get(loc["path"]) or captures.setdefault(loc["path"], cv2.VideoCapture(loc["path"]))
+        capture.set(cv2.CAP_PROP_POS_FRAMES, loc["frame"])
+        ok, frame = capture.read()
+        if ok:
+            frames.append((loc, frame))
+    for capture in captures.values():
+        capture.release()
+    return frames
+
+
+def spread(items, count):
+    if len(items) <= count:
+        return list(items)
+    return [items[round(i * (len(items) - 1) / max(1, count - 1))] for i in range(count)]
+
+
+def frame_label(number, loc):
+    when = datetime.fromtimestamp(loc["t"], timezone.utc).strftime("%H:%M:%S")
+    return f"#{number} step {'~' if loc['approx'] else ''}{loc['step']} {when}"
+
+
+def write_sheet(frames, path, columns=3):
+    import cv2
+    import numpy as np
+    tiles = []
+    for label, frame in frames:
+        frame = cv2.resize(frame, (frame.shape[1] * 2, frame.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
+        frame = cv2.copyMakeBorder(frame, 22, 4, 4, 4, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+        cv2.putText(frame, label, (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1, cv2.LINE_AA)
+        tiles.append(frame)
+    while len(tiles) % columns:
+        tiles.append(np.full_like(tiles[0], 255))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    cv2.imwrite(path, np.vstack([np.hstack(tiles[i:i + columns]) for i in range(0, len(tiles), columns)]))
+    return path
 
 
 def frame_sheets(run, since, until, out_dir, label, frames=12, per_sheet=6):
-    import cv2
-    import numpy as np
-    readable = []
-    for path in videos(run, since, until):
-        capture = cv2.VideoCapture(path)
-        count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-        capture.release()
-        if count > 0:
-            readable.append((path, count))
-    total = sum(count for _, count in readable)
-    if total == 0:
-        return []
-    wanted = [int(i * (total - 1) / max(1, frames - 1)) for i in range(min(frames, total))]
-    picked = []
-    offset = 0
-    for path, count in readable:
-        capture = cv2.VideoCapture(path)
-        for index in [w - offset for w in wanted if offset <= w < offset + count]:
-            capture.set(cv2.CAP_PROP_POS_FRAMES, index)
-            ok, frame = capture.read()
-            if ok:
-                picked.append(frame)
-        capture.release()
-        offset += count
-    os.makedirs(out_dir, exist_ok=True)
+    picked = read_frames(spread([loc for loc in frame_locations(run) if since < loc["t"] <= until], frames))
     sheets = []
     for start in range(0, len(picked), per_sheet):
-        tiles = []
-        for number, frame in enumerate(picked[start:start + per_sheet], start=start + 1):
-            frame = cv2.resize(frame, (frame.shape[1] * 2, frame.shape[0] * 2), interpolation=cv2.INTER_NEAREST)
-            frame = cv2.copyMakeBorder(frame, 22, 4, 4, 4, cv2.BORDER_CONSTANT, value=(255, 255, 255))
-            cv2.putText(frame, f"#{number}", (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-            tiles.append(frame)
-        while len(tiles) % 3:
-            tiles.append(np.full_like(tiles[0], 255))
-        rows = [np.hstack(tiles[i:i + 3]) for i in range(0, len(tiles), 3)]
-        path = os.path.join(out_dir, f"{label}_{start // per_sheet + 1}.png")
-        cv2.imwrite(path, np.vstack(rows))
-        sheets.append(path)
+        chunk = [(frame_label(start + i + 1, loc), frame) for i, (loc, frame) in enumerate(picked[start:start + per_sheet])]
+        sheets.append(write_sheet(chunk, os.path.join(out_dir, f"{label}_{start // per_sheet + 1}.png")))
     return sheets
 
 
@@ -493,6 +542,13 @@ def validate_issue_list(draft, context, prefix, maximum=None, big=False):
             need_text(errors, issue.get("proposed_change"), f"{name}.proposed_change")
         else:
             check_issue_codes(errors, issue, name)
+            if context.get("screen_review"):
+                said = issue.get("screen_review")
+                if not isinstance(said, str) or not said.startswith(SCREEN_STANCES):
+                    errors.append(f"{name}.screen_review must start with one of {list(SCREEN_STANCES)}, then say "
+                                  "what the screen review shows about this issue")
+                else:
+                    need_text(errors, said, f"{name}.screen_review")
             for part in ("likely_gain", "solvability"):
                 if issue.get(part) not in LEVELS:
                     errors.append(f"{name}.{part} must be one of {LEVELS}")
@@ -516,6 +572,15 @@ def validate_summary(draft, context):
     if not isinstance(draft, dict):
         return ["the draft must be a JSON object"]
     need_text(errors, draft.get("summary"), "summary", 400)
+    if context.get("screen_review"):
+        said = draft.get("screen_review")
+        need_text(errors, said, "screen_review (how this summary stands with the screen review)", 100)
+        missing = [n for n in context.get("mismatches", [])
+                   if not re.search(rf"\bepisode {n}\b", said or "", re.IGNORECASE)]
+        if missing:
+            errors.append("screen_review must take up each episode where the harness and the screen disagree, by "
+                          f"number: say whether it is filed as an issue or why it is not; missing: episode(s) "
+                          f"{missing}")
     expected = context.get("expectations", [])
     held = draft.get("expectations")
     if not isinstance(held, list) or len(held) != len(expected):
@@ -560,6 +625,7 @@ def investigation_path(context):
     return os.path.join(PLAYS, context["pid"], "investigations", f"{context['issue']['id']}.md")
 
 
+SCREEN_STANCES = ("agrees", "disagrees", "not visible")
 FIX_STATUSES = ("fixed", "deferred", "not_confirmed")
 SECONDHAND = ("checks.md", "checks.jsonl", "issues.md", "issues.jsonl", "summary.md", "big_issues")
 
@@ -728,8 +794,12 @@ TEMPLATES = {
                            "probable_cause": "the likely cause in the harness",
                            "present_in_previous": "no | <playthrough>:<issue id>",
                            "likely_gain": "high | medium | low", "solvability": "high | medium | low",
+                           "screen_review": "agrees | disagrees | not visible: what the screen review shows "
+                                            "about this issue",
                            "rank": 1}]},
     "summary": {"summary": "one account of the whole playthrough",
+                "screen_review": "how this account stands with the screen review, taking up by number each "
+                                 "episode where the harness and the screen disagree",
                 "expectations": [{"held": "yes | no | unclear", "evidence": "what shows it"}]},
     "confirm": {"issue": "I1", "confirmed": "yes | no",
                 "failure": "what the records show happened, at the place the issue names",

@@ -17,6 +17,7 @@ So go back to what was recorded while the game was played, not the checks' accou
   of these for any stretch. Frames: `/opt/harness/bin/python /opt/train/look.py --images <png ...> --question
   "..."`.
 - The harness's own records of each episode: see /work/harness/HARNESS.md for where they are and how to load them.
+- [[DIR]]/screen_review.md: each episode judged from its frames, with the frame sheets in [[DIR]]/review/.
 - Look as hard for records that contradict the issue as for ones that support it. If the issue says the player
   did nothing, did the step count rise? If it says an action failed, does a frame show it working?
 
