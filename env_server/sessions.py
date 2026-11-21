@@ -26,6 +26,7 @@ class SessionError(Exception):
 CHECKPOINT_STATE = "emulator.state"
 CHECKPOINT_META = "session.json"
 SAVE_NAME = re.compile(r"^[A-Za-z0-9_]{1,128}$")
+VIDEO_ROLL_SECONDS = 60
 
 
 def read_checkpoint(*, directory: Optional[str]) -> Optional[dict]:
@@ -58,6 +59,7 @@ class Session:
         self._checkpointed_at = 0
         self.label: Optional[str] = saved.get("label") if saved else None
         self.discarded_steps = int(saved.get("discarded_steps", 0)) if saved else 0
+        self._video_started = time.time()
         self._meta: Optional[dict] = saved
         self.want_state = True if not policy.state_optional else bool(want_state)
         self.success: Optional[float] = None
@@ -178,6 +180,7 @@ class Session:
         emulator._update_listeners_after_actions(np.array([emulator.get_current_frame()]))
         if emulator.save_video:
             emulator.video_writer.start_video()
+            self._video_started = time.time()
 
     def _restore(self, *, saved: dict) -> None:
         self._apply_state(state_path=os.path.join(self.checkpoint_dir, CHECKPOINT_STATE), saved=saved)
@@ -258,7 +261,15 @@ class Session:
         if self.episode_over or (self.checkpoint_every and self.label is None
                                  and self._steps() - self._checkpointed_at >= self.checkpoint_every):
             self.checkpoint()
+        if self.policy.long_running and time.time() - self._video_started >= VIDEO_ROLL_SECONDS:
+            self._new_video()
         return self._payload(info=info, action_success=action_success)
+
+    def _new_video(self) -> None:
+        emulator = self.env._emulator
+        if emulator.save_video and emulator.video_writer.video_running:
+            emulator.video_writer.start_video()
+        self._video_started = time.time()
 
     def observe(self) -> dict:
         self.last_used = time.time()
@@ -295,9 +306,7 @@ class Session:
             os.replace(meta_path + ".tmp", meta_path)
             if self.progress:
                 self._write_progress(kind="save", save=name)
-            emulator = self.env._emulator
-            if emulator.save_video and emulator.video_writer.video_running:
-                emulator.video_writer.start_video()
+            self._new_video()
             return {"handle": name, "steps": self._steps()}
         handle = uuid.uuid4().hex[:16]
         self.env.save_custom_state(handle)

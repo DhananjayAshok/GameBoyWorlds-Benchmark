@@ -7,6 +7,7 @@ import tempfile
 import threading
 
 from env_server import codec, splits
+from env_server import sessions as sessions_module
 from env_server.policy import Policy
 from env_server.server import _handler
 from env_server.sessions import SessionError, Sessions
@@ -375,6 +376,26 @@ def check_train_policy(*, steps: int = 4, parameters: dict, action: str = "butto
             failures.append(f"a train server wrote {len(videos)} videos under obs_dir; wanted one per segment")
         if any(os.path.getsize(path) == 0 for path in videos):
             failures.append("a train server left an empty video")
+
+        rolled_obs = os.path.join(root, "rolled_obs")
+        roll_seconds = sessions_module.VIDEO_ROLL_SECONDS
+        sessions_module.VIDEO_ROLL_SECONDS = 0
+        try:
+            sessions = Sessions(policy=Policy.of(kind="train"), max_sessions=1, idle_seconds=0, record_dir=None,
+                                max_steps=None, parameters=parameters, obs_dir=rolled_obs, saves_dir=saves_dir,
+                                progress_dir=progress_dir)
+            session = sessions.open(task_id=task_id)
+            session.reset()
+            for _ in range(steps):
+                session.step(action=action)
+            closed = sorted(_videos(rolled_obs), key=os.path.getmtime)[:-1]
+            sessions.close_all()
+        finally:
+            sessions_module.VIDEO_ROLL_SECONDS = roll_seconds
+        if len(closed) < steps:
+            failures.append(f"a train session with a 0s video roll closed {len(closed)} videos in {steps} steps")
+        if any(os.path.getsize(path) == 0 for path in closed):
+            failures.append("a train session closed an empty video when it rolled")
 
         test_obs = os.path.join(root, "test_obs")
         test_id = next(t for t, v in sorted(table.items()) if v["split"] == "test")
