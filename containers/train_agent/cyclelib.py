@@ -618,6 +618,8 @@ def test_result(tid):
         return "passed"
     if info.get("status") == "running":
         return "running"
+    if last.get("verdict") in (None, "not_yet"):
+        return "stopped"
     return "failed"
 
 
@@ -626,7 +628,7 @@ def investigation_path(context):
 
 
 SCREEN_STANCES = ("agrees", "disagrees", "not visible")
-FIX_STATUSES = ("fixed", "deferred", "not_confirmed")
+FIX_STATUSES = ("fixed", "unverified", "deferred", "not_confirmed")
 SECONDHAND = ("checks.md", "checks.jsonl", "issues.md", "issues.jsonl", "summary.md", "big_issues")
 
 
@@ -681,7 +683,8 @@ def validate_fix(draft, context):
         elif confirmed == "no" and status != "not_confirmed":
             errors.append("the confirmation found the failure is not in the records, so the status is not_confirmed")
         elif confirmed == "yes" and status == "not_confirmed":
-            errors.append("the confirmation found the failure in the records, so the status is fixed or deferred")
+            errors.append("the confirmation found the failure in the records, so the status is fixed, unverified or "
+                          "deferred")
     elif status == "not_confirmed":
         errors.append("not_confirmed is only for the deep dive of an issue")
     need_text(errors, draft.get("diagnosis"), "diagnosis", 100)
@@ -705,17 +708,24 @@ def validate_fix(draft, context):
     tests = context.get("tests", [])
     results = [test_result(tid) for tid in tests]
     made = commits_between(context["start_sha"])
-    if status == "fixed":
+    if status == "unverified" and not context.get("wrapping"):
+        errors.append("unverified is only for when this step's time is up; otherwise test the fix")
+    if status in ("fixed", "unverified"):
         if not made:
-            errors.append("status is fixed but the harness has no new commit since this step began")
+            errors.append(f"status is {status} but the harness has no new commit since this step began")
         listed = draft.get("commits")
         if not isinstance(listed, list) or not listed or any(
                 not any(full.startswith(str(sha)) for full in made) for sha in listed):
             errors.append(f"commits must list the commit(s) of this fix, from: {[c[:10] for c in made]}")
-        if results and results[-1] != "passed":
+        if status == "fixed" and results and results[-1] != "passed":
             errors.append(f"the last short test ({tests[-1]}) did not pass, so this is not fixed: change the fix "
                           f"and test again ({len(tests)} of {TESTS_PER_ISSUE} tests used), or revert your commits "
                           "with git revert and record it as deferred")
+        if status == "unverified":
+            need_text(errors, draft.get("note"), "note (what the fix has not been shown to do, and why you keep it)")
+            if results and results[-1] == "failed":
+                errors.append(f"the last short test ({tests[-1]}) failed, so the fix is known not to work: revert "
+                              "your commits with git revert and record it as deferred")
         check = subprocess.run([PYTHON, os.path.join(HERE, "agnostic_check.py")], capture_output=True, text=True)
         if check.returncode != 0:
             errors.append("agnostic_check.py found names from the training games in the harness:\n"
@@ -806,8 +816,10 @@ TEMPLATES = {
                 "records": [{"source": "the record: a file path, or the digest.py / look.py command",
                              "where": "the time, step, episode or frame", "shows": "what it shows"}],
                 "against": "the records that could contradict the issue as filed, and what they show"},
-    "fix": {"issue": "I1", "status": "fixed | deferred | not_confirmed", "diagnosis": "the cause, as you found it",
-            "commits": ["<sha>"], "note": "for deferred: why, and what was tried; for not_confirmed: what the "
+    "fix": {"issue": "I1", "status": "fixed | unverified | deferred | not_confirmed",
+            "diagnosis": "the cause, as you found it",
+            "commits": ["<sha>"], "note": "for deferred: why, and what was tried; for unverified: what the fix has "
+                                          "not been shown to do; for not_confirmed: what the "
                                           "records show happened instead"},
     "big_issues": {"issues": [{"id": "B1", "description": "the larger problem in how the player behaves",
                                "where": "which playthroughs, checks and issues show it",

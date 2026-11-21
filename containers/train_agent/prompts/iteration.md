@@ -9,7 +9,8 @@ Read:
 - The short tests of this cycle under [[TESTS]] (each has test.json and checks.jsonl).
 - `git log` in /work/harness for the commits themselves.
 
-Issues fixed in this cycle, with their commits:
+Issues fixed in this cycle, with their commits ("unverified" ones were kept when time ran out, without a
+short test showing they work: say so in the summary, and give them expectations the next playthrough can check):
 
 [[FIXED]]
 
