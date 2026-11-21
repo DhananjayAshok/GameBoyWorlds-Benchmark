@@ -131,7 +131,7 @@ def _word(output: str, key: str, allowed: Tuple[str, ...]) -> Tuple[Optional[str
     values = field_values(output, key)
     if len(values) != 1:
         return None, f"exactly one {key} line is needed, found {len(values)}"
-    value = values[0].lower().strip(" .\"'*")
+    value = values[0].lower().strip(" .\"'*<>")
     for word in allowed:
         if value == word or value.startswith(word + " ") or value.startswith(word + ","):
             return word, None
@@ -145,7 +145,7 @@ def _same_as(output: str, limit: int) -> Tuple[Optional[int], Optional[str]]:
     value = clean_value(values[0])
     if value is None:
         return 0, None
-    match = re.match(r"^\[?(\d+)\]?\b", value.strip())
+    match = re.match(r"^\[?(\d+)\]?\b", value.strip(" <>"))
     if not match or not 1 <= int(match.group(1)) <= limit:
         return None, f"Same as must be None or a number from 1 to {limit}"
     return int(match.group(1)), None

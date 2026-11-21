@@ -16,6 +16,7 @@ WALKABLE_TAGS = {
     "ground", "ground decoration", "tall grass", "entrance", "staircase", "elevator",
     "special ground tile", "player",
 }
+WARP_TAGS = {"entrance", "staircase"}
 LEDGE_TAGS = {"ledge"}
 QUARTERS = ("top_left", "top_right", "bottom_left", "bottom_right")
 
@@ -39,7 +40,7 @@ def cell_kinds(identified, ledge_patterns: Optional[Collection[Tuple[Optional[st
         hashes.setdefault((x, y), {})[quarter] = tile.hash
     kinds = {}
     for cell, cell_tags in tags.items():
-        if cell_tags <= WALKABLE_TAGS:
+        if cell_tags & WARP_TAGS or cell_tags <= WALKABLE_TAGS:
             kinds[cell] = WALKABLE
         elif cell_tags <= WALKABLE_TAGS | LEDGE_TAGS:
             kinds[cell] = LEDGE
@@ -116,7 +117,8 @@ def edge_cells(kinds: Dict[Cell, str], direction: str) -> List[Cell]:
         cells = [(min(X_RANGE), y) for y in reversed(Y_RANGE)]
     else:
         cells = [(max(X_RANGE), y) for y in reversed(Y_RANGE)]
-    return [cell for cell in cells if kinds.get(cell) == WALKABLE]
+    return [cell for cell in cells
+            if kinds.get(cell) == WALKABLE and shortest_path(kinds, (0, 0), [cell]) is not None]
 
 
 def is_on_edge(cell: Cell, direction: str) -> bool:

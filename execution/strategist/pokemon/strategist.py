@@ -779,7 +779,7 @@ class PokemonStrategist:
         self._perceive(frame, n)
 
         closed = check_goals(self.goals, report.digest, self.notepad.text, self._vlm_caller, self._game, n,
-                             self._parameters)
+                             current=self._current_place(), parameters=self._parameters)
         summary, town = self._review(report.digest)
         record.summary = summary or record.summary
         town_event = record_new_town(self.guide, town, self._current_place(), n, self._parameters)
