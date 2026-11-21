@@ -519,3 +519,25 @@ not see it.
   old its last record is; whether that is enough is to be seen.
 - **Switch-over:** `train_agent_flash` was stopped at 19:41 after 37 passes and $214; `train_agent_cycle` starts
   from its harness branch (`--from_run`), with the remaining budget.
+
+## 2026-11-20: the first two cycles, and what they changed in the loop
+
+- **What ran:** cycle 1 (Red, 15.8 minutes) and cycle 2 (Crystal, 26.5 minutes), both ended by a `stuck` check;
+  13 harness commits, every issue marked fixed, none deferred; $22 of gateway spend. Cycle 3 (Red) ran 27 minutes
+  of progressing checks and was then stopped by hand.
+- **A false stuck verdict, and a fix for a hang that never happened.** Red's check 3 saw an empty trajectory and
+  no video, and filed "the harness froze"; the server's records in front of it showed the step count rising
+  (40 to 53). The trajectory was written only at the end of an episode, and a video closed only on a harness
+  save. The deep dive took the check at its word and committed `18958e7` (60-second cut-off on every model call,
+  API errors turned into empty answers); its test passed on behaviour the run already had. Reverted by hand as
+  `fe86a00` in the agent's branch.
+- **Short tests passed through crashes.** Two Crystal tests crashed with a `TypeError` and were judged passed. A
+  crash in a test's log now fails the test whatever the verdict, and ends a playthrough with the error named.
+- **Checks now see the same moment from three sources:** the harness writes plans and executor legs as they
+  happen; the controller's signal says how many steps the game took in the window; the server closes a playthrough
+  video after every minute of play (live from the next server restart), so frames are at most a minute behind.
+- **The deep dive confirms before it patches.** Its first hand-in is a `confirm` record: at least two records made
+  while the game was played (server records, trajectory, log, frames), what each shows, and what could contradict
+  the issue. It is accepted only while the harness is unchanged since the step began. An issue the records do not
+  show is closed as `not_confirmed` with nothing changed, and the iteration lists it. The larger-issue step does not
+  have this yet.

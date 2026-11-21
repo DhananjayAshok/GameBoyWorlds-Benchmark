@@ -543,7 +543,8 @@ class Controller:
             ISSUE_ID=row["id"], INVESTIGATION=lib.investigation_path(self.context), EARLIER=earlier,
             START=start_sha[:10], TESTS=lib.TESTS_PER_ISSUE, MINUTES=lib.SHORT_TEST_MINUTES,
             CHECKPOINTS=bullet(f"{self.pid}:{p['id']} (episode {p['episode']}, step {p['steps']}, "
-                               f"{lib.stamp(p['t'])} UTC)" for p in lib.checkpoints(self.pid)[-60:])), ["fix"])
+                               f"{lib.stamp(p['t'])} UTC)" for p in lib.checkpoints(self.pid)[-60:])),
+            ["confirm", "fix"] if step == "deepdive" else ["fix"])
         if self.test is not None:
             self.end_test("the issue step ended")
         tests = [f"{tid}: {lib.test_result(tid)}" for tid in self.context.get("tests", [])]
@@ -551,7 +552,8 @@ class Controller:
             draft = staged["fix"]
             fix = {"status": draft["status"], "commits": lib.commits_between(start_sha)
                    if draft["status"] == "fixed" else [], "tests": tests, "diagnosis": draft["diagnosis"],
-                   "note": draft.get("note"), "investigation": lib.investigation_path(self.context)}
+                   "note": draft.get("note"), "investigation": lib.investigation_path(self.context),
+                   "confirmation": staged.get("confirm")}
         else:
             restore_harness(start_sha)
             fix = {"status": "deferred", "commits": [], "tests": tests, "diagnosis": None,
@@ -603,13 +605,15 @@ class Controller:
         fixed = [{"issue": row["id"], "commits": row["fix"]["commits"]} for row in rows
                  if row.get("fix") and row["fix"]["status"] == "fixed"]
         deferred = [row["id"] for row in rows if row.get("fix") and row["fix"]["status"] == "deferred"]
+        unconfirmed = [row for row in rows if row.get("fix") and row["fix"]["status"] == "not_confirmed"]
         self.set_context(pid=self.pid, game=self.game, fixed=fixed, deferred=deferred, games=GAMES)
         cycle = self.state["cycle"]
         staged, ok = self.run_agent("iteration", prompt(
             "iteration", PID=self.pid, GAME=self.game, DIR=self.play_dir(), CYCLE=cycle,
             NEXT_GAME=GAMES[cycle % len(GAMES)], FIXED=bullet(f"{r['issue']}: {[c[:10] for c in r['commits']]}"
                                                               for r in fixed),
-            DEFERRED=bullet(deferred), TESTS=lib.TESTS), ["iteration"])
+            DEFERRED=bullet(deferred), TESTS=lib.TESTS,
+            UNCONFIRMED=bullet(f"{r['id']}: {r['fix']['note']}" for r in unconfirmed)), ["iteration"])
         draft = staged.get("iteration") or {
             "summary": "The iteration step did not produce a summary.", "expectations": [],
             "changes": [{"commit": c, "issue": r["issue"], "what": ""} for r in fixed for c in r["commits"]],
@@ -620,11 +624,14 @@ class Controller:
                   for row in draft["changes"]] or ["- none"]
         lines += ["", "## Deferred", ""]
         lines += [f"- {row.get('issue')}: {row.get('why')}" for row in draft["deferred"]] or ["- none"]
+        lines += ["", "## Not confirmed in the records", ""]
+        lines += [f"- {row['id']}: {row['fix']['note']}" for row in unconfirmed] or ["- none"]
         lines += ["", "## What the next playthroughs should show", ""]
         lines += [f"- ({row['game']}) {row['text']}" for row in draft["expectations"]] or ["- none"]
         lib.write_text(os.path.join(lib.ITERATIONS, f"{cycle:03d}.md"), "\n".join(lines) + "\n")
         self.delete_checkpoints()
-        log(f"iteration {cycle} written; {len(fixed)} fixed, {len(deferred)} deferred")
+        log(f"iteration {cycle} written; {len(fixed)} fixed, {len(deferred)} deferred, "
+            f"{len(unconfirmed)} not confirmed")
         self.state.update(cycle=cycle + 1, phase="start", pid=None)
         self.save()
 
