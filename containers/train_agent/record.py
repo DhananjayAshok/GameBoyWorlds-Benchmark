@@ -28,6 +28,8 @@ def main():
         sys.exit(f"cannot read {path}: {error}")
     except ValueError as error:
         sys.exit(f"{path} is not valid JSON: {error}")
+    if args.kind == "confirm" and isinstance(draft, dict):
+        draft.update(harness_at=lib.head(), uncommitted=lib.dirty())
     errors = lib.VALIDATORS[args.kind](draft, context)
     if errors:
         print(f"NOT ACCEPTED: {len(errors)} problem(s) in {path}:")

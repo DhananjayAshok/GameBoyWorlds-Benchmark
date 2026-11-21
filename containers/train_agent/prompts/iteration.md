@@ -17,6 +17,10 @@ Issues deferred:
 
 [[DEFERRED]]
 
+Issues the records did not confirm, so nothing was changed for them (what the records showed instead):
+
+[[UNCONFIRMED]]
+
 Write /work/cycle/drafts/iteration.json (`/opt/harness/bin/python /opt/train/record.py iteration --template`
 prints the shape):
 

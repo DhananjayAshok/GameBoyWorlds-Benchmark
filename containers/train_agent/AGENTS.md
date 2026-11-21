@@ -52,7 +52,8 @@ record it asks for is accepted by `/opt/train/record.py`.
    the issues it shows, and judges whether the player is stuck. A `stuck` verdict ends the playthrough.
 3. **Conclusion.** You decide which checkpoints to keep (at most 10%), write the issues table, ranked, and write
    one summary of the playthrough.
-4. **Deep dive.** The top 5 issues, one at a time: investigate, fix in code, commit, and test with short tests.
+4. **Deep dive.** The top 5 issues, one at a time: confirm the failure in the records first, then investigate, fix
+   in code, commit, and test with short tests. An issue the records do not show is closed with nothing changed.
 5. **Larger issues.** You step back, name up to 3 larger problems in how the player behaves, and work on each.
 6. **Iteration summary.** What changed, and what the next playthroughs should show because of it.
 

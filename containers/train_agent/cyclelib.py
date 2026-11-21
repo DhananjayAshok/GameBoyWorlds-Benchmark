@@ -560,6 +560,44 @@ def investigation_path(context):
     return os.path.join(PLAYS, context["pid"], "investigations", f"{context['issue']['id']}.md")
 
 
+FIX_STATUSES = ("fixed", "deferred", "not_confirmed")
+SECONDHAND = ("checks.md", "checks.jsonl", "issues.md", "issues.jsonl", "summary.md", "big_issues")
+
+
+def validate_confirm(draft, context):
+    errors = []
+    if not isinstance(draft, dict):
+        return ["the draft must be a JSON object"]
+    issue = context["issue"]
+    if draft.get("issue") != issue["id"]:
+        errors.append(f"issue must be {issue['id']!r}, the one this step is about")
+    if draft.get("confirmed") not in ("yes", "no"):
+        errors.append("confirmed must be \"yes\" or \"no\"")
+    need_text(errors, draft.get("failure"), "failure", 100)
+    need_text(errors, draft.get("against"), "against")
+    records = draft.get("records")
+    if not isinstance(records, list):
+        errors.append("records must be a list")
+        records = []
+    firsthand = 0
+    for i, row in enumerate(records):
+        if not isinstance(row, dict):
+            errors.append(f"records[{i}] must be an object")
+            continue
+        for key in ("source", "where", "shows"):
+            need_text(errors, row.get(key), f"records[{i}].{key}", 5 if key != "shows" else MIN_TEXT)
+        if isinstance(row.get("source"), str) and not any(name in row["source"] for name in SECONDHAND):
+            firsthand += 1
+    if firsthand < 2:
+        errors.append("records must cite at least 2 records made while the game was played (server progress "
+                      "records, the harness trajectory or log, frames), not the checks' or conclusion's own account "
+                      f"({', '.join(SECONDHAND)})")
+    if draft.get("harness_at") != context["start_sha"] or draft.get("uncommitted"):
+        errors.append("the confirmation comes before any change: it is only accepted while the harness is exactly "
+                      "as it was when this step began, so revert or discard your changes and hand it in first")
+    return errors
+
+
 def validate_fix(draft, context):
     errors = []
     if not isinstance(draft, dict):
@@ -568,8 +606,18 @@ def validate_fix(draft, context):
     if draft.get("issue") != issue["id"]:
         errors.append(f"issue must be {issue['id']!r}, the one this step is about")
     status = draft.get("status")
-    if status not in ("fixed", "deferred"):
-        errors.append("status must be \"fixed\" or \"deferred\"")
+    if status not in FIX_STATUSES:
+        errors.append(f"status must be one of {list(FIX_STATUSES)}")
+    if "confirm" in context.get("accepts", []):
+        confirmed = (read_json(os.path.join(STAGED, "confirm.json")) or {}).get("confirmed")
+        if confirmed is None:
+            errors.append("there is no accepted confirm record: confirm the failure in the records first")
+        elif confirmed == "no" and status != "not_confirmed":
+            errors.append("the confirmation found the failure is not in the records, so the status is not_confirmed")
+        elif confirmed == "yes" and status == "not_confirmed":
+            errors.append("the confirmation found the failure in the records, so the status is fixed or deferred")
+    elif status == "not_confirmed":
+        errors.append("not_confirmed is only for the deep dive of an issue")
     need_text(errors, draft.get("diagnosis"), "diagnosis", 100)
     path = investigation_path(context)
     try:
@@ -578,7 +626,9 @@ def validate_fix(draft, context):
     except OSError:
         written = ""
     wanted = ["## Diagnosis", "## Evidence", "## Fix"]
-    if issue.get("present_in_previous", "no") != "no":
+    if "confirm" in context.get("accepts", []):
+        wanted = ["## Confirmation"] + (wanted if status != "not_confirmed" else [])
+    if issue.get("present_in_previous", "no") != "no" and status != "not_confirmed":
         wanted.append("## Why the earlier fix did not work")
     missing = [section for section in wanted if section not in written]
     if len(written) < 300 or missing:
@@ -604,10 +654,11 @@ def validate_fix(draft, context):
         if check.returncode != 0:
             errors.append("agnostic_check.py found names from the training games in the harness:\n"
                           + (check.stdout + check.stderr).strip()[-1500:])
-    if status == "deferred":
-        need_text(errors, draft.get("note"), "note (why it is deferred, and what was tried)")
+    if status in ("deferred", "not_confirmed"):
+        need_text(errors, draft.get("note"), "note (why it is deferred, and what was tried)" if status == "deferred"
+                  else "note (what the records show happened instead)")
         if git("diff", "--stat", context["start_sha"], "HEAD"):
-            errors.append("a deferred issue leaves the harness as it was when this step began: revert your "
+            errors.append(f"a {status} issue leaves the harness as it was when this step began: revert your "
                           "commits with git revert")
     return errors
 
@@ -652,7 +703,8 @@ def validate_iteration(draft, context):
 
 
 VALIDATORS = {"start": validate_start, "check": validate_check, "saves": validate_saves,
-              "issues": validate_issues, "summary": validate_summary, "fix": validate_fix,
+              "issues": validate_issues, "summary": validate_summary, "confirm": validate_confirm,
+              "fix": validate_fix,
               "big_issues": validate_big_issues, "iteration": validate_iteration}
 
 TEMPLATES = {
@@ -679,8 +731,14 @@ TEMPLATES = {
                            "rank": 1}]},
     "summary": {"summary": "one account of the whole playthrough",
                 "expectations": [{"held": "yes | no | unclear", "evidence": "what shows it"}]},
-    "fix": {"issue": "I1", "status": "fixed | deferred", "diagnosis": "the cause, as you found it",
-            "commits": ["<sha>"], "note": "for deferred: why, and what was tried"},
+    "confirm": {"issue": "I1", "confirmed": "yes | no",
+                "failure": "what the records show happened, at the place the issue names",
+                "records": [{"source": "the record: a file path, or the digest.py / look.py command",
+                             "where": "the time, step, episode or frame", "shows": "what it shows"}],
+                "against": "the records that could contradict the issue as filed, and what they show"},
+    "fix": {"issue": "I1", "status": "fixed | deferred | not_confirmed", "diagnosis": "the cause, as you found it",
+            "commits": ["<sha>"], "note": "for deferred: why, and what was tried; for not_confirmed: what the "
+                                          "records show happened instead"},
     "big_issues": {"issues": [{"id": "B1", "description": "the larger problem in how the player behaves",
                                "where": "which playthroughs, checks and issues show it",
                                "probable_cause": "what in the harness's design produces it",
