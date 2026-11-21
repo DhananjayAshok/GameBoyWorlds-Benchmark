@@ -2,8 +2,13 @@ You are at the CONCLUSION step for the long playthrough `[[PID]]` ([[GAME]]), wh
 /work/AGENTS.md always apply. In this step you do not change the harness; you read the whole record and write
 three things.
 
-Read all of it first:
+Read all of it first, starting with the screen review:
 
+- [[DIR]]/screen_review.md: the whole playthrough judged from the screen, episode by episode. The reviewer was
+  given only the tasks and subgoals the harness set, not its outcomes or the checks, so it is the account least
+  shaped by what the harness believed. It flags each episode where the harness's reported outcome and the screen
+  disagree. Its frame sheets are in [[DIR]]/review/. The checks below saw 5 minutes at a time; where they and the
+  screen review differ, look at the frames before believing either.
 - [[DIR]]/playthrough.json: how it started (harness commit, starting point) and how it ended.
 - [[DIR]]/checks.md: every 5-minute check, with its summary, issues and verdict. The digests they were written
   from are in [[DIR]]/digests/.
@@ -36,12 +41,17 @@ into one issue. For each:
   previous playthrough's issues file above, and earlier ones of this game under /work/playthroughs/.
 - `likely_gain` and `solvability`: high, medium or low. Gain is how much further the playthroughs would get if
   this were fixed; solvability is how likely a fix is to work.
+- `screen_review`: starts with `agrees`, `disagrees` or `not visible` (for a problem inside the harness that the
+  screen cannot show), then says what the screen review shows about this issue. An issue the screen review
+  contradicts needs strong evidence from the frames to stay.
 - `rank`: 1 for the issue to address first, by likely gain and solvability together. Only the top [[TOP]] are
   addressed in this cycle, so rank with care.
 
 **3. The summary** (/work/cycle/drafts/summary.json, then `record.py summary`).
 `summary`: one account of everything about this playthrough: where it started, how far it got, what went well,
-what stopped it. `expectations`: one entry, in order, for each of these expectations from the last iteration,
+what stopped it; take how far it got from the screen review. `screen_review`: how your account stands with the
+screen review, taking up by number ("episode 4") each episode it flags where the harness and the screen disagree,
+and saying whether you filed it as an issue or why not. `expectations`: one entry, in order, for each of these expectations from the last iteration,
 saying whether it held (`yes`, `no`, `unclear`) and the evidence:
 
 [[EXPECTATIONS]]

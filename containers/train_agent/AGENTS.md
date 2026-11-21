@@ -49,7 +49,9 @@ record it asks for is accepted by `/opt/train/record.py`.
 
 1. **Start.** You choose where the next long playthrough begins; the controller starts it. The games alternate.
 2. **Long playthrough.** It runs for up to 3 hours. Every 5 minutes a check summarises the last 5 minutes, names
-   the issues it shows, and judges whether the player is stuck. A `stuck` verdict ends the playthrough.
+   the issues it shows, and judges whether the player is stuck. A `stuck` verdict ends the playthrough. When it
+   ends, the controller reviews the whole playthrough from the screen (`screen_review.md`), given only the tasks
+   and subgoals the harness set.
 3. **Conclusion.** You decide which checkpoints to keep (at most 10%), write the issues table, ranked, and write
    one summary of the playthrough.
 4. **Deep dive.** The top 5 issues, one at a time: confirm the failure in the records first, then investigate, fix
