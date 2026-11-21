@@ -9,9 +9,9 @@ Read, in this order:
 2. [[CHECKS]]: every earlier check of this playthrough, if there are any. Together they are the whole trajectory
    so far.
 
-An episode can run longer than 5 minutes, and its frames only appear once it ends. A window with no frames, or few
-trajectory events, is not by itself a sign that anything is wrong: the "Steps taken" line below says whether the
-game was being played.
+Frames come from videos, and a video only appears once it closes: at the end of an episode, and on an up-to-date
+server also after every minute of play. A window with no frames, or few trajectory events, is not by itself a sign
+that anything is wrong: the "Steps taken" line below says whether the game was being played.
 
 What the last iteration expects this playthrough to show:
 

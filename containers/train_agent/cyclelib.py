@@ -343,10 +343,10 @@ def digest(run, since, until, label, describe=True, text_limit=700):
     lines += ["", "## What the screen showed", ""]
     sheets = frame_sheets(run, since, until, os.path.join(directory, "frames"), label) if directory else []
     if not sheets:
-        lines.append("No frames in this window. A video file only becomes readable when the harness next saves, at "
-                     "the end of an episode, so a missing video means the episode is still running, not that "
-                     "nothing happened. Judge whether the player moved from the 'Steps taken' line and the server "
-                     "records above.")
+        lines.append("No frames in this window: no video closed in it. A video closes when the harness saves at the "
+                     "end of an episode, and on an up-to-date server also after every minute of play, so this is "
+                     "not by itself a sign that nothing happened. The 'Steps taken' line above says whether the "
+                     "game was being played.")
     else:
         lines.append("Frame sheets, in time order: " + ", ".join(sheets))
         if describe:
