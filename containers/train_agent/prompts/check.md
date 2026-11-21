@@ -9,9 +9,11 @@ Read, in this order:
 2. [[CHECKS]]: every earlier check of this playthrough, if there are any. Together they are the whole trajectory
    so far.
 
-Frames come from videos, and a video only appears once it closes: at the end of an episode, and on an up-to-date
-server also after every minute of play. A window with no frames, or few trajectory events, is not by itself a sign
-that anything is wrong: the "Steps taken" line below says whether the game was being played.
+The digest's last section, "What the screen showed", lists the frame sheets of this window (each frame labelled
+with its step and time) and a description of them. Those frames are your evidence for `on_screen`: read the
+description and open the sheets. Only if that section says there are no frames does the window have none; then
+the "Steps taken" line below says whether the game was being played. Few trajectory events are not by themselves
+a sign that anything is wrong.
 
 What the last iteration expects this playthrough to show:
 
