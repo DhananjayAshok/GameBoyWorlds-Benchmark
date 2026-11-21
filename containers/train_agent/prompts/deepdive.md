@@ -61,6 +61,9 @@ The most recent checkpoints of this playthrough (earlier ones are in [[DIR]]/har
 If a test fails, improve the fix, commit, and test again. If the last test you can run still fails, undo your
 commits with `git revert` and record the issue as deferred.
 
+This step has a time limit. If it runs out first, the controller stops any short test and tells you to wrap up:
+you then either keep the fix unverified or revert it, in a few minutes.
+
 **5. Hand in the result.** Write /work/cycle/drafts/fix.json and run
 `/opt/harness/bin/python /opt/train/record.py fix`:
 

@@ -35,6 +35,9 @@ After each `wait`, record a verdict; `not_yet` keeps it running. The most recent
 
 If the last test you can run fails, undo your commits with `git revert` and record the issue as deferred.
 
+This step has a time limit. If it runs out first, the controller stops any short test and tells you to wrap up:
+you then either keep the change unverified or revert it, in a few minutes.
+
 **4. Hand in the result.** Write /work/cycle/drafts/fix.json and run
 `/opt/harness/bin/python /opt/train/record.py fix`:
 

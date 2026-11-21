@@ -17,6 +17,7 @@ STRIPPED = ("plugins", "web_search_options", "models", "route")
 UPSTREAM_TIMEOUT = 600
 MAX_BODY = 64 * 1024 * 1024
 STREAM_TAIL = 1024 * 1024
+STREAM_RETRIES = 3
 
 
 def call_cost(usage) -> float:
@@ -136,13 +137,19 @@ def _handler(*, allow: set, key: str, log, lock: threading.Lock, ledger=None):
                     request["tools"] = kept
                     stripped.append("tools[server-side]")
 
-            upstream = urllib.request.Request(
-                UPSTREAM, data=json.dumps(request).encode(), method="POST",
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                         "Accept": self.headers.get("Accept", "application/json")})
-            started, sent = time.time(), 0
+            body = json.dumps(request).encode()
+            accept = self.headers.get("Accept", "application/json")
+
+            def open_upstream():
+                upstream = urllib.request.Request(
+                    UPSTREAM, data=body, method="POST",
+                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                             "Accept": accept})
+                return urllib.request.urlopen(upstream, timeout=UPSTREAM_TIMEOUT, context=TLS)
+
+            started, sent, retries = time.time(), 0, 0
             try:
-                response = urllib.request.urlopen(upstream, timeout=UPSTREAM_TIMEOUT, context=TLS)
+                response = open_upstream()
             except urllib.error.HTTPError as error:
                 response = error
             except Exception as error:
@@ -156,29 +163,40 @@ def _handler(*, allow: set, key: str, log, lock: threading.Lock, ledger=None):
             stream = bool(request.get("stream"))
             kept = bytearray()
             client_gone = False
-            try:
-                while True:
-                    chunk = response.read1(65536) if hasattr(response, "read1") else response.read(65536)
-                    if not chunk:
-                        break
-                    kept += chunk
-                    if stream and len(kept) > STREAM_TAIL:
-                        del kept[:len(kept) - STREAM_TAIL]
-                    if client_gone:
-                        continue
-                    try:
-                        self.wfile.write(chunk)
-                        self.wfile.flush()
-                        sent += len(chunk)
-                    except (BrokenPipeError, ConnectionResetError):
-                        client_gone = True
-            finally:
-                response.close()
+            while True:
+                content = False
+                try:
+                    while True:
+                        chunk = response.read1(65536) if hasattr(response, "read1") else response.read(65536)
+                        if not chunk:
+                            break
+                        kept += chunk
+                        content = content or b"data:" in bytes(kept[-(len(chunk) + 5):])
+                        if stream and len(kept) > STREAM_TAIL:
+                            del kept[:len(kept) - STREAM_TAIL]
+                        if client_gone:
+                            continue
+                        try:
+                            self.wfile.write(chunk)
+                            self.wfile.flush()
+                            sent += len(chunk)
+                        except (BrokenPipeError, ConnectionResetError):
+                            client_gone = True
+                finally:
+                    response.close()
+                if not stream or content or client_gone or response.status != 200 or retries >= STREAM_RETRIES:
+                    break
+                retries += 1
+                try:
+                    response = open_upstream()
+                except Exception:
+                    break
             usage = usage_of(bytes(kept), stream=stream) if response.status == 200 else None
             spent = ledger.add(usage=usage) if ledger is not None and response.status == 200 else None
             record(verdict="forwarded", model=model, stripped=stripped, status=response.status,
                    stream=stream, bytes_in=length, bytes_out=sent, seconds=round(time.time() - started, 2),
-                   cost=call_cost(usage), spent=spent)
+                   cost=call_cost(usage), spent=spent, retries=retries,
+                   **({"tail": bytes(kept[-800:]).decode("utf-8", "replace")} if stream and usage is None else {}))
 
     return Handler
 

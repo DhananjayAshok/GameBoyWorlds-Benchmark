@@ -25,6 +25,8 @@ STEP_SECONDS = {"start": 600, "check": 240, "conclude": 1800, "deepdive": 2700, 
                 "big_solve": 3600, "iteration": 900}
 STEP_SECONDS = {step: int(os.environ.get(f"TRAIN_{step.upper()}_SECONDS", seconds))
                 for step, seconds in STEP_SECONDS.items()}
+WRAP_STEPS = ("conclude", "deepdive", "big_identify", "big_solve", "iteration")
+WRAP_SECONDS = int(os.environ.get("TRAIN_WRAP_SECONDS", 300))
 ATTEMPTS = 3
 MISSED_CHECKS_END = 2
 QUICK_SECONDS = 20
@@ -201,19 +203,43 @@ class Controller:
                 break
             message = text if attempt == 0 else RETRY.format(errors=bullet(errors))
             self.call_agent(message, attempt > 0, remaining, f"{step}_{attempt + 1}")
-            staged = {kind: lib.read_json(os.path.join(lib.STAGED, f"{kind}.json")) for kind in kinds}
-            errors = []
-            for kind in kinds:
-                if staged[kind] is None:
-                    errors.append(f"no accepted {kind} record: write it and hand it in with record.py {kind}")
-                else:
-                    errors += [f"{kind}: {e}" for e in lib.VALIDATORS[kind](staged[kind], self.context)]
+            staged, errors = self.collect(kinds)
+            if not errors:
+                return staged, True
+        if step in WRAP_STEPS:
+            staged, errors = self.wrap_up(step, kinds, errors)
             if not errors:
                 return staged, True
         log(f"{step}: no accepted record after {attempts} attempt(s): {errors}")
         valid = {kind: draft for kind, draft in staged.items()
                  if draft is not None and not lib.VALIDATORS[kind](draft, self.context)}
         return valid, False
+
+    def collect(self, kinds):
+        staged = {kind: lib.read_json(os.path.join(lib.STAGED, f"{kind}.json")) for kind in kinds}
+        errors = []
+        for kind in kinds:
+            if staged[kind] is None:
+                errors.append(f"no accepted {kind} record: write it and hand it in with record.py {kind}")
+            else:
+                errors += [f"{kind}: {e}" for e in lib.VALIDATORS[kind](staged[kind], self.context)]
+        return staged, errors
+
+    def wrap_up(self, step, kinds, errors):
+        if self.test is not None:
+            self.end_test("this step's time is up")
+        self.context["wrapping"] = True
+        lib.write_json(lib.CONTEXT, self.context)
+        issue_step = step in ("deepdive", "big_solve")
+        log(f"{step}: time is up; the agent has {WRAP_SECONDS}s to wrap up")
+        try:
+            self.call_agent(prompt("wrap_up_issue" if issue_step else "wrap_up", MINUTES=WRAP_SECONDS // 60,
+                                   KINDS=", ".join(kinds), ERRORS=bullet(errors)),
+                            True, WRAP_SECONDS, f"{step}_wrapup")
+            return self.collect(kinds)
+        finally:
+            self.context.pop("wrapping", None)
+            lib.write_json(lib.CONTEXT, self.context)
 
     def tick(self):
         for name in sorted(os.listdir(lib.REQUESTS)):
@@ -246,6 +272,8 @@ class Controller:
         if self.context.get("step") not in ("deepdive", "big_solve") or issue is None:
             return {"ok": False, "error": "short tests can only be run while you are working on an issue"}
         tests = self.context.setdefault("tests", [])
+        if self.context.get("wrapping"):
+            return {"ok": False, "error": "this step's time is up: no more short tests; wrap up"}
         if self.test is not None:
             return {"ok": False, "error": f"short test {self.test['info']['tid']} is still running"}
         if len(tests) >= lib.TESTS_PER_ISSUE:
@@ -572,7 +600,7 @@ class Controller:
         if ok:
             draft = staged["fix"]
             fix = {"status": draft["status"], "commits": lib.commits_between(start_sha)
-                   if draft["status"] == "fixed" else [], "tests": tests, "diagnosis": draft["diagnosis"],
+                   if draft["status"] in ("fixed", "unverified") else [], "tests": tests, "diagnosis": draft["diagnosis"],
                    "note": draft.get("note"), "investigation": lib.investigation_path(self.context),
                    "confirmation": staged.get("confirm")}
         else:
@@ -623,15 +651,15 @@ class Controller:
 
     def phase_iteration(self):
         rows = lib.read_jsonl(self.play_dir("issues.jsonl")) + lib.read_jsonl(self.play_dir("big_issues.jsonl"))
-        fixed = [{"issue": row["id"], "commits": row["fix"]["commits"]} for row in rows
-                 if row.get("fix") and row["fix"]["status"] == "fixed"]
+        fixed = [{"issue": row["id"], "commits": row["fix"]["commits"], "status": row["fix"]["status"]}
+                 for row in rows if row.get("fix") and row["fix"]["status"] in ("fixed", "unverified")]
         deferred = [row["id"] for row in rows if row.get("fix") and row["fix"]["status"] == "deferred"]
         unconfirmed = [row for row in rows if row.get("fix") and row["fix"]["status"] == "not_confirmed"]
         self.set_context(pid=self.pid, game=self.game, fixed=fixed, deferred=deferred, games=GAMES)
         cycle = self.state["cycle"]
         staged, ok = self.run_agent("iteration", prompt(
             "iteration", PID=self.pid, GAME=self.game, DIR=self.play_dir(), CYCLE=cycle,
-            NEXT_GAME=GAMES[cycle % len(GAMES)], FIXED=bullet(f"{r['issue']}: {[c[:10] for c in r['commits']]}"
+            NEXT_GAME=GAMES[cycle % len(GAMES)], FIXED=bullet(f"{r['issue']} ({r['status']}): {[c[:10] for c in r['commits']]}"
                                                               for r in fixed),
             DEFERRED=bullet(deferred), TESTS=lib.TESTS,
             UNCONFIRMED=bullet(f"{r['id']}: {r['fix']['note']}" for r in unconfirmed)), ["iteration"])
