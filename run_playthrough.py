@@ -82,6 +82,12 @@ def record_harness_commit(directory: str, parameters: dict) -> None:
 @click.option("--resume_run", default=None, type=str,
               help="Fork another run's latest state (artifacts and emulator save) into --name and "
                    "continue from it, e.g. to recreate a failure from a past playthrough.")
+@click.option("--start_checkpoint", default=None, type=str,
+              help="<run>:<id> from that run's checkpoints.jsonl: fork the run at that checkpoint, game state "
+                   "and harness memory alike, into --name, which must be a new name.")
+@click.option("--record_dir", default=None, type=str,
+              help="Write checkpoints.jsonl (every point this run can be forked from) and trajectory.jsonl "
+                   "(its intentions, plans, attempts and outcomes) here.")
 @click.option("--remote", is_flag=True, default=False,
               help="Play on the environment server instead of a local emulator: the session in "
                    "$ENVCTL_SESSION when set, otherwise a new session on --game's playthrough task. "
@@ -91,10 +97,16 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
          supervisor_vlm_model, supervisor_vlm_kind, executor_vlm_model, executor_vlm_kind,
          max_episodes, supervisor_max_steps, env_max_steps, strategist_max_new_tokens,
          supervisor_max_new_tokens, subgoal_every, report_detail, controller_variant, save_video,
-         npc_registry, override_goal, resume_run, remote):
+         npc_registry, override_goal, resume_run, start_checkpoint, record_dir, remote):
     """Play one long playthrough; re-running the same --name continues it."""
     parameters = load_parameters()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    resume_episode = None
+    if start_checkpoint is not None:
+        run, _, checkpoint = start_checkpoint.rpartition(":")
+        if resume_run is not None or not run or not checkpoint.isdigit():
+            raise click.UsageError("--start_checkpoint is <run>:<id>, and is not used with --resume_run")
+        resume_run, resume_episode = run, int(checkpoint)
 
     if remote:
         from execution.remote_env import RemoteEnvironment
@@ -139,6 +151,8 @@ def main(game, init_state, name, model, vlm_kind, strategist_vlm_model, strategi
             subgoal_every=subgoal_every,
             report_detail=report_detail,
             resume_run=resume_run,
+            resume_episode=resume_episode,
+            record_dir=record_dir,
             override_goal=override_goal,
             npc_registry=npc_registry,
             parameters=parameters,

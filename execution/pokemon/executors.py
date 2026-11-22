@@ -310,12 +310,17 @@ Location: <(x, y) or Not Found>
         output = self._locate(prompt)
         location = (parse_key_value(output, "Location") or "").strip()
         direction = (parse_key_value(output, "Direction") or "").strip().lower()
+        direction_aliases = {"north": "up", "south": "down", "west": "left", "east": "right"}
+        direction = direction_aliases.get(direction, direction)
         if "not found" in location.lower():
             return self._fail(MOVE_TARGET_NOT_FOUND, "edge_not_found", parse_key_value(output, "Reasoning"))
         target = parse_cell(location)
         if direction not in DIRECTIONS:
             return self._fail(MOVE_BAD_LOCATION, "bad_direction", f"Unusable direction {direction!r}")
-        if target is None or target not in edge_cells(self.cell_kinds, direction):
+        cells = edge_cells(self.cell_kinds, direction)
+        if target is not None and target not in cells and cells:
+            target = min(cells, key=lambda c: (c[0] - target[0]) ** 2 + (c[1] - target[1]) ** 2)
+        if target is None or target not in cells:
             return self._fail(MOVE_BAD_LOCATION, "bad_location",
                               f"{location!r} is not a walkable cell on the {direction} edge")
         self.target_cell = target
@@ -572,7 +577,7 @@ MENU_UNREADABLE = -3
 MENU_OUT_OF_STEPS = -4
 
 MENU_PRESSES = ("up", "down", "left", "right", "confirm", "back")
-MENU_STATES = (AgentState.IN_MENU, AgentState.IN_BATTLE)
+MENU_STATES = (AgentState.IN_MENU, AgentState.IN_BATTLE, AgentState.IN_DIALOGUE)
 
 
 class MenuExecutor(PolicyExecutor):

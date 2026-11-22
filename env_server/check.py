@@ -7,6 +7,7 @@ import tempfile
 import threading
 
 from env_server import codec, splits
+from env_server import sessions as sessions_module
 from env_server.policy import Policy
 from env_server.server import _handler
 from env_server.sessions import SessionError, Sessions
@@ -255,6 +256,35 @@ def _videos(directory: str) -> list:
                   for name in names if name.endswith(".mp4"))
 
 
+def _frame_index_failures(session_path: str, steps: int) -> list:
+    import cv2
+    path = os.path.join(session_path, sessions_module.FRAME_INDEX)
+    if not os.path.exists(path):
+        return ["a train session wrote no frame index"]
+    with open(path) as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    failures = []
+    if [r["kind"] for r in rows if r["kind"] != "reset"] != ["step"] * steps:
+        failures.append(f"a train session's frame index has {[r['kind'] for r in rows]}")
+    if [r["step"] for r in rows[1:]] != sorted(r["step"] for r in rows[1:]):
+        failures.append("a train session's frame index does not go forward in steps")
+    ends = {}
+    for row in rows:
+        first, end = row["frames"]
+        if first != ends.get(row["video"], 0) or end < first:
+            failures.append(f"a frame index row does not follow on from the one before it: {row}")
+        ends[row["video"]] = end
+    for video, end in ends.items():
+        capture = cv2.VideoCapture(os.path.join(session_path, video))
+        count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        capture.release()
+        if count != end:
+            failures.append(f"the frame index says {video} has {end} frames; the file has {count}")
+    if not any(row["frames"][1] > row["frames"][0] for row in rows if row["kind"] == "step"):
+        failures.append("no step in the frame index wrote a frame")
+    return failures
+
+
 def check_train_policy(*, steps: int = 4, parameters: dict, action: str = "button(a)") -> list:
     failures = []
     table = splits.load_splits(parameters=parameters)
@@ -375,6 +405,28 @@ def check_train_policy(*, steps: int = 4, parameters: dict, action: str = "butto
             failures.append(f"a train server wrote {len(videos)} videos under obs_dir; wanted one per segment")
         if any(os.path.getsize(path) == 0 for path in videos):
             failures.append("a train server left an empty video")
+
+        rolled_obs = os.path.join(root, "rolled_obs")
+        roll_seconds = sessions_module.VIDEO_ROLL_SECONDS
+        sessions_module.VIDEO_ROLL_SECONDS = 0
+        try:
+            sessions = Sessions(policy=Policy.of(kind="train"), max_sessions=1, idle_seconds=0, record_dir=None,
+                                max_steps=None, parameters=parameters, obs_dir=rolled_obs, saves_dir=saves_dir,
+                                progress_dir=progress_dir)
+            session = sessions.open(task_id=task_id)
+            session.reset()
+            for _ in range(steps):
+                session.step(action=action)
+            closed = sorted(_videos(rolled_obs), key=os.path.getmtime)[:-1]
+            session_path = session.env._emulator.session_path
+            sessions.close_all()
+            failures += _frame_index_failures(session_path, steps)
+        finally:
+            sessions_module.VIDEO_ROLL_SECONDS = roll_seconds
+        if len(closed) < steps:
+            failures.append(f"a train session with a 0s video roll closed {len(closed)} videos in {steps} steps")
+        if any(os.path.getsize(path) == 0 for path in closed):
+            failures.append("a train session closed an empty video when it rolled")
 
         test_obs = os.path.join(root, "test_obs")
         test_id = next(t for t, v in sorted(table.items()) if v["split"] == "test")

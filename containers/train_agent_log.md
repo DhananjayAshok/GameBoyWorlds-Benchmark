@@ -460,3 +460,104 @@ not see it.
   228". `AGENTS.md`: "Forks decide".
 - **Note to the agent:** the misread result, revert 25da7af, find what the player did in those 2,226 steps, correct
   `DEVLOG.md`. The adoption already happened, so the note carries the correction; the rule stops the next one.
+
+## 2026-11-20 17:07: check 29 of our watch
+
+- **Seen:** the note was acted on: 25da7af reverted (9f8713e) and `DEVLOG.md` corrected, with a finding from the
+  fork's episode reports: the 2,226 steps went on wild battles in tall grass, back to back (Squirtle 12 to 13),
+  with the player not moving. That is the best-supported diagnosis of the forest so far: encounters, not
+  navigation, eat the episodes. The agent has not yet acted on it (for example by running from wild battles while
+  travelling). `red_long` reloaded 9027 again on restart; `STALLED` 120 min, 0 badges.
+- **No change.** Watching whether its next fix follows its own finding.
+
+## 2026-11-20 17:30: we stopped watching
+
+- The run was left to go on by itself. What the watch had shown: rules in `AGENTS.md` alone did not change what
+  the agent did; ending its session from outside and resuming it with a concrete note did. Every rule that held
+  was one a tool or the loop enforced.
+
+## 2026-11-20 19:40: the setup was rebuilt around a controller (run `train_agent_cycle`)
+
+- **Why:** the agent needed more structure than one long instruction file and a watchdog could give. It never
+  looked at a frame (every tool call in `train_agent_flash` was text), judged its own runs by the harness's
+  beliefs, and patched one stall many times without finding its cause.
+- **Changed:** `cycle.py` replaces `agent_loop.sh`, `watch_check.py`, `CHECKS.md`, stall reviews, `DEVLOG.md` and
+  the `FINISHED` / `GIVE_UP` files. It runs a fixed cycle and calls the agent in a new conversation for each step,
+  with that step's prompt (`prompts/`), going on only when the step's record passes its validator (`record.py`,
+  `cyclelib.py`). `AGENTS.md` is now only the standing rules.
+  1. **Start:** the agent picks where the long playthrough begins (the beginning or any checkpoint not deleted);
+     the controller starts it and writes `playthrough.json` (harness commit, starting point). Games alternate.
+  2. **Long playthrough**, 3 hours at most. Every 5 minutes a check: a summary (intentions, plans, attempts, what
+     the screen showed), issues from `taxonomy.md`, and stuck or progressing. The controller's own recommendation,
+     from the server's grid spots and maps, is shown; only the agent's verdict ends the run, and it must explain
+     any disagreement. Each check records the harness checkpoint that was latest at the time.
+  3. **Conclusion:** at most 10% of those checkpoints kept (the final one is kept besides), a ranked issues table
+     with `present_in_previous`, and one summary.
+  4. **Deep dive** on the top 5 issues: an investigation file, one commit per fix, up to 3 short tests each
+     (`short_test.py`: 10 minutes at most, from a checkpoint, one declared test and stopping point, a verdict every
+     minute). A fix whose last test failed must be reverted and deferred.
+  5. **Larger issues:** up to 3 problems no single fix addresses, each worked on the same way.
+  6. **Iteration summary:** the changes, the deferred issues, and what the next playthroughs should show; those
+     expectations go into every later check and are judged in the next conclusions.
+- **How it is forced:** only the controller has the server token (it is removed from the agent's environment), so
+  only it starts playthroughs; it owns the timers, the kills and the deletion of checkpoints. This is not proof
+  against an agent that reads another process's environment in `/proc`: the sandbox runs everything as one user.
+- **Seeing the screen:** `digest.py` samples frames from the session videos into sheets and has the model
+  describe them (`look.py`), so each check starts from what the screen showed.
+- **Harness side** (every harness must keep these): `--record_dir` with `checkpoints.jsonl` and
+  `trajectory.jsonl`, and `--start_checkpoint <run>:<id>`.
+- **Server side:** grid spots are counted on every game (maps keyed by id where the ROM has no names), a record
+  every 30 seconds of play, and `GET /saves` / `DELETE /saves/<game>/<name>`.
+- **Tested** on a real sandbox run (`cycle_test`, Red, timers shortened to an 8-minute playthrough): start, two
+  checks, conclusion (2 issues), a deep dive with a fix commit and a short test that passed, an empty list of
+  larger issues, the iteration summary and the checkpoint deletions all went through, and cycle 2 started on
+  Crystal. Two things were fixed from it: the agent ran six `short_test.py wait` at once (now one at a time), and
+  the tile recognizer's calls flooded `trajectory.jsonl` (now left out). Not exercised: a larger-issue step with
+  an issue in it, a `stuck` verdict, and a start from a kept checkpoint.
+- **Seen in the test, not fixed:** the agent took a 2-minute-old server record for the player's position at the
+  time of a later event, and built an issue on it. The server now records every 30 seconds and the digest says how
+  old its last record is; whether that is enough is to be seen.
+- **Switch-over:** `train_agent_flash` was stopped at 19:41 after 37 passes and $214; `train_agent_cycle` starts
+  from its harness branch (`--from_run`), with the remaining budget.
+
+## 2026-11-20: the first two cycles, and what they changed in the loop
+
+- **What ran:** cycle 1 (Red, 15.8 minutes) and cycle 2 (Crystal, 26.5 minutes), both ended by a `stuck` check;
+  13 harness commits, every issue marked fixed, none deferred; $22 of gateway spend. Cycle 3 (Red) ran 27 minutes
+  of progressing checks and was then stopped by hand.
+- **A false stuck verdict, and a fix for a hang that never happened.** Red's check 3 saw an empty trajectory and
+  no video, and filed "the harness froze"; the server's records in front of it showed the step count rising
+  (40 to 53). The trajectory was written only at the end of an episode, and a video closed only on a harness
+  save. The deep dive took the check at its word and committed `18958e7` (60-second cut-off on every model call,
+  API errors turned into empty answers); its test passed on behaviour the run already had. Reverted by hand as
+  `fe86a00` in the agent's branch.
+- **Short tests passed through crashes.** Two Crystal tests crashed with a `TypeError` and were judged passed. A
+  crash in a test's log now fails the test whatever the verdict, and ends a playthrough with the error named.
+- **Checks now see the same moment from three sources:** the harness writes plans and executor legs as they
+  happen; the controller's signal says how many steps the game took in the window; the server closes a playthrough
+  video after every minute of play (live from the next server restart), so frames are at most a minute behind.
+- **The deep dive confirms before it patches.** Its first hand-in is a `confirm` record: at least two records made
+  while the game was played (server records, trajectory, log, frames), what each shows, and what could contradict
+  the issue. It is accepted only while the harness is unchanged since the step began. An issue the records do not
+  show is closed as `not_confirmed` with nothing changed, and the iteration lists it. The larger-issue step does not
+  have this yet.
+
+## 2026-11-20: frames by step, and a review of the whole playthrough from the screen
+
+- **Crystal's stuck verdict was judged on the wrong frames.** A check took the videos that closed in its window;
+  the one that closed at its start was the previous episode's (Elm's speech), and the one showing the window
+  (the walk to the starter table, ending on Cyndaquil) closed after the check. The run was stopped 28 seconds into
+  "choose Cyndaquil".
+- **Frame index (server).** Every step of a playthrough session appends `{t, kind, step, video, frames}` to
+  `frame_index.jsonl` beside its videos (GameBoyWorlds' video writer now counts its frames). Checks and the review
+  pick frames by their real time and step; runs without an index fall back to times estimated from when each video
+  closed, marked `~`.
+- **Screen review (controller, after every long playthrough).** Each episode is judged from its frames, given
+  only the strategist's task and the supervisor's subgoals: not the harness's outcomes, the executor's legs, the
+  server's counters or the checks. Then one call over the whole run. The harness's reported outcome is set beside
+  each episode afterwards and disagreements are flagged. The conclusion reads it first; each issue says whether
+  the screen agrees, and the summary must take up every flagged episode.
+- **Tested** on `p001_red` and `p002_crystal` (estimated frames, 12 calls, about $0.07): Red's episode 2 came out
+  as pacing along the north fence without triggering Oak, not a freeze; Crystal's episode 4 as reaching the table
+  with Cyndaquil's picture open; and Crystal's episode 3 was flagged: the harness called Elm's dialogue finished
+  while it was still going (the problem the deep dive later filed as I4).
