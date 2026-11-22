@@ -4,6 +4,10 @@ A vision-language model plays the game through three layers. A strategist picks 
 supervisor plans it, and executors press buttons. Between episodes the strategist keeps memory: a global map built
 from frames, a goal tree, a knowledge tree, a notepad, a strategy guide and a people registry.
 
+Every episode a building survey (`execution/strategist/pokemon/buildings.py`) reads the map and the people registry
+and, while a door nearby is not entered or someone nearby, indoors or out, is not talked to, sets the task ahead of
+the goal. It gives up on a door or person after three tasks that got no nearer.
+
 The tile recognizer and the global map are examples of the third kind of revision in `/work/AGENTS.md`: they
 solve whole problems for the player (what is on screen, where things are, how places connect) by building real
 machinery rather than by tweaking prompts.
