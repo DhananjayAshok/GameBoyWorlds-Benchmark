@@ -28,6 +28,9 @@ STEP_SECONDS = {step: int(os.environ.get(f"TRAIN_{step.upper()}_SECONDS", second
 WRAP_STEPS = ("conclude", "deepdive", "big_identify", "big_solve", "iteration")
 WRAP_SECONDS = int(os.environ.get("TRAIN_WRAP_SECONDS", 300))
 ATTEMPTS = 3
+ISSUE_STEPS = ("deepdive", "big_solve")
+ROUND_GRACE = int(os.environ.get("TRAIN_ROUND_GRACE_SECONDS", 180))
+ROUNDS = lib.TESTS_PER_ISSUE + ATTEMPTS
 MISSED_CHECKS_END = 2
 QUICK_SECONDS = 20
 QUICK_EXITS_STOP = 8
@@ -134,6 +137,7 @@ class Controller:
         self.play = None
         self.test = None
         self.test_stop = False
+        self.test_ended_at = None
         self.quick = 0
 
     def save(self):
@@ -158,9 +162,10 @@ class Controller:
         if os.path.exists(STOP_FILE):
             raise Stop("/work/STOP exists")
 
-    def call_agent(self, text, resume, timeout, name):
+    def call_agent(self, text, resume, timeout, name, end_after_test=False):
         self.state["calls"] += 1
         self.save()
+        self.test_ended_at = None
         command = ["prime-agent", "--offline", "--provider", "gateway", "--model", MODEL, "--cwd", lib.WORK]
         if resume:
             command.append("--continue")
@@ -177,6 +182,11 @@ class Controller:
                 self.check_stop()
                 if time.time() - started >= timeout:
                     log(f"{name}: the agent used its {int(timeout)}s; ending the call")
+                    break
+                if end_after_test and self.test_ended_at is not None \
+                        and time.time() - self.test_ended_at >= ROUND_GRACE:
+                    log(f"{name}: a short test ended {ROUND_GRACE}s ago; ending the session, the next one "
+                        "starts fresh from the investigation")
                     break
         finally:
             stop_process(process)
@@ -197,12 +207,17 @@ class Controller:
         deadline = time.time() + STEP_SECONDS[step]
         errors = []
         staged = {}
-        for attempt in range(attempts):
+        rounds = step in ISSUE_STEPS
+        for attempt in range(ROUNDS if rounds else attempts):
             remaining = deadline - time.time()
             if remaining < 30:
                 break
-            message = text if attempt == 0 else RETRY.format(errors=bullet(errors))
-            self.call_agent(message, attempt > 0, remaining, f"{step}_{attempt + 1}")
+            if rounds:
+                message = text if attempt == 0 else text + "\n\n" + self.round_note(attempt + 1, errors, deadline)
+                self.call_agent(message, False, remaining, f"{step}_{attempt + 1}", end_after_test=True)
+            else:
+                message = text if attempt == 0 else RETRY.format(errors=bullet(errors))
+                self.call_agent(message, attempt > 0, remaining, f"{step}_{attempt + 1}")
             staged, errors = self.collect(kinds)
             if not errors:
                 return staged, True
@@ -214,6 +229,19 @@ class Controller:
         valid = {kind: draft for kind, draft in staged.items()
                  if draft is not None and not lib.VALIDATORS[kind](draft, self.context)}
         return valid, False
+
+    def round_note(self, number, errors, deadline):
+        start_sha = self.context["start_sha"]
+        commits = [lib.git("log", "-1", "--format=%h %s", sha) for sha in lib.commits_between(start_sha)]
+        tests = self.context.get("tests", [])
+        return prompt("issue_round", ROUND=number, INVESTIGATION=lib.investigation_path(self.context),
+                      START=start_sha[:10], COMMITS=bullet(commits),
+                      DIRTY="the harness has uncommitted changes (`git status` in /work/harness shows them)"
+                      if lib.dirty() else "the harness has no uncommitted changes",
+                      TESTS=bullet(f"{tid}: {lib.test_result(tid)} (/work/tests/{tid}/test.json and checks.jsonl)"
+                                   for tid in tests),
+                      LEFT=lib.TESTS_PER_ISSUE - len(tests), MINUTES=max(0, int((deadline - time.time()) // 60)),
+                      ERRORS=bullet(errors))
 
     def collect(self, kinds):
         staged = {kind: lib.read_json(os.path.join(lib.STAGED, f"{kind}.json")) for kind in kinds}
@@ -322,6 +350,7 @@ class Controller:
         info = dict(self.test["info"], status="ended", end_reason=reason, ended=time.time(), crashed=crashed)
         lib.write_json(os.path.join(self.test["directory"], "test.json"), info)
         log(f"short test {info['tid']} ended: {reason}")
+        self.test_ended_at = time.time()
         self.test = None
         self.test_stop = False
 
@@ -590,7 +619,7 @@ class Controller:
         staged, ok = self.run_agent(step, prompt(
             step, PID=self.pid, GAME=self.game, DIR=self.play_dir(), ISSUE=json.dumps(row, indent=1),
             ISSUE_ID=row["id"], INVESTIGATION=lib.investigation_path(self.context), EARLIER=earlier,
-            START=start_sha[:10], TESTS=lib.TESTS_PER_ISSUE, MINUTES=lib.SHORT_TEST_MINUTES,
+            START=start_sha[:10], TESTS=lib.TESTS_PER_ISSUE, MINUTES=lib.SHORT_TEST_MINUTES, GRACE=ROUND_GRACE // 60,
             CHECKPOINTS=bullet(f"{self.pid}:{p['id']} (episode {p['episode']}, step {p['steps']}, "
                                f"{lib.stamp(p['t'])} UTC)" for p in lib.checkpoints(self.pid)[-60:])),
             ["confirm", "fix"] if step == "deepdive" else ["fix"])
