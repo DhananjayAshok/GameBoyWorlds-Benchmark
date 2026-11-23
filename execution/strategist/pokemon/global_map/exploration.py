@@ -74,9 +74,10 @@ def stuck_signs(gmap: GlobalMap, recent_episodes: Iterable[int], failure_streak:
 def prompt_block(gmap: GlobalMap, recent_episodes: Iterable[int],
                  local_kinds: Optional[Dict[Cell, str]] = None,
                  explore: bool = False, episode: Optional[int] = None,
-                 failed_tasks: Iterable[str] = ()) -> Tuple[str, Optional[Dict[str, Any]]]:
+                 failed_tasks: Iterable[str] = (), busy: bool = False) -> Tuple[str, Optional[Dict[str, Any]]]:
     """The map section of the dispatch prompt and, when exploring, the target that overrides the task.
-    Does not change the map: the caller applies override["until"] with `keep_exploring`."""
+    Does not change the map: the caller applies override["until"] with `keep_exploring`.
+    `busy`: the building survey already sets this episode's task, so exploring does not override it."""
     recent = list(recent_episodes)
     stale = gmap.episodes_without_new_cells(recent)
     targets, mass = frontier_targets(gmap, local_kinds)
@@ -107,9 +108,9 @@ def prompt_block(gmap: GlobalMap, recent_episodes: Iterable[int],
         lines.append("Every reachable edge of this area has been explored; the way on is a door, "
                      "stairs or a path you have not tried.")
     override = None
-    triggered = explore and episode is not None
+    triggered = explore and episode is not None and not busy
     # Exploration stays in charge for a few episodes: one is not enough to rule a direction out.
-    active = exploring(gmap, episode)
+    active = exploring(gmap, episode) and not busy
     elsewhere = explore_elsewhere(gmap) if (triggered or active) and not targets else []
     if (triggered or active) and (targets or elsewhere):
         until = gmap.exploring_until if active else episode + EXPLORE_EPISODES - 1

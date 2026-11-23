@@ -17,6 +17,7 @@ from execution.pokemon.supervisors import PokemonPlayThroughSupervisor
 from execution.report import (EnvironmentStepRecord, ExecutorVLMCallRecord, SupervisorReport, SupervisorVLMCallRecord,
                               action_name, per_prompt_token_counts)
 from execution.run_record import RunRecord
+from execution.strategist.pokemon import buildings
 from execution.strategist.pokemon import prompts as P
 from execution.strategist.pokemon.asking import ask, single_value
 from execution.strategist.pokemon.goals import (GoalNode, GoalSubtree, PokemonGoalTree, check_goals,
@@ -28,8 +29,9 @@ from execution.strategist.pokemon.notepad import ThoughtNotepad
 from execution.strategist.pokemon.npc_map import with_people
 from execution.strategist.pokemon.npcs import PLACED_STATUS, STALE_EPISODES, NPCRegistry
 from execution.strategist.pokemon.global_map import (FAILURE_EPISODES, GlobalMap, MappingEnvironment, explore_text,
-                                                     exploring, judge_merge, judge_stuck, keep_exploring,
-                                                     name_segment, navigate_map, prompt_block, stuck_signs)
+                                                     exploring, frontier_targets, judge_merge, judge_stuck,
+                                                     keep_exploring, name_segment, navigate_map, prompt_block,
+                                                     stuck_signs)
 from execution.perception.pokemon.navigation import cell_kinds
 from execution.strategist.report import (REPORT_DETAILS, EpisodeArchive, EpisodeRecord, StrategistReport,
                                          StrategistVLMCallRecord, save_episode_report, trim_episode)
@@ -174,6 +176,9 @@ class PokemonStrategist:
         self._episodes_run = 0
         self._ran = False
         self._explore_now = False
+        self._survey = buildings.Survey()
+        # Episodes whose task the building survey set: their failures say nothing about the goal plan.
+        self._surveyed: set = set()
 
         self._started_at = datetime.now()
         self._session_dir = self._resolve_session_dir()
@@ -343,6 +348,45 @@ class PokemonStrategist:
             log_warn(f"NPC registry: the people on the map were skipped: {type(e).__name__}: {e}", self._parameters)
             return []
 
+    def _people_in(self):
+        """The people marks of any area, for the building survey; None when the registry is off."""
+        return self._people_on_map if self.npcs is not None else None
+
+    def _people_here(self) -> Optional[list]:
+        if self.npcs is None:
+            return None
+        gmap = self.global_map
+        here = gmap.resolve(gmap.segment, gmap.pos)[0]
+        return [m for m in self._people_on_map(here) if self.npcs._episode - m.last_seen[0] <= STALE_EPISODES]
+
+    def _building_survey(self, n: int) -> buildings.Survey:
+        """Judge what the last task was sent for, then work out the building rules for this one."""
+        gmap = self.global_map
+        # Where the screen could not be placed the map's position is out of date, so nothing is judged or aimed at.
+        if not gmap.current or not self._map_placed:
+            return buildings.Survey()
+        try:
+            counted = buildings.settle(gmap, self._people_in())
+            if counted:
+                log_info(f"Building survey: {counted}.", self._parameters)
+            local = cell_kinds(self._identified, gmap.ledge_patterns) if self._identified else None
+            survey = buildings.survey(gmap, self._people_here(), self._people_in(),
+                                      frontier_targets(gmap, local)[0], n)
+        except Exception as e:  # noqa: BLE001
+            log_warn(f"Building survey was skipped: {type(e).__name__}: {e}", self._parameters)
+            return buildings.Survey()
+        gmap.aim_survey(survey.aim)
+        if survey.log:
+            log_info(f"Building survey: {survey.log}.", self._parameters)
+        return survey
+
+    def _building_summary(self) -> str:
+        try:
+            return buildings.summary(self.global_map, self._people_in()) or ""
+        except Exception as e:  # noqa: BLE001
+            log_warn(f"Building survey: the summary was skipped: {type(e).__name__}: {e}", self._parameters)
+            return ""
+
     def _maybe_on_map(self, segment: int) -> list:
         if self.npcs is None:
             return []
@@ -381,7 +425,7 @@ class PokemonStrategist:
         if not self._explore_now or exploring(self.global_map, n):
             return
         streak, failed = self._failure_streak()
-        if streak < FAILURE_EPISODES:
+        if streak < FAILURE_EPISODES or any(e.n in self._surveyed for e in self.report.episodes[-streak:]):
             return
         frontier = self.goals.frontier()
         if frontier is None:
@@ -476,16 +520,19 @@ class PokemonStrategist:
         marks, maybe = None, []
         if self.npcs is not None:
             here = gmap.resolve(gmap.segment, gmap.pos)[0]
-            marks = [m for m in self._people_on_map(here) if self.npcs._episode - m.last_seen[0] <= STALE_EPISODES]
+            marks = self._people_here()
             maybe = self._maybe_on_map(here)
+        survey = self._survey
         block, override = prompt_block(self.global_map, list(self.global_map.new_cells_by_episode), local,
                                        explore=self._explore_now,
                                        episode=self.start_episode + self._episodes_run,
-                                       failed_tasks=failed)
+                                       failed_tasks=failed, busy=survey.aim is not None)
         if override is not None:
             keep_exploring(self.global_map, override["until"])
         if marks is not None:
             block = with_people(block, gmap, marks, self._people_where, maybe)
+        if survey.text:
+            block += "\n" + survey.text
         if override is not None and override["kind"] == "edge":
             log_info(f"Global map: exploration overrides the task: head to ({override['dx']}, {override['dy']}) "
                      f"{override['sector']} in {self.global_map.area_label(override['area'])}.", self._parameters)
@@ -713,8 +760,11 @@ class PokemonStrategist:
             if unsuccessful_for <= 0 or unsuccessful_for % self._subgoal_every:
                 return
         self.global_map.clear_routes()
-        create_subgoals(self.goals, self.knowledge, self._current_place(), explore_text(self.global_map),
-                        self.notepad.text,
+        explore = explore_text(self.global_map)
+        buildings_now = self._building_summary()
+        if buildings_now:
+            explore = buildings_now if explore == "(none)" else f"{explore}\n{buildings_now}"
+        create_subgoals(self.goals, self.knowledge, self._current_place(), explore, self.notepad.text,
                         lambda request: navigate_map(self.global_map, request, self._vlm_caller, self._game,
                                                      self._parameters),
                         self._vlm_caller, self._game, n, unsuccessful_for, self._parameters)
@@ -727,7 +777,11 @@ class PokemonStrategist:
             self.npcs.begin_episode(n, self.global_map)
         self._map_opening_screen(frame)
         self._name_people_on_screen()
-        self._explore_now = self._check_stuck(frame, n)
+        self._survey = self._building_survey(n)
+        if self._survey.aim is not None:
+            self._surveyed.add(n)
+        # While the building survey sets the task there is no plan to be stuck on.
+        self._explore_now = self._survey.aim is None and self._check_stuck(frame, n)
         self._abandon_failing_plan(n)
         self._plan_goals(n)
         task, guidance = self._dispatch(frame)
@@ -778,7 +832,10 @@ class PokemonStrategist:
         before, frame = frame, self._current_frame()
         self._perceive(frame, n)
 
-        closed = check_goals(self.goals, report.digest, self.notepad.text, self._vlm_caller, self._game, n,
+        # The goal check sees only the report and the notepad; the map knows which buildings are done.
+        buildings_now = self._building_summary()
+        closed = check_goals(self.goals, report.digest + (f"\n\n{buildings_now}" if buildings_now else ""),
+                             self.notepad.text, self._vlm_caller, self._game, n,
                              current=self._current_place(), parameters=self._parameters)
         summary, town = self._review(report.digest)
         record.summary = summary or record.summary
