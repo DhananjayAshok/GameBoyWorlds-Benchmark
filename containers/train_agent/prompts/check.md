@@ -1,6 +1,7 @@
 You are doing CHECK [[NUMBER]] of the long playthrough `[[PID]]` ([[GAME]]), [[MINUTES]] minutes in. The
-playthrough keeps running while you check. You have 4 minutes: read, judge, hand in the record, end your turn. Do
-not change the harness and do not start or stop anything.
+playthrough keeps running while you check. You have [[BUDGET]]: read, judge, hand in the record, end your turn.
+With [[WARNING]] left, the controller interrupts you once with a time check. Do not change the harness and do not
+start or stop anything.
 
 Read, in this order:
 

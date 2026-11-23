@@ -36,6 +36,15 @@ QUICK_SECONDS = 20
 QUICK_EXITS_STOP = 8
 RETRY = ("Your record was not accepted yet:\n{errors}\n\nFix exactly these, in the same files, and hand the "
          "record in again with record.py. Do not start the step over.")
+WARN_SECONDS = {"start": 120, "check": 70, "conclude": 300, "deepdive": 900, "big_identify": 300,
+                "big_solve": 900, "iteration": 180, "wrapup": 90}
+WARN_SECONDS = {step: int(os.environ.get(f"TRAIN_{step.upper()}_WARN_SECONDS", seconds))
+                for step, seconds in WARN_SECONDS.items()}
+
+
+def span(seconds):
+    seconds = int(seconds)
+    return f"{seconds} seconds" if seconds < 120 else f"{round(seconds / 60)} minutes"
 
 
 class Stop(Exception):
@@ -139,6 +148,7 @@ class Controller:
         self.test_stop = False
         self.test_ended_at = None
         self.quick = 0
+        self.warning = None
 
     def save(self):
         lib.write_json(lib.STATE, self.state)
@@ -166,6 +176,9 @@ class Controller:
         self.state["calls"] += 1
         self.save()
         self.test_ended_at = None
+        if self.warning and not self.warning.get("sent") and time.time() >= self.warning["at"]:
+            self.warning["sent"] = True
+            text = self.warning_text(self.warning["deadline"] - time.time(), False) + "\n\n" + text
         command = ["prime-agent", "--offline", "--provider", "gateway", "--model", MODEL, "--cwd", lib.WORK]
         if resume:
             command.append("--continue")
@@ -180,6 +193,20 @@ class Controller:
                 time.sleep(1)
                 self.tick()
                 self.check_stop()
+                warning = self.warning
+                if warning and not warning.get("sent") and time.time() >= warning["at"] \
+                        and time.time() - started < timeout - 30:
+                    warning["sent"] = True
+                    left = warning["deadline"] - time.time()
+                    log(f"{name}: {span(left)} left in {warning['step']}; warning the agent")
+                    stop_process(process)
+                    command = command[:command.index("-p")] + ["-p", self.warning_text(left, True)]
+                    if "--continue" not in command:
+                        command.insert(command.index("-p"), "--continue")
+                    with open(path, "ab") as out:
+                        process = subprocess.Popen(command, cwd=lib.WORK, stdout=out, stderr=subprocess.STDOUT,
+                                                   stdin=subprocess.DEVNULL, start_new_session=True)
+                    continue
                 if time.time() - started >= timeout:
                     log(f"{name}: the agent used its {int(timeout)}s; ending the call")
                     break
@@ -205,6 +232,9 @@ class Controller:
                 if os.path.exists(path):
                     os.remove(path)
         deadline = time.time() + STEP_SECONDS[step]
+        self.warning = {"at": deadline - WARN_SECONDS[step], "deadline": deadline, "step": step, "kinds": kinds}
+        text = text.replace("[[BUDGET]]", span(STEP_SECONDS[step])).replace("[[WARNING]]",
+                                                                             span(WARN_SECONDS[step]))
         errors = []
         staged = {}
         rounds = step in ISSUE_STEPS
@@ -260,14 +290,30 @@ class Controller:
         lib.write_json(lib.CONTEXT, self.context)
         issue_step = step in ("deepdive", "big_solve")
         log(f"{step}: time is up; the agent has {WRAP_SECONDS}s to wrap up")
+        deadline = time.time() + WRAP_SECONDS
+        self.warning = {"at": deadline - WARN_SECONDS["wrapup"], "deadline": deadline, "step": f"{step} wrap-up",
+                        "kinds": kinds, "wrapup": True}
         try:
             self.call_agent(prompt("wrap_up_issue" if issue_step else "wrap_up", MINUTES=WRAP_SECONDS // 60,
                                    KINDS=", ".join(kinds), ERRORS=bullet(errors)),
                             True, WRAP_SECONDS, f"{step}_wrapup")
             return self.collect(kinds)
         finally:
+            self.warning = None
             self.context.pop("wrapping", None)
             lib.write_json(lib.CONTEXT, self.context)
+
+    def warning_text(self, left, interrupted):
+        warning = self.warning
+        note = ("\n\nYour session was interrupted to give you this message: anything that was under way when it "
+                "arrived may not have finished, so check it and run it again if you still need it."
+                if interrupted else "")
+        if warning["step"] in ISSUE_STEPS:
+            test = (f"A short test is running ({self.test['info']['tid']}); read its result as it comes in."
+                    if self.test is not None else "No short test is running.")
+            return prompt("warn_issue", LEFT=span(left), TEST=test, TESTS=len(self.context.get("tests", [])),
+                          INVESTIGATION=lib.investigation_path(self.context), INTERRUPTED=note)
+        return prompt("warn", LEFT=span(left), KINDS=", ".join(warning["kinds"]), INTERRUPTED=note)
 
     def tick(self):
         for name in sorted(os.listdir(lib.REQUESTS)):

@@ -1,6 +1,7 @@
 You are at the CONCLUSION step for the long playthrough `[[PID]]` ([[GAME]]), which has ended. The rules in
 /work/AGENTS.md always apply. In this step you do not change the harness; you read the whole record and write
-three things.
+three things. This step has [[BUDGET]]. With [[WARNING]] left, the controller interrupts you once with a time
+check.
 
 Read all of it first, starting with the screen review:
 

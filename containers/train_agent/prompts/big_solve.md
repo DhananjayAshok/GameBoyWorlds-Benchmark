@@ -40,8 +40,10 @@ showed, with steps and frames, and what you will do next. [[GRACE]] minutes afte
 ends this session, and a new one continues the step from [[INVESTIGATION]] with nothing else of this session, so
 keep the file complete enough to carry on from. If the test passed, hand in the fix record (step 4) first.
 
-This step has a time limit. If it runs out first, the controller stops any short test and tells you to wrap up:
-you then either keep the change unverified or revert it, in a few minutes.
+This step has [[BUDGET]] in all. A short test takes up to [[MINUTES]] minutes, plus the time to read what it
+showed, so leave room for one. With [[WARNING]] left, the controller interrupts you once with a time check. If
+time runs out first, the controller stops any short test and tells you to wrap up: you then either keep the
+change unverified or revert it, in a few minutes.
 
 **4. Hand in the result.** Write /work/cycle/drafts/fix.json and run
 `/opt/harness/bin/python /opt/train/record.py fix`:
