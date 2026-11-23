@@ -183,6 +183,7 @@ class RemoteEnvironment:
             "action_return": action_return,
             "transition_passed_frames": to_frames(transition.get("frames")),
             "previous_action_details": (action, kwargs, states, out["obs"].get("action_success"), action_return)})
+        self._info["ocr"] = {"transition_ocr_regions": [state["ocr"]["ocr_regions"] for state in states]}
         info = self.get_info()
         terminated = self.done and self.success == 1.0
         return self.get_observation(), 0.0, terminated, self.done and not terminated, info

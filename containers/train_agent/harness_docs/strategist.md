@@ -4,9 +4,10 @@ A vision-language model plays the game through three layers. A strategist picks 
 supervisor plans it, and executors press buttons. Between episodes the strategist keeps memory: a global map built
 from frames, a goal tree, a knowledge tree, a notepad, a strategy guide and a people registry.
 
-Every episode a building survey (`execution/strategist/pokemon/buildings.py`) reads the map and the people registry
-and, while a door nearby is not entered or someone nearby, indoors or out, is not talked to, sets the task ahead of
-the goal. It gives up on a door or person after three tasks that got no nearer.
+The strategist keeps a record of buildings and people (`execution/strategist/pokemon/buildings.py`), read off the map
+and the people registry: the dispatch prompt lists who in the current area has and has not been talked to, and the
+dispatch prompt, goal check and subgoal planner are told which nearby buildings have been entered and how many people
+in each are not talked to yet. It does not set the task.
 
 The tile recognizer and the global map are examples of a design change, as opposed to a patch: they solve whole
 problems for the player (what is on screen, where things are, how places connect) by building real machinery

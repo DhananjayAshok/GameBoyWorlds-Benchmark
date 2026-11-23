@@ -222,25 +222,21 @@ One episode runs like this:
 
 1. **Perceive.** The tile recognizer labels the tiles on screen, and the frame is placed on the global map.
 2. **Stuck check.** If recent episodes found nothing new or kept failing, the strategist is asked whether it is stuck. If so, exploration overrides the next task and the failing plan is abandoned.
-3. **Building survey.** Wherever the player is, the map and the people registry are read for what is left to do nearby: a door not entered yet, someone indoors or outdoors not talked to yet, or map just past the last door found. While something is left, it sets the task and comes before the goal (see below).
-4. **Plan.** The current goal is re-planned into subgoals every `--subgoal_every` episodes it stays open, using what the knowledge tree and the map say.
-5. **Dispatch.** One call turns the goal, notepad, active guide rules and the map around the player into a task and guidance.
-6. **Execute.** The supervisor runs the task. Every step it takes also updates the map.
-7. **Review.** New areas are named, goals are checked off or revised, facts go into the knowledge tree, the notepad is updated, and guide rules are added or rewritten. A lost battle triggers a reflection that can add a "prepare first" subgoal.
+3. **Plan.** The current goal is re-planned into subgoals every `--subgoal_every` episodes it stays open, using what the knowledge tree and the map say.
+4. **Dispatch.** One call turns the goal, notepad, active guide rules and the map around the player into a task and guidance.
+5. **Execute.** The supervisor runs the task. Every step it takes also updates the map.
+6. **Review.** New areas are named, goals are checked off or revised, facts go into the knowledge tree, the notepad is updated, and guide rules are added or rewritten. A lost battle triggers a reflection that can add a "prepare first" subgoal.
 
-### Exploring buildings and talking to people
+### Buildings and people
 
-Every place the player reaches is surveyed as part of normal play; there is no flag for it. `execution/strategist/pokemon/buildings.py` works out the rules from the global map and the people registry, and the dispatch prompt carries them:
+The strategist keeps a record of the buildings it has been in and who it has talked to, read off the global map and the people registry (`execution/strategist/pokemon/buildings.py`); it does not set the task.
 
-- **Outside**, people within 24 steps who have not been talked to and doors within 24 steps that have not been entered are listed, and the task must be to go for whichever is nearest. A building left before everyone in it was talked to is sent back to. Buildings already finished are listed too, with the rule not to go in again unless the goal needs that place.
-- **Once is enough.** Someone already talked to is not a target again, and the prompt says not to talk to them again unless the goal or the task in hand needs it.
-- **Inside a building**, the people the registry has seen there and not heard are listed by where they stand, and the task must be to talk to the nearest. Then come any stairs or doors not yet taken, then any part of the building not yet seen. Only when all of that is done is the building finished and the player told to leave.
-- **When every door found nearby is done**, the task is to walk to the nearest unexplored map edge to look for more doors. With no door and nobody left to talk to within 24 steps, as on an empty stretch of route, the survey says nothing and the goal carries on. Caves are passed through, not surveyed.
-- **Giving up.** A door, person or edge that three tasks neither reached nor got nearer to is dropped (a locked door, someone behind a wall), so the survey cannot hold the game up. The counts are kept in the `globalmap` artifact.
+- **In the area the player is in**, the dispatch prompt lists each person the registry has seen there, where they stand, and whether they have been talked to (and how many times, and whether they said the same thing each time).
+- **For the buildings near the player** (doors within 24 steps of them, or of the door they came in by), the dispatch prompt, the goal check and the subgoal planner are told which buildings have been entered and how many people in each are not talked to yet, how many doors have not been entered, and how many people outside are not talked to yet. So a goal such as "go into every building in this town and talk to everyone" can be planned and closed.
 
-While the survey sets the task, the stuck check is not run and its exploration does not override it, and failures of survey tasks never cause a goal plan to be abandoned. A summary of the buildings nearby (entered, people left, doors left) is also given to the goal check and the subgoal planner, so a goal such as "go into every building in this town and talk to everyone" can be planned and closed. Areas are named by the kind of building and where its door is unless the game said whose it is. With `--no_npc_registry` the door rules still apply, and talking to everyone is left to the strategy guide's rule for entering a building.
+Areas are named by the kind of building and where its door is unless the game said whose it is.
 
-To survey a town from a saved state, start there with a goal that says so:
+To have the player survey a town from a saved state, start there with a goal that says so:
 
 ```bash
 python run_playthrough.py --game pokemon_red --name town_survey --model google/gemini-3.6-flash --vlm_kind openrouter \
