@@ -26,7 +26,7 @@ playthrough:
     init_state: initial
     goal: Defeat the Elite Four and enter the Hall of Fame
   pokemon_brown:
-    init_state: location_merson_city
+    init_state: initial
     goal: Defeat the Elite Four and become the Rijon League Champion
   pokemon_prism:
     init_state: post_intro

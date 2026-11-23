@@ -59,8 +59,11 @@ def check():
 @click.option("--saves_dir", default=None, help="Train only: where named saves are kept.")
 @click.option("--progress_dir", default=None,
               help="Log each session's progress read from game memory (badges, maps, events) here.")
+@click.option("--stop_after_no_progress", default=None, type=int,
+              help="End a session's episode after this many steps with no new map, event or flag in game "
+                   "memory. Needs --progress_dir.")
 def serve(kind, host, port, unix_socket, token_file, max_sessions, idle_seconds, max_steps, record_dir,
-          checkpoint_dir, checkpoint_every, obs_dir, saves_dir, progress_dir):
+          checkpoint_dir, checkpoint_every, obs_dir, saves_dir, progress_dir, stop_after_no_progress):
     """Serve one policy on host:port or on a Unix socket."""
     from env_server.policy import Policy
     from env_server.server import serve as serve_forever
@@ -71,11 +74,14 @@ def serve(kind, host, port, unix_socket, token_file, max_sessions, idle_seconds,
         raise click.ClickException("--checkpoint_dir is only for --kind playthrough")
     if (kind == "train") != bool(saves_dir):
         raise click.ClickException("--saves_dir is required for --kind train and only for it")
+    if stop_after_no_progress and not progress_dir:
+        raise click.ClickException("--stop_after_no_progress needs --progress_dir")
     parameters = load_parameters()
     sessions = Sessions(policy=Policy.of(kind=kind), max_sessions=max_sessions, idle_seconds=idle_seconds,
                         record_dir=record_dir, max_steps=max_steps, parameters=parameters,
                         checkpoint_dir=checkpoint_dir, checkpoint_every=checkpoint_every,
-                        obs_dir=obs_dir, saves_dir=saves_dir, progress_dir=progress_dir)
+                        obs_dir=obs_dir, saves_dir=saves_dir, progress_dir=progress_dir,
+                        stop_after_no_progress=stop_after_no_progress)
     serve_forever(sessions=sessions, host=host, port=port, token=_read_token(token_file),
                   parameters=parameters, unix_socket=unix_socket)
 

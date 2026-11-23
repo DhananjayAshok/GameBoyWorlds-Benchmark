@@ -57,6 +57,8 @@ class Progress:
         self._reported_flags: set = set(self._flags())
         self._written_at = 0
         self._written_time = time.time()
+        self._progress_steps: Optional[int] = None
+        self._progress_seen: Optional[tuple] = None
         os.makedirs(directory, exist_ok=True)
 
     def _events(self) -> list:
@@ -91,10 +93,21 @@ class Progress:
         self._new_tile_steps = None
         self._new_tile_time = time.time()
         self._history.clear()
+        self._progress_steps = None
+        self._progress_seen = None
         self.observe()
 
     def start_over(self) -> None:
         self.restore(lineage=None)
+
+    def steps_without_progress(self, *, steps: int) -> int:
+        maps, events, flags = set(self.maps), set(self._events()), set(self._flags())
+        seen = self._progress_seen
+        if seen is None or not (maps <= seen[0] and events <= seen[1] and flags <= seen[2]):
+            self._progress_steps = steps
+            seen = (set(), set(), set()) if seen is None else seen
+            self._progress_seen = (seen[0] | maps, seen[1] | events, seen[2] | flags)
+        return steps - self._progress_steps
 
     def observe(self, *, steps: Optional[int] = None) -> None:
         if steps is not None:

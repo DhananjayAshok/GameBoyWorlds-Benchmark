@@ -27,6 +27,7 @@ CHECKPOINT_STATE = "emulator.state"
 CHECKPOINT_META = "session.json"
 SAVE_NAME = re.compile(r"^[A-Za-z0-9_]{1,128}$")
 VIDEO_ROLL_SECONDS = 60
+STALL_CHECK_STEPS = 25
 FRAME_INDEX = "frame_index.jsonl"
 
 
@@ -47,8 +48,11 @@ class Session:
                  checkpoint_dir: Optional[str] = None, checkpoint_every: int = 0,
                  saved: Optional[dict] = None, obs_dir: Optional[str] = None,
                  saves_dir: Optional[str] = None, progress_dir: Optional[str] = None,
-                 run: Optional[str] = None) -> None:
+                 run: Optional[str] = None, stop_after_no_progress: Optional[int] = None) -> None:
         self._parameters = parameters
+        self.stop_after_no_progress = stop_after_no_progress
+        self.stalled: Optional[dict] = None
+        self._stall_checked = 0
         self.saves_dir = saves_dir
         self.run = run
         self.policy = policy
@@ -100,6 +104,9 @@ class Session:
         self.progress = Progress(directory=progress_dir, session=self.id, game=self.game, run=run,
                                  memory=memory, parameters=parameters) \
             if progress_dir and memory is not None else None
+        if stop_after_no_progress and self.progress is None:
+            raise ValueError("--stop_after_no_progress needs progress from game memory: a progress_dir and a game "
+                             "with a memory reader")
         if saved:
             self._restore(saved=saved)
 
@@ -116,7 +123,7 @@ class Session:
                 "free_play": not self.is_task,
                 "episode_over": self.episode_over, "success": self.success,
                 "steps": self._steps(), "max_steps": self._max_steps(), "subgoals": self._subgoals(),
-                "label": self.label, "discarded_steps": self.discarded_steps}
+                "label": self.label, "discarded_steps": self.discarded_steps, "stalled": self.stalled}
 
     def _steps(self) -> int:
         return int(getattr(self.env._emulator, "step_count", 0))
@@ -137,6 +144,8 @@ class Session:
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         self._checkpointed_at = self._steps()
         self._meta = {**self.describe(), "token": self.token, "started": self.started}
+        if self.progress:
+            self._meta["progress"] = self.progress.lineage()
         # State before meta, each replaced atomically: a crash between the two leaves a loadable pair
         # whose step count is at most one interval behind the emulator's.
         self._write(CHECKPOINT_STATE, lambda f: self.env._emulator._pyboy.save_state(f))
@@ -188,9 +197,14 @@ class Session:
         self._apply_state(state_path=os.path.join(self.checkpoint_dir, CHECKPOINT_STATE), saved=saved)
         self._checkpointed_at = self._steps()
         self.started = bool(saved["started"])
-        self.episode_over = bool(saved["episode_over"])
-        self.success = saved["success"]
-        log_info(f"restored session {self.id} at step {self._steps()}", parameters=self._parameters)
+        stalled = saved.get("stalled")
+        self.episode_over = bool(saved["episode_over"]) and not stalled
+        self.success = None if stalled else saved["success"]
+        if self.progress and "progress" in saved:
+            self.progress.restore(lineage=saved["progress"])
+        log_info(f"restored session {self.id} at step {self._steps()}"
+                 + (f", resuming after a stop for no progress at step {stalled['steps']}" if stalled else ""),
+                 parameters=self._parameters)
 
     def _payload(self, *, info: Optional[dict], action_success=None, valid: bool = True,
                  error: Optional[str] = None) -> dict:
@@ -260,6 +274,18 @@ class Session:
                 self._write_progress(kind="cleared")
             elif self.progress.due(steps=self._steps()):
                 self._write_progress(kind="periodic")
+            if self.stop_after_no_progress and not self.episode_over \
+                    and self._steps() - self._stall_checked >= STALL_CHECK_STEPS:
+                self._stall_checked = self._steps()
+                idle = self.progress.steps_without_progress(steps=self._steps())
+                if idle >= self.stop_after_no_progress:
+                    self.episode_over = True
+                    if self.is_task:
+                        self.success = 0.0
+                    self.stalled = {"steps": self._steps(), "steps_without_progress": idle}
+                    log_info(f"session {self.id} stopped: no new map, event or flag in {idle} steps",
+                             parameters=self._parameters)
+                    self._write_progress(kind="stalled")
         # One high-level action can take many presses, so this counts presses since the last checkpoint.
         if self.episode_over or (self.checkpoint_every and self.label is None
                                  and self._steps() - self._checkpointed_at >= self.checkpoint_every):
@@ -391,10 +417,12 @@ class Sessions:
                  record_dir: Optional[str], max_steps: Optional[int], parameters: dict,
                  session_name: Optional[str] = None, checkpoint_dir: Optional[str] = None,
                  checkpoint_every: int = 500, obs_dir: Optional[str] = None,
-                 saves_dir: Optional[str] = None, progress_dir: Optional[str] = None) -> None:
+                 saves_dir: Optional[str] = None, progress_dir: Optional[str] = None,
+                 stop_after_no_progress: Optional[int] = None) -> None:
         self._parameters = parameters
         self.policy = policy
         self.progress_dir = progress_dir
+        self.stop_after_no_progress = stop_after_no_progress
         if checkpoint_dir and policy.kind != "playthrough":
             raise ValueError(f"a {policy.kind} server does not checkpoint; only playthrough does")
         if policy.named_saves != bool(saves_dir):
@@ -419,7 +447,8 @@ class Sessions:
                        session_name=self.session_name, parameters=self._parameters,
                        checkpoint_dir=self.checkpoint_dir, checkpoint_every=self.checkpoint_every,
                        saved=saved, obs_dir=self.obs_dir, saves_dir=self.saves_dir,
-                       progress_dir=self.progress_dir, run=run)
+                       progress_dir=self.progress_dir, run=run,
+                       stop_after_no_progress=self.stop_after_no_progress)
 
     def listed(self) -> list:
         tasks = splits.listed(splits_wanted=self.policy.splits_listed, parameters=self._parameters)

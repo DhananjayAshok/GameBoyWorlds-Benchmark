@@ -51,6 +51,7 @@ MAX_COST=""
 HARNESS_REPO=harnesses/strategist
 PUSH_URL=""
 PUSH_PREFIX=""
+STOP_AFTER_NO_PROGRESS=""
 
 usage() {
     sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -59,6 +60,8 @@ usage() {
     echo "         --workspace <dir>  --log_dir <dir>  --record_dir <dir>  --time_limit <seconds>"
     echo "         --max_steps <n>  --run_dir <dir>  --checkpoint_every <steps>  --harness  --max_cost <dollars>"
     echo "         --harness_repo <dir>  --push_url <git url>  --push_prefix <branch prefix>   (train)"
+    echo "         --stop_after_no_progress <steps>   (test, playthrough: end the episode when game memory shows"
+    echo "                                             no new map, event or flag for this many steps)"
     exit 1
 }
 
@@ -80,6 +83,7 @@ while [[ $# -gt 0 ]]; do
         --harness_repo) HARNESS_REPO="$2"; shift 2 ;;
         --push_url) PUSH_URL="$2"; shift 2 ;;
         --push_prefix) PUSH_PREFIX="$2"; shift 2 ;;
+        --stop_after_no_progress) STOP_AFTER_NO_PROGRESS="$2"; shift 2 ;;
         --) shift; break ;;
         *) usage ;;
     esac
@@ -98,6 +102,8 @@ OPENS_OWN=false
 [[ "$KIND" == playthrough || "$KIND" == train || -z "$STATE_DIR" ]] \
     || die "--run_dir is only for --kind playthrough or train"
 [[ "$KIND" != train || "$HARNESS" == false ]] || die "--kind train always copies the harness; drop --harness"
+[[ -z "$STOP_AFTER_NO_PROGRESS" || "$KIND" == test || "$KIND" == playthrough ]] \
+    || die "--stop_after_no_progress is for evaluation runs (--kind test or playthrough) only"
 [[ "$KIND" != train || -d "$HARNESS_REPO/.git" ]] \
     || die "no harness repository at $HARNESS_REPO; make it with containers/harness_repo.sh sync"
 [[ -z "$PUSH_URL" || -n "$PUSH_PREFIX" ]] || die "--push_url needs --push_prefix"
@@ -150,6 +156,8 @@ server_args=(serve --kind "$KIND" --unix_socket "$NET/envserver.sock" --token_fi
 [[ "$KIND" == playthrough ]] && server_args+=(--checkpoint_dir "$STATE_DIR/checkpoint" --checkpoint_every "$CHECKPOINT_EVERY")
 [[ "$KIND" == train ]] && server_args+=(--saves_dir "$STATE_DIR/saves" --max_sessions 1
                                          --progress_dir "$OBS_DIR/progress")
+[[ -n "$STOP_AFTER_NO_PROGRESS" ]] && server_args+=(--progress_dir "$OBS_DIR/progress"
+                                                    --stop_after_no_progress "$STOP_AFTER_NO_PROGRESS")
 "$PYTHON" run_env_server.py "${server_args[@]}" > "$LOG_DIR/server.log" 2>&1 &
 SERVER_PID=$!
 gateway_args=(--socket "$NET/model.sock" --allow "$MODEL" --log "$LOG_DIR/gateway.jsonl")
