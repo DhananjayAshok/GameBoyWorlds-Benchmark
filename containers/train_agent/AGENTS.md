@@ -107,6 +107,8 @@ Changes may come from outside the sandbox on the branch `upstream`; they are mer
 # Your environment
 
 - Python for the harness and the tools is `/opt/harness/bin/python`. There is no network and no package installs.
+  Your `python_repl` has the same packages, so it can import the harness once `/work/harness` is on `sys.path`
+  and load its records (episode reports, artifacts) directly.
 - The only model is `$SANDBOX_MODEL`, through the gateway. Every call costs money and the whole run has a fixed
   budget; when it is spent, model calls fail with a spending-cap error.
 - `/work/AGENTS.md` (this file) and everything under `/opt/train` are read-only.
