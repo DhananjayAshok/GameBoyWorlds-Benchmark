@@ -18,6 +18,18 @@ UPSTREAM_TIMEOUT = 600
 MAX_BODY = 64 * 1024 * 1024
 STREAM_TAIL = 1024 * 1024
 STREAM_RETRIES = 3
+RETRY_DELAY = 5
+
+
+def stream_error(line: bytes):
+    try:
+        event = json.loads(line[len(b"data:"):].strip())
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(event, dict) or "error" not in event:
+        return None
+    error = event["error"]
+    return str(error.get("message") if isinstance(error, dict) else error)[:200]
 
 
 def call_cost(usage) -> float:
@@ -163,39 +175,74 @@ def _handler(*, allow: set, key: str, log, lock: threading.Lock, ledger=None):
             stream = bool(request.get("stream"))
             kept = bytearray()
             client_gone = False
+            retried = []
+
+            def forward(data: bytes) -> None:
+                nonlocal sent, client_gone
+                if not data or client_gone:
+                    return
+                try:
+                    self.wfile.write(data)
+                    self.wfile.flush()
+                    sent += len(data)
+                except (BrokenPipeError, ConnectionResetError):
+                    client_gone = True
+
             while True:
-                content = False
+                content, pending, withheld = not stream, bytearray(), None
                 try:
                     while True:
                         chunk = response.read1(65536) if hasattr(response, "read1") else response.read(65536)
                         if not chunk:
                             break
                         kept += chunk
-                        content = content or b"data:" in bytes(kept[-(len(chunk) + 5):])
                         if stream and len(kept) > STREAM_TAIL:
                             del kept[:len(kept) - STREAM_TAIL]
-                        if client_gone:
+                        if content:
+                            forward(chunk)
                             continue
-                        try:
-                            self.wfile.write(chunk)
-                            self.wfile.flush()
-                            sent += len(chunk)
-                        except (BrokenPipeError, ConnectionResetError):
-                            client_gone = True
+                        pending += chunk
+                        out = bytearray()
+                        while b"\n" in pending:
+                            end = pending.index(b"\n") + 1
+                            line = bytes(pending[:end])
+                            del pending[:end]
+                            if line.startswith(b"data:"):
+                                if stream_error(line) is not None:
+                                    withheld = line
+                                    break
+                                content = True
+                                out += line + pending
+                                pending.clear()
+                                break
+                            out += line
+                        forward(bytes(out))
+                        if withheld is not None:
+                            break
                 finally:
                     response.close()
-                if not stream or content or client_gone or response.status != 200 or retries >= STREAM_RETRIES:
+                if withheld is None and pending:
+                    if pending.startswith(b"data:") and stream_error(bytes(pending)) is not None:
+                        withheld = bytes(pending)
+                    else:
+                        content = content or pending.startswith(b"data:")
+                        forward(bytes(pending))
+                if content or client_gone or response.status != 200 or retries >= STREAM_RETRIES:
+                    forward(withheld or b"")
                     break
+                retried.append(stream_error(withheld) if withheld is not None else "no data")
                 retries += 1
+                time.sleep(RETRY_DELAY)
                 try:
                     response = open_upstream()
                 except Exception:
+                    forward(withheld or b"")
                     break
             usage = usage_of(bytes(kept), stream=stream) if response.status == 200 else None
             spent = ledger.add(usage=usage) if ledger is not None and response.status == 200 else None
             record(verdict="forwarded", model=model, stripped=stripped, status=response.status,
                    stream=stream, bytes_in=length, bytes_out=sent, seconds=round(time.time() - started, 2),
-                   cost=call_cost(usage), spent=spent, retries=retries,
+                   cost=call_cost(usage), spent=spent, retries=retries, retried=retried,
                    **({"tail": bytes(kept[-800:]).decode("utf-8", "replace")} if stream and usage is None else {}))
 
     return Handler
