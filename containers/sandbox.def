@@ -63,6 +63,19 @@ From: python@sha256:cad37dd20c7cac861af9003af8796d03ea7a998ec1e3a664429740fc9d7d
     python /opt/build/seed_kernel_skills.py "$kernel" \
         /opt/build/kernel_skills.json /opt/pa/share/prime-agent/prime-agent-runtime
 
+    # The agent's python_repl runs in this kernel, so it gets the harness's packages too; where the kernel
+    # already pins a package, its version is kept (UV_CONSTRAINT) and the harness's pin is dropped.
+    uv pip freeze --python "$kernel/bin/python" > /opt/build/kernel_freeze.txt
+    python - /opt/build/kernel_freeze.txt /opt/build/harness_requirements.txt /opt/build/kernel_harness.txt <<'PY'
+import re, sys
+name = lambda line: re.split(r"[=<>!~ \[;@]", line.strip(), 1)[0].lower().replace("_", "-")
+have = {name(l) for l in open(sys.argv[1]) if l.strip() and not l.startswith("#")}
+keep = [l.strip() for l in open(sys.argv[2]) if l.strip() and not l.startswith("#") and name(l) not in have]
+open(sys.argv[3], "w").write("\n".join(keep) + "\n")
+PY
+    uv pip install --python "$kernel/bin/python" -r /opt/build/kernel_harness.txt
+    "$kernel/bin/python" -c "import numpy, cv2, PIL, matplotlib, openai, anthropic, httpx, click, tqdm, yaml, rlm"
+
     mv "$kernel" /opt/pa-kernel/seed-venv
     uv pip freeze --python /opt/pa-kernel/seed-venv/bin/python > /opt/pa-kernel/freeze.txt
     chmod 0755 /opt/sandbox/bin/prime-agent /opt/sandbox/bin/sandbox-run

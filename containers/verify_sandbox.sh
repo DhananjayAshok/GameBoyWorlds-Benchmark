@@ -106,6 +106,8 @@ v = json.load(open('/opt/pa-kernel/seed-venv/.bootstrap-version'))
 assert len(v.get('python_skills') or []) == 6, v.get('python_skills')"
 run "the seed kernel imports its runtime and default packages" \
     sandbox "$SIF" /opt/pa-kernel/seed-venv/bin/python -c "import rlm, dill, requests, numpy, pandas, scipy, pydantic, yaml, bs4, lxml, tyro, dotenv, tomli, httpx"
+run "the seed kernel imports the harness's packages, for python_repl" \
+    sandbox "$SIF" /opt/pa-kernel/seed-venv/bin/python -c "import cv2, matplotlib, openai, anthropic, tqdm, rich, PIL"
 run "every constraint pin is what got installed" \
     sandbox "$SIF" sh -c 'grep -v "^#" /dev/stdin | while read -r pin; do grep -qix "$pin" /opt/pa-kernel/freeze.txt || exit 1; done' \
     < containers/kernel_constraints.txt
