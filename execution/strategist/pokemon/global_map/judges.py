@@ -11,7 +11,7 @@ from execution.strategist.pokemon.asking import ask, single_value
 from .model import AREA_KINDS
 from .render import render_overlay, render_segment
 from .routes import plan_route, render_plan
-from .text import LEGEND, _door_text, segment_ascii
+from .text import LEGEND, _door_text, entrance_text, segment_ascii
 
 if TYPE_CHECKING:
     from .model import Cell, GlobalMap
@@ -64,8 +64,10 @@ def name_segment(gmap: GlobalMap, segment: int, mark: Optional[Cell], left: bool
                 .replace("[BEFORE]", str(info.named_pixels // GRID_SKIP ** 2))
                 .replace("[AFTER]", str(gmap.filled_pixels(segment) // GRID_SKIP ** 2))
                 if review else P.SEGMENT_NAME_NEW)
+    came = entrance_text(gmap, segment)
     prompt = (P.SEGMENT_NAME_PROMPT.replace("[GAME]", game)
               .replace("[SITUATION]", situation)
+              .replace("[ENTRANCE]", P.SEGMENT_NAME_ENTRANCE.replace("[ENTRANCE]", came) if came else "")
               .replace("[MARK_IMAGE]", f"the magenta box is {mark_image}, and " if mark is not None else "and ")
               .replace("[MARK_TEXT]", f", with X {mark_text}" if mark is not None else "")
               .replace("[MAP]", segment_ascii(gmap, segment, mark))

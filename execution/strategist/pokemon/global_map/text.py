@@ -112,6 +112,49 @@ def door_lines(gmap: GlobalMap) -> List[str]:
     return lines
 
 
+def door_uses(gmap: GlobalMap, segment: int, cells) -> int:
+    cells, count = set(cells), 0
+    for _, a, pa, _, _ in gmap.warps:
+        a, pa = gmap.resolve(a, pa)
+        if a == segment and gmap._door_at(a, pa) in cells:
+            count += 1
+    return count
+
+
+def entrance(gmap: GlobalMap, segment: int) -> Optional[Tuple[int, Cell]]:
+    """The area and square the player last left to come into `segment` through a door."""
+    segment = gmap.resolve(segment, (0, 0))[0]
+    for _, a, pa, b, _ in reversed(gmap.warps):
+        a, pa = gmap.resolve(a, pa)
+        if gmap.resolve(b, (0, 0))[0] == segment and a != segment:
+            return a, pa
+    return None
+
+
+def entrance_text(gmap: GlobalMap, segment: int) -> Optional[str]:
+    came = entrance(gmap, segment)
+    if came is None:
+        return None
+    source, pos = came
+    door, name = gmap._door_at(source, pos), gmap.area_label(source)
+    # Placed among the other doors there, not within the area's bounds, which other ground on the same map skews.
+    others = [d["cells"][0] for d in gmap.door_list(source)
+              if d["leads_to"] is None or gmap.resolve(d["leads_to"], (0, 0))[0] != source]
+    if len(others) < 2:
+        return f"a door in {name}, the only door found there so far"
+
+    def third(value: int, low: int, high: int, names: Tuple[str, str]) -> str:
+        if high == low:
+            return ""
+        t = (value - low) / (high - low)
+        return names[0] if t < 1 / 3 else names[1] if t > 2 / 3 else ""
+
+    ns = third(door[1], min(g[1] for g in others), max(g[1] for g in others), ("south", "north"))
+    ew = third(door[0], min(g[0] for g in others), max(g[0] for g in others), ("west", "east"))
+    where = "-".join(part for part in (ns, ew) if part) or "middle"
+    return f"the {where} one of the {len(others)} doors found so far in {name}"
+
+
 def elsewhere_lines(gmap: GlobalMap, groups: List[Dict[str, Any]]) -> List[str]:
     lines = []
     for i, g in enumerate(groups, 1):

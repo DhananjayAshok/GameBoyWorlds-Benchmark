@@ -150,6 +150,9 @@ class GlobalMap(StrategistArtifact):
         self.defeats: List[Dict[str, Any]] = []
         self.defeat_return: Optional[Dict[str, Any]] = None
         self.ledge_patterns: set = set()
+        # Building survey (buildings.py): what the last task was sent for, and tries that got no nearer to it.
+        self.survey_aim: Optional[Dict[str, Any]] = None
+        self.survey_tries: Counter = Counter()
 
     def __setstate__(self, state: dict) -> None:
         super().__setstate__(state)
@@ -166,6 +169,8 @@ class GlobalMap(StrategistArtifact):
         self.__dict__.setdefault("naming_queue", [])
         self.__dict__.setdefault("merge_verdicts", {})
         self.__dict__.setdefault("ledge_patterns", set())
+        self.__dict__.setdefault("survey_aim", None)
+        self.__dict__.setdefault("survey_tries", Counter())
 
     def _classify(self, tags: Iterable[str], hashes: Tuple[Optional[str], ...]) -> str:
         kind = classify(tags)
@@ -258,6 +263,12 @@ class GlobalMap(StrategistArtifact):
 
     def count(self, stat: str, by: int = 1) -> None:
         self.stats[stat] += by
+
+    def aim_survey(self, aim: Optional[Dict[str, Any]]) -> None:
+        self.survey_aim = aim
+
+    def count_survey_try(self, key: Tuple) -> None:
+        self.survey_tries[key] += 1
 
     def return_to_defeat(self, defeat: Dict[str, Any], episode: int) -> None:
         self.defeat_return = {"defeat": defeat, "episode": episode}
