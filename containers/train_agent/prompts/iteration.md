@@ -1,5 +1,6 @@
 You are at the ITERATION SUMMARY step of cycle [[CYCLE]], after the long playthrough `[[PID]]` ([[GAME]]) and the
 work on its issues. The rules in /work/AGENTS.md always apply. In this step you do not change the harness.
+This step has [[BUDGET]]. With [[WARNING]] left, the controller interrupts you once with a time check.
 
 Read:
 

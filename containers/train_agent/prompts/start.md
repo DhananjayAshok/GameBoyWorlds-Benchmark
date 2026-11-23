@@ -1,4 +1,5 @@
 You are at the START step of cycle [[CYCLE]]. The rules in /work/AGENTS.md always apply; read it if you have not.
+This step has [[BUDGET]]. With [[WARNING]] left, the controller interrupts you once with a time check.
 
 [[NOTE]]The next long playthrough is `[[PID]]`, on `[[GAME]]`. The controller starts it; you only choose where it begins.
 

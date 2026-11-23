@@ -1,5 +1,6 @@
 You are at the LARGER ISSUES step for the long playthrough `[[PID]]` ([[GAME]]). The rules in /work/AGENTS.md
-always apply. In this step you do not change the harness.
+always apply. In this step you do not change the harness. This step has [[BUDGET]]. With [[WARNING]] left, the
+controller interrupts you once with a time check.
 
 The small issues of this playthrough have been worked through one at a time. Now step back. Read:
 
