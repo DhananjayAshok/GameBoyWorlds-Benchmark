@@ -379,6 +379,18 @@ class Controller:
                     rows.append(f"{kept['id']}: {kept['context']} Useful for: {kept['useful_for']}")
         return rows
 
+    def latest_checkpoint(self, game):
+        for other in sorted(os.listdir(lib.PLAYS), reverse=True):
+            info = lib.read_json(os.path.join(lib.PLAYS, other, "playthrough.json")) or {}
+            if info.get("game") != game or other == self.pid:
+                continue
+            kept = [row["id"] for row in lib.read_jsonl(os.path.join(lib.PLAYS, other, "save_states.jsonl"))]
+            refs = [info.get("final_checkpoint")] + sorted(kept, key=lambda ref: -int(ref.rpartition(":")[2]))
+            for ref in refs:
+                if ref and self.usable_checkpoint(ref)[1] is None:
+                    return ref
+        return None
+
     def expectations(self, game):
         for cycle in range(self.state["cycle"] - 1, 0, -1):
             iteration = lib.read_json(os.path.join(lib.ITERATIONS, f"{cycle:03d}.json"))
@@ -399,7 +411,8 @@ class Controller:
         self.state["pid"] = f"p{self.state['cycle']:03d}_{short(game)}"
         self.save()
         commit_leftovers("at the start of a playthrough")
-        self.set_context(pid=self.pid, game=game)
+        latest = self.latest_checkpoint(game)
+        self.set_context(pid=self.pid, game=game, latest=latest)
         note = ""
         if os.path.exists(LAUNCH_NOTE):
             with open(LAUNCH_NOTE) as f:
@@ -407,7 +420,7 @@ class Controller:
             os.remove(LAUNCH_NOTE)
         staged, _ = self.run_agent("start", prompt(
             "start", PID=self.pid, GAME=game, CYCLE=self.state["cycle"], NOTE=note,
-            CHECKPOINTS=bullet(self.startable(game)),
+            CHECKPOINTS=bullet(self.startable(game)), LATEST=latest or lib.BEGINNING,
             LAST_ITERATION=os.path.join(lib.ITERATIONS, f"{self.state['cycle'] - 1:03d}.md")), ["start"])
         choice = staged.get("start") or {"from": lib.BEGINNING, "why": "No accepted choice; started from the beginning."}
         if choice["from"] != lib.BEGINNING and self.usable_checkpoint(choice["from"])[1]:

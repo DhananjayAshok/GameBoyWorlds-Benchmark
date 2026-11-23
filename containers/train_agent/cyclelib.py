@@ -435,6 +435,10 @@ def validate_start(draft, context):
         elif checkpoint["game"] != context["game"]:
             errors.append(f"from: {start} is a {checkpoint['game']} checkpoint and this playthrough is "
                           f"{context['game']}")
+    latest = context.get("latest")
+    if latest and start != latest:
+        need_text(errors, draft.get("earlier_because"),
+                  f"earlier_because (needed because {start} is not the latest checkpoint, {latest})", minimum=80)
     return errors
 
 
@@ -784,7 +788,10 @@ VALIDATORS = {"start": validate_start, "check": validate_check, "saves": validat
               "big_issues": validate_big_issues, "iteration": validate_iteration}
 
 TEMPLATES = {
-    "start": {"from": "beginning | <run>:<checkpoint id>", "why": "one or two sentences"},
+    "start": {"from": "beginning | <run>:<checkpoint id>", "why": "one or two sentences",
+              "earlier_because": "only when from is not the latest checkpoint: the expectation or commit that "
+                                 "needs it, what happens before the latest checkpoint that it must see, and why "
+                                 "a short test cannot show it"},
     "check": {"summary": {"intentions": "what the strategist was trying to do, citing episodes",
                           "plans": "how the supervisor broke that down",
                           "attempts": "what the executors actually pressed and tried",

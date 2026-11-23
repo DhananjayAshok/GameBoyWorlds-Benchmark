@@ -7,15 +7,24 @@ together):
 
 [[CHECKPOINTS]]
 
-To decide, read what the last iteration expects of this playthrough, if the file exists: [[LAST_ITERATION]]
-Begin where the playthrough will teach you the most: usually the furthest point reached, so that it goes on into
-new parts of the game; an earlier checkpoint or the beginning when a fix needs to be seen working from there.
+The latest checkpoint is `[[LATEST]]`. Start there. The long playthrough is for parts of the game the harness has
+not played yet; fixes are shown working at earlier points by the short tests in the issue steps, not by playing the
+game again from an earlier point.
+
+Start earlier only when a change can be seen nowhere after `[[LATEST]]`: for example, a fix for something that
+happens only before that point, which a short test cannot show. Even then, take the latest checkpoint that comes
+before it, not the beginning. Read what the last iteration expects of this playthrough, if the file exists:
+[[LAST_ITERATION]]
 
 Write your choice as JSON to /work/cycle/drafts/start.json:
 
 ```json
-{"from": "beginning", "why": "one or two sentences"}
+{"from": "[[LATEST]]", "why": "one or two sentences"}
 ```
+
+If `from` is not `[[LATEST]]`, add `"earlier_because"`: the expectation or commit that needs the earlier start,
+what happens before `[[LATEST]]` that it must see, and why a short test cannot show it. Without it the record is
+not accepted.
 
 `from` is `"beginning"` or one checkpoint exactly as listed, for example `"p001_red:57"`. Then hand it in:
 
