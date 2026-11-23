@@ -563,7 +563,7 @@ class Controller:
         staged, ok = self.run_agent("check", prompt(
             "check", PID=self.pid, GAME=self.game, NUMBER=number, MINUTES=round(self.played() / 60),
             DIGEST=digest_path, CHECKS=self.play_dir("checks.md"), SIGNAL=measured["text"],
-            EXPECTATIONS=bullet(expectations), LOG=os.path.join(RUN_LOGS, f"{self.pid}.log")), ["check"], attempts=2)
+            EXPECTATIONS=bullet(expectations)), ["check"], attempts=2)
         entry = {"check": number, "t": now, "utc": lib.stamp(now), "minutes": round(self.played() / 60, 1),
                  "checkpoint": checkpoint, "recommendation": measured["recommendation"],
                  "signal": {k: v for k, v in measured.items() if k != "text"}, "signal_text": measured["text"],
