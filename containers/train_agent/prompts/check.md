@@ -3,6 +3,11 @@ playthrough keeps running while you check. You have [[BUDGET]]: read, judge, han
 With [[WARNING]] left, the controller interrupts you once with a time check. Do not change the harness and do not
 start or stop anything.
 
+A check judges what happened; it does not explain it. Work only from the digest, its frames and the earlier
+checks below. Do not open the harness's code, its pickles, its trajectory or its saved episode records: finding
+the cause in the code is the deep dive's job, later, with the time for it. Hand in a first version of the record
+within 2 minutes; you can improve it and hand it in again while time is left.
+
 Read, in this order:
 
 1. [[DIGEST]]: the last 5 minutes. What the server measured, what the harness intended, planned, tried and
@@ -35,7 +40,8 @@ Write the check as JSON to /work/cycle/drafts/check.json, in this shape
     the harness's own words: the harness can believe it did something it did not. If the frames do not answer
     something, ask with `/opt/harness/bin/python /opt/train/look.py --images <sheets> --question "..."`.
 - `issues`: each problem you can see in this window, with `locus` and `code` from /opt/train/taxonomy.md,
-  `observation` (how it can be seen, with episode and time), `cause` (the likely cause in the harness) and
+  `observation` (how it can be seen, with episode and time), `cause` (one line: your best guess at the cause, from
+  what you read here, without looking in the code) and
   `correct_behavior` (what the player should have done). An empty list if there are none.
 - `stuck`: `verdict` is `"stuck"` or `"progressing"`, with `reasoning`. Judge from both the grid spots and maps the
   server counted and the earlier summaries. The player is stuck if, across the summaries, it is not meaningfully
@@ -52,5 +58,4 @@ Then hand it in:
 /opt/harness/bin/python /opt/train/record.py check
 ```
 
-Fix whatever it reports and run it again. When it says ACCEPTED, end your turn. The run's own log, if you need it:
-[[LOG]]
+Fix whatever it reports and run it again. When it says ACCEPTED, end your turn.
