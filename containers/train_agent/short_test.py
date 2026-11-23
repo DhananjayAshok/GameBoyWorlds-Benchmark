@@ -102,7 +102,10 @@ def verdict(args):
         print("Recorded. The test keeps running; run `short_test.py wait` again.")
         return
     ask("stop_test", tid=tid)
-    print(f"Recorded, and short test {tid} is stopped. Result: {lib.test_result(tid)}.")
+    print(f"Recorded, and short test {tid} is stopped. Result: {lib.test_result(tid)}. Add `## Test {tid}` to "
+          f"{lib.investigation_path(lib.read_json(lib.CONTEXT, {}))} now (what it showed, and what you will do next); "
+          "if it passed, hand in the fix record. This session ends a few minutes after the test, and a new one "
+          "carries on from the investigation file.")
 
 
 def main():

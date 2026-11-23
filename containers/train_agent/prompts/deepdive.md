@@ -61,6 +61,11 @@ The most recent checkpoints of this playthrough (earlier ones are in [[DIR]]/har
 If a test fails, improve the fix, commit, and test again. If the last test you can run still fails, undo your
 commits with `git revert` and record the issue as deferred.
 
+Each short test ends a session. When a test ends, add `## Test <tid>` to [[INVESTIGATION]] at once: what the test
+showed, with steps and frames, and what you will do next. [[GRACE]] minutes after the test ends the controller
+ends this session, and a new one continues the step from [[INVESTIGATION]] with nothing else of this session, so
+keep the file complete enough to carry on from. If the test passed, hand in the fix record (step 5) first.
+
 This step has a time limit. If it runs out first, the controller stops any short test and tells you to wrap up:
 you then either keep the fix unverified or revert it, in a few minutes.
 

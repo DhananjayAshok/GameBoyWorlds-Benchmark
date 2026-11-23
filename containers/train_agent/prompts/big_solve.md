@@ -35,6 +35,11 @@ After each `wait`, record a verdict; `not_yet` keeps it running. The most recent
 
 If the last test you can run fails, undo your commits with `git revert` and record the issue as deferred.
 
+Each short test ends a session. When a test ends, add `## Test <tid>` to [[INVESTIGATION]] at once: what the test
+showed, with steps and frames, and what you will do next. [[GRACE]] minutes after the test ends the controller
+ends this session, and a new one continues the step from [[INVESTIGATION]] with nothing else of this session, so
+keep the file complete enough to carry on from. If the test passed, hand in the fix record (step 4) first.
+
 This step has a time limit. If it runs out first, the controller stops any short test and tells you to wrap up:
 you then either keep the change unverified or revert it, in a few minutes.
 
