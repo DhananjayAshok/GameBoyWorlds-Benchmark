@@ -9,6 +9,19 @@ The small issues of this playthrough have been worked through one at a time. Now
 - [[DIR]]/issues.md: the small issues and what was done about each.
 - The previous playthrough: [[PREVIOUS]] (its summary.md, issues.md and big_issues.md), and the iteration
   summaries in /work/iterations/.
+- Every larger issue filed in earlier playthroughs, and every small issue that repeated an earlier one, with what
+  became of it (each playthrough's big_issues.md, issues.md and investigations/ in /work/playthroughs/ have the
+  rest):
+
+[[HISTORY]]
+
+Start from that history. Look for a part of the harness that keeps coming back: an issue fixed and then filed
+again in a later playthrough, or issues in different playthroughs that land in the same part of the design. A
+part that comes back after a fix was patched at its symptoms, and one more patch of this playthrough's symptom
+will come back too. When you find one, file it as one larger issue about that part as a whole, ranked 1: in
+`where`, every earlier issue and fix it shares a cause with; in `probable_cause`, the design choice they share,
+not this playthrough's symptom; in `proposed_change`, a change to that design itself, which may mean replacing how
+that part works rather than adding to it; and `present_in_previous` the most recent earlier issue it matches.
 
 Look for the larger problems in how the player behaves: patterns no single small fix addresses. Small issues that
 share one cause. A whole kind of situation the harness has no way to handle. A part of its design that keeps

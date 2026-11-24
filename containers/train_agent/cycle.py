@@ -717,12 +717,31 @@ class Controller:
         self.state.update(phase="big_identify")
         self.save()
 
+    def issue_history(self):
+        rows = []
+        for other in sorted(os.listdir(lib.PLAYS)):
+            if other == self.pid:
+                continue
+            for kind in ("big_issues", "issues"):
+                for row in lib.read_jsonl(os.path.join(lib.PLAYS, other, f"{kind}.jsonl")):
+                    earlier = row.get("present_in_previous") or "no"
+                    if kind == "issues" and earlier == "no":
+                        continue
+                    fix = row.get("fix") or {}
+                    status = fix.get("status") or "not worked on"
+                    repeats = f", repeats {earlier}" if earlier != "no" else ""
+                    text = " ".join(str(row.get("description", "")).split())
+                    text = text if len(text) <= 240 else text[:240] + "..."
+                    rows.append(f"{other}:{row['id']} ({status}{repeats}): {text}")
+        return bullet(rows)
+
     def phase_big_identify(self):
         self.set_context(pid=self.pid, game=self.game)
         previous = self.previous_pid()
         staged, _ = self.run_agent("big_identify", prompt(
             "big_identify", PID=self.pid, GAME=self.game, DIR=self.play_dir(), MAX=lib.BIG_ISSUES_PER_CYCLE,
-            PREVIOUS=os.path.join(lib.PLAYS, previous) if previous else "(there is none yet)"), ["big_issues"])
+            PREVIOUS=os.path.join(lib.PLAYS, previous) if previous else "(there is none yet)",
+            HISTORY=self.issue_history()), ["big_issues"])
         issues = sorted((staged.get("big_issues") or {"issues": []})["issues"], key=lambda row: row["rank"])
         for row in issues:
             row["fix"] = None
