@@ -317,6 +317,8 @@ class Controller:
 
     def tick(self):
         for name in sorted(os.listdir(lib.REQUESTS)):
+            if not name.endswith(".json"):
+                continue
             path = os.path.join(lib.REQUESTS, name)
             request = lib.read_json(path)
             os.remove(path)
