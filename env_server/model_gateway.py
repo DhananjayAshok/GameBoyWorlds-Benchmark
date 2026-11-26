@@ -10,7 +10,6 @@ from http.server import BaseHTTPRequestHandler
 
 from env_server.unix_http import unix_listener
 
-UPSTREAM = "https://openrouter.ai/api/v1/chat/completions"
 PATH = "/v1/chat/completions"
 # Request fields that reach past the allowlisted model: web search, and fallback routing to other models.
 STRIPPED = ("plugins", "web_search_options", "models", "route")
@@ -19,6 +18,133 @@ MAX_BODY = 64 * 1024 * 1024
 STREAM_TAIL = 1024 * 1024
 STREAM_RETRIES = 3
 RETRY_DELAY = 5
+RETRY_STATUS = (429, 500, 502, 503, 504)
+
+GOOGLE_FIELDS = {"model", "messages", "stream", "stream_options", "tools", "tool_choice", "temperature", "top_p",
+                 "max_tokens", "max_completion_tokens", "stop", "n", "response_format", "seed", "reasoning_effort",
+                 "frequency_penalty", "presence_penalty"}
+GOOGLE_MESSAGE_FIELDS = {"role", "content", "name", "tool_calls", "tool_call_id", "extra_content"}
+# Google's documented placeholder for a function call whose thought signature was not kept by the client.
+GOOGLE_DUMMY_SIGNATURE = "skip_thought_signature_validator"
+GOOGLE_SIGNATURES_KEPT = 50000
+# Dollars per million tokens: (in effect from, input, output including thinking, cached input), newest first.
+GOOGLE_PRICES = {
+    "gemini-4-argon": [("2026-12-01", 4.00, 20.00, 0.20), ("", 2.00, 10.00, 0.10)],
+}
+
+
+class OpenRouter:
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    key_env = "OPENROUTER_API_KEY"
+
+    def prepare(self, request: dict) -> list:
+        return []
+
+    def learn(self, body: bytes, *, stream: bool) -> None:
+        pass
+
+    def cost(self, usage, model: str = None) -> float:
+        return call_cost(usage)
+
+
+class Google:
+    url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    key_env = "GEMINI_API_KEY"
+
+    def __init__(self, allow) -> None:
+        self.lock = threading.Lock()
+        self.signatures = {}
+        missing = [m for m in allow if self.upstream_model(m) not in GOOGLE_PRICES]
+        if missing:
+            raise ValueError(f"no Google price for {missing}; add it to GOOGLE_PRICES so the spending cap counts it")
+
+    @staticmethod
+    def upstream_model(model: str) -> str:
+        return model.split("/", 1)[1] if model.startswith("google/") else model
+
+    def prepare(self, request: dict) -> list:
+        stripped = []
+        request["model"] = self.upstream_model(request["model"])
+        reasoning = request.pop("reasoning", None)
+        if isinstance(reasoning, dict) and reasoning.get("effort") and "reasoning_effort" not in request:
+            request["reasoning_effort"] = reasoning["effort"]
+        for name in [name for name in request if name not in GOOGLE_FIELDS]:
+            request.pop(name)
+            stripped.append(name)
+        if request.get("stream"):
+            request["stream_options"] = {**(request.get("stream_options") or {}), "include_usage": True}
+        messages = request.get("messages")
+        if isinstance(messages, list):
+            for message in messages:
+                if isinstance(message, dict):
+                    self.prepare_message(message, stripped)
+        return stripped
+
+    def prepare_message(self, message: dict, stripped: list) -> None:
+        for name in [name for name in message if name not in GOOGLE_MESSAGE_FIELDS]:
+            message.pop(name)
+            if f"messages[].{name}" not in stripped:
+                stripped.append(f"messages[].{name}")
+        if isinstance(message.get("content"), list):
+            for part in message["content"]:
+                if isinstance(part, dict) and part.pop("cache_control", None) is not None:
+                    if "cache_control" not in stripped:
+                        stripped.append("cache_control")
+        for call in message.get("tool_calls") or []:
+            if not isinstance(call, dict):
+                continue
+            google = (call.get("extra_content") or {}).get("google") or {}
+            if google.get("thought_signature"):
+                continue
+            with self.lock:
+                signature = self.signatures.get(call.get("id")) or GOOGLE_DUMMY_SIGNATURE
+            call["extra_content"] = {"google": {**google, "thought_signature": signature}}
+
+    def learn(self, body: bytes, *, stream: bool) -> None:
+        text = body.decode("utf-8", "replace")
+        events = []
+        if stream:
+            for line in text.splitlines():
+                if line.startswith("data:"):
+                    try:
+                        events.append(json.loads(line[len("data:"):].strip()))
+                    except json.JSONDecodeError:
+                        pass
+        else:
+            try:
+                events.append(json.loads(text))
+            except json.JSONDecodeError:
+                return
+        ids, found = {}, {}
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            for choice in event.get("choices") or []:
+                part = choice.get("delta") or choice.get("message") or {}
+                for position, call in enumerate(part.get("tool_calls") or []):
+                    key = (choice.get("index", 0), call.get("index", position))
+                    if call.get("id"):
+                        ids[key] = call["id"]
+                    signature = ((call.get("extra_content") or {}).get("google") or {}).get("thought_signature")
+                    if signature and ids.get(key):
+                        found[ids[key]] = signature
+        if found:
+            with self.lock:
+                self.signatures.update(found)
+                while len(self.signatures) > GOOGLE_SIGNATURES_KEPT:
+                    self.signatures.pop(next(iter(self.signatures)))
+
+    def cost(self, usage, model: str = None) -> float:
+        if not isinstance(usage, dict):
+            return 0.0
+        prompt = int(usage.get("prompt_tokens") or 0)
+        total = usage.get("total_tokens")
+        output = int(total) - prompt if total is not None else int(usage.get("completion_tokens") or 0)
+        cached = int((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0)
+        today = time.strftime("%Y-%m-%d", time.gmtime())
+        _, price_in, price_out, price_cached = next(
+            row for row in GOOGLE_PRICES[self.upstream_model(model)] if row[0] <= today)
+        return ((prompt - cached) * price_in + cached * price_cached + output * price_out) / 1e6
 
 
 def stream_error(line: bytes):
@@ -69,8 +195,7 @@ class Ledger:
         with self.lock:
             return self.totals["spent"] >= self.max_cost
 
-    def add(self, *, usage) -> float:
-        cost = call_cost(usage)
+    def add(self, *, usage, cost: float) -> float:
         with self.lock:
             self.totals["spent"] += cost
             self.totals["calls"] += 1
@@ -93,7 +218,9 @@ def _tls_context() -> ssl.SSLContext:
 TLS = _tls_context()
 
 
-def _handler(*, allow: set, key: str, log, lock: threading.Lock, ledger=None):
+def _handler(*, allow: set, key: str, log, lock: threading.Lock, ledger=None, provider=None):
+    provider = provider or OpenRouter()
+
     def record(**event) -> None:
         event["t"] = round(time.time(), 3)
         with lock:
@@ -148,22 +275,31 @@ def _handler(*, allow: set, key: str, log, lock: threading.Lock, ledger=None):
                 if len(kept) != len(tools):
                     request["tools"] = kept
                     stripped.append("tools[server-side]")
+            stripped += provider.prepare(request)
 
             body = json.dumps(request).encode()
             accept = self.headers.get("Accept", "application/json")
 
             def open_upstream():
                 upstream = urllib.request.Request(
-                    UPSTREAM, data=body, method="POST",
+                    provider.url, data=body, method="POST",
                     headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
                              "Accept": accept})
-                return urllib.request.urlopen(upstream, timeout=UPSTREAM_TIMEOUT, context=TLS)
+                try:
+                    return urllib.request.urlopen(upstream, timeout=UPSTREAM_TIMEOUT, context=TLS)
+                except urllib.error.HTTPError as error:
+                    return error
 
             started, sent, retries = time.time(), 0, 0
+            retried = []
             try:
                 response = open_upstream()
-            except urllib.error.HTTPError as error:
-                response = error
+                while response.status in RETRY_STATUS and retries < STREAM_RETRIES:
+                    retried.append(f"HTTP {response.status}")
+                    response.close()
+                    time.sleep(RETRY_DELAY * 2 ** retries)
+                    retries += 1
+                    response = open_upstream()
             except Exception as error:
                 # The detail goes to the host log only.
                 return self._refuse(502, f"upstream unreachable: {type(error).__name__}", model=model,
@@ -175,7 +311,6 @@ def _handler(*, allow: set, key: str, log, lock: threading.Lock, ledger=None):
             stream = bool(request.get("stream"))
             kept = bytearray()
             client_gone = False
-            retried = []
 
             def forward(data: bytes) -> None:
                 nonlocal sent, client_gone
@@ -239,11 +374,15 @@ def _handler(*, allow: set, key: str, log, lock: threading.Lock, ledger=None):
                     forward(withheld or b"")
                     break
             usage = usage_of(bytes(kept), stream=stream) if response.status == 200 else None
-            spent = ledger.add(usage=usage) if ledger is not None and response.status == 200 else None
+            if response.status == 200:
+                provider.learn(bytes(kept), stream=stream)
+            cost = provider.cost(usage, model)
+            spent = ledger.add(usage=usage, cost=cost) if ledger is not None and response.status == 200 else None
             record(verdict="forwarded", model=model, stripped=stripped, status=response.status,
                    stream=stream, bytes_in=length, bytes_out=sent, seconds=round(time.time() - started, 2),
-                   cost=call_cost(usage), spent=spent, retries=retries, retried=retried,
-                   **({"tail": bytes(kept[-800:]).decode("utf-8", "replace")} if stream and usage is None else {}))
+                   cost=cost, spent=spent, retries=retries, retried=retried,
+                   **({"tail": bytes(kept[-800:]).decode("utf-8", "replace")}
+                      if (stream and usage is None) or response.status != 200 else {}))
 
     return Handler
 
@@ -251,30 +390,38 @@ def _handler(*, allow: set, key: str, log, lock: threading.Lock, ledger=None):
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="OpenAI-compatible endpoint on a Unix socket that forwards chat completions for "
-                    "allowlisted models to OpenRouter, adding the API key on the host.")
+                    "allowlisted models to OpenRouter or Google, adding the API key on the host.")
     parser.add_argument("--socket", required=True)
     parser.add_argument("--allow", action="append", required=True, help="an OpenRouter model id, repeatable")
     parser.add_argument("--log", required=True)
-    parser.add_argument("--key_env", default="OPENROUTER_API_KEY",
-                        help="the host environment variable holding the key; it is never written anywhere")
+    parser.add_argument("--provider", choices=("openrouter", "google"), default="openrouter")
+    parser.add_argument("--key_env", default=None,
+                        help="the host environment variable holding the key (default: the provider's); "
+                             "it is never written anywhere")
     parser.add_argument("--max_cost", type=float, default=None,
                         help="refuse requests once this many dollars have been spent, counted in --ledger")
     parser.add_argument("--ledger", default=None, help="a JSON file that keeps the running spend across restarts")
     args = parser.parse_args()
-    key = os.environ.get(args.key_env)
-    if not key:
-        parser.error(f"${args.key_env} is not set")
     allow = set(args.allow)
     if any(m.endswith(":online") for m in allow):
         parser.error("an :online model searches the web; it cannot be allowlisted")
+    try:
+        provider = Google(allow) if args.provider == "google" else OpenRouter()
+    except ValueError as error:
+        parser.error(str(error))
+    key_env = args.key_env or provider.key_env
+    key = os.environ.get(key_env)
+    if not key:
+        parser.error(f"${key_env} is not set")
     if (args.max_cost is None) != (args.ledger is None):
         parser.error("--max_cost and --ledger go together")
     ledger = Ledger(path=args.ledger, max_cost=args.max_cost) if args.ledger else None
     with open(args.log, "a") as log:
         lock = threading.Lock()
-        httpd = unix_listener(args.socket, _handler(allow=allow, key=key, log=log, lock=lock, ledger=ledger))
+        httpd = unix_listener(args.socket, _handler(allow=allow, key=key, log=log, lock=lock, ledger=ledger,
+                                                    provider=provider))
         log.write(json.dumps({"t": round(time.time(), 3), "verdict": "listening", "socket": args.socket,
-                              "allow": sorted(allow), "max_cost": args.max_cost,
+                              "provider": args.provider, "allow": sorted(allow), "max_cost": args.max_cost,
                               "spent": ledger.totals["spent"] if ledger else None}) + "\n")
         log.flush()
         try:

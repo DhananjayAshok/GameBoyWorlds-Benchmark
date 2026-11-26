@@ -4,7 +4,7 @@
 # reached, or --time_limit passes.
 #
 #     bash containers/run_train_agent.sh --name <run> --harness strategist --model google/gemini-3.6-flash \
-#         --max_cost 1000 [--from_run <earlier run>]
+#         --max_cost 1000 [--from_run <earlier run>] [--provider openrouter|google]
 #
 # A run is named once and kept in <runs_root>/<run> (default: $storage_dir/env_server/runs). A new name starts
 # from the current main of harnesses/<harness> on a branch of its own, agent/<run>, or with --from_run from the
@@ -30,6 +30,7 @@ MAX_COST=1000
 TIME_LIMIT=""
 PUSH_URL="${harness_remote:-}"
 FROM_RUN=""
+PROVIDER=openrouter
 PYTHON=setup/.venv/bin/python
 
 usage() { sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 1; }
@@ -45,6 +46,7 @@ while [[ $# -gt 0 ]]; do
         --push_url) PUSH_URL="$2"; shift 2 ;;
         --no_push) PUSH_URL=""; shift ;;
         --from_run) FROM_RUN="$2"; shift 2 ;;
+        --provider) PROVIDER="$2"; shift 2 ;;
         *) usage ;;
     esac
 done
@@ -98,7 +100,8 @@ os.replace(path + ".tmp", path)
 print(f"run {name}: harness {harness} from {record['base_commit'][:7]}, launch {len(record['launches'])}")
 PY
 
-args=(--kind train --run_dir "$RUN_DIR" --model "$MODEL" --max_cost "$MAX_COST" --harness_repo "$HARNESS_REPO")
+args=(--kind train --run_dir "$RUN_DIR" --model "$MODEL" --max_cost "$MAX_COST" --harness_repo "$HARNESS_REPO"
+      --provider "$PROVIDER")
 [[ -z "$PUSH_URL" ]] || args+=(--push_url "$PUSH_URL" --push_prefix "runs/$NAME")
 [[ -z "$TIME_LIMIT" ]] || args+=(--time_limit "$TIME_LIMIT")
 exec bash containers/run_sandbox.sh "${args[@]}" -- /opt/harness/bin/python /opt/train/cycle.py

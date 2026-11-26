@@ -27,7 +27,9 @@
 #     bash containers/run_sandbox.sh --kind train --run_dir <dir> --model <model> --max_cost 1000 -- <command>
 #
 # Every kind writes the sessions' videos to /work/obs, read-only. --max_cost caps the model spend in dollars.
-# Needs OPENROUTER_API_KEY in the host environment; it is never passed into the sandbox.
+# --provider google sends the calls to Google's Gemini API instead of OpenRouter.
+# Needs OPENROUTER_API_KEY (or GEMINI_API_KEY with --provider google) in the host environment; it is never
+# passed into the sandbox.
 # Exits with the command's status. Logs, and result.json for a test or playthrough run, go to --log_dir.
 
 set -euo pipefail
@@ -51,6 +53,7 @@ MAX_COST=""
 HARNESS_REPO=harnesses/strategist
 PUSH_URL=""
 PUSH_PREFIX=""
+PROVIDER=openrouter
 
 usage() {
     sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -59,6 +62,7 @@ usage() {
     echo "         --workspace <dir>  --log_dir <dir>  --record_dir <dir>  --time_limit <seconds>"
     echo "         --max_steps <n>  --run_dir <dir>  --checkpoint_every <steps>  --harness  --max_cost <dollars>"
     echo "         --harness_repo <dir>  --push_url <git url>  --push_prefix <branch prefix>   (train)"
+    echo "         --provider openrouter|google"
     exit 1
 }
 
@@ -80,6 +84,7 @@ while [[ $# -gt 0 ]]; do
         --harness_repo) HARNESS_REPO="$2"; shift 2 ;;
         --push_url) PUSH_URL="$2"; shift 2 ;;
         --push_prefix) PUSH_PREFIX="$2"; shift 2 ;;
+        --provider) PROVIDER="$2"; shift 2 ;;
         --) shift; break ;;
         *) usage ;;
     esac
@@ -102,7 +107,12 @@ OPENS_OWN=false
     || die "no harness repository at $HARNESS_REPO; make it with containers/harness_repo.sh sync"
 [[ -z "$PUSH_URL" || -n "$PUSH_PREFIX" ]] || die "--push_url needs --push_prefix"
 [[ -f "$SIF" ]] || die "no image at $SIF; build it first (see containers/sandbox.def)"
-[[ -n "${OPENROUTER_API_KEY:-}" ]] || die "OPENROUTER_API_KEY is not set; the model gateway needs it"
+case "$PROVIDER" in
+    openrouter) KEY_ENV=OPENROUTER_API_KEY ;;
+    google) KEY_ENV=GEMINI_API_KEY ;;
+    *) die "--provider must be openrouter or google" ;;
+esac
+[[ -n "${!KEY_ENV:-}" ]] || die "$KEY_ENV is not set; the model gateway needs it"
 require_apptainer
 
 PYTHON=setup/.venv/bin/python
@@ -152,7 +162,7 @@ server_args=(serve --kind "$KIND" --unix_socket "$NET/envserver.sock" --token_fi
                                          --progress_dir "$OBS_DIR/progress")
 "$PYTHON" run_env_server.py "${server_args[@]}" > "$LOG_DIR/server.log" 2>&1 &
 SERVER_PID=$!
-gateway_args=(--socket "$NET/model.sock" --allow "$MODEL" --log "$LOG_DIR/gateway.jsonl")
+gateway_args=(--socket "$NET/model.sock" --allow "$MODEL" --log "$LOG_DIR/gateway.jsonl" --provider "$PROVIDER")
 [[ -n "$MAX_COST" ]] && gateway_args+=(--max_cost "$MAX_COST" --ledger "$LEDGER")
 "$PYTHON" -m env_server.model_gateway "${gateway_args[@]}" > "$LOG_DIR/gateway.log" 2>&1 &
 GATEWAY_PID=$!
